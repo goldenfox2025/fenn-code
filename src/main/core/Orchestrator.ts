@@ -82,12 +82,13 @@ export class Orchestrator {
         `你是 Ancora 应用里项目「${project.name}」的协调者。${userName || '用户'}在这个主对话里提需求。`,
         `规则（请照做）：`,
         `1. 简单问题（项目现状、某个讨论串在做什么）直接回答，一两句。`,
-        `2. 要花功夫的工作（写代码、调研、写文档、多步骤任务）不要自己在这里做完。先对照下面的讨论串列表：同一件事（包括已解决的）用 message_thread 发过去，已解决的会自动重新打开；只有新的目标才调用 start_thread 开新讨论串，然后只回一句“开始了”之类的话。`,
+        `2. 要花功夫的工作（写代码、调研、写文档、多步骤任务）不要自己在这里做完。先对照下面的讨论串列表：同一件事（包括已解决的）用 message_thread 发过去，已解决的会自动重新打开；只有新的目标才调用 start_thread 开新讨论串。讨论串卡片本身就是回执，开完不用再写字。`,
         `   例：用户说“帮我调研三家竞品的定价” → start_thread({"title":"竞品定价调研","instructions":"用户原话：帮我调研三家竞品的定价。"})`,
-        `3. 用户追问已有讨论串的事 → message_thread({"thread_id":"讨论串id或标题","text":"用户的追问"})，再一句话说明转过去了。`,
+        `3. 用户追问已有讨论串的事 → message_thread({"thread_id":"讨论串id或标题","text":"用户的追问"})，再用半句话说转到了哪个讨论串。`,
         `4. 用户说“记住……”或说出以后还用得到的事实/偏好 → memory_write({"name":"简短英文名","body":"要记的内容"})。`,
         `5. 用户道谢或闲聊，可以只调用 react({"emoji":"👍"})。`,
         `6. 用用户的语言回复，像人说话，简短，不罗列选项。`,
+        QUIET,
         `7. 每个讨论串就是一个里程碑：一件事一个讨论串，做完标成已解决，用户在看板上按「等待您处理 / 进行中 / 已解决」看进度。不要另外记进度表；只有用户明确要求时才用 progress_update。用户问进度时先看讨论串列表（list_threads）。`,
         project.description ? `项目简介：${project.description}` : '',
         project.instructions ? `项目指令（必须遵守）：\n${project.instructions}` : '',
@@ -103,6 +104,7 @@ export class Orchestrator {
         `1. 开始时调用 update_status 写进度清单，之后每完成一步再调用一次。格式：第一行任务名，空一行，每行一步，用 ✓（完成）✱（进行中）○（未开始）开头。`,
         `   例：update_status({"text":"竞品定价调研\\n\\n✓ 找到三家竞品\\n✱ 对比价格\\n○ 写结论"})`,
         `2. 用户只看得到你的回复和清单。做完时，回复只说结果和需要用户做的事，不复述过程。`,
+        QUIET,
         `3. 需要用户拍板时调用 ask_decision 发选择卡片并推荐一个选项；能继续就按推荐继续。`,
         `4. 遇到难点（卡住、要换思路、要等外部条件）时调用 set_blocker 用一句话写下来，遇到新难点再调用；解决了传空字符串清掉。`,
         `5. 成果是文件或链接时，用 project_file_write 写进项目文件，或用 attach_output 附上已有的文件或链接，用户会在回复下面看到可以点开的卡片。不要只在文字里写路径。`,
@@ -118,11 +120,12 @@ export class Orchestrator {
         `<ancora-context>`,
         `这个对话属于项目「${project.name}」。`,
         PLAN_HINT,
+        QUIET,
         project.instructions ? `项目指令（必须遵守）：\n${project.instructions}` : '',
         this.memorySection(project.id),
         `</ancora-context>`
       )
-    } else if (conv.kind === 'chat') parts.push(`<ancora-context>`, PLAN_HINT, `</ancora-context>`)
+    } else if (conv.kind === 'chat') parts.push(`<ancora-context>`, PLAN_HINT, QUIET, `</ancora-context>`)
     // The notes above are in Chinese; an English UI should still get English replies.
     if (getLang() === 'en' && parts.length)
       parts.splice(1, 0, `The user's app is set to English. Always reply in the language the user writes in (English when unsure), even though these notes are in Chinese.`)
@@ -989,6 +992,10 @@ export class Orchestrator {
 }
 
 /** How ordinary chats keep the user posted on longer work. */
+/** Cards, status and the working mark already acknowledge a message; text is for results. */
+const QUIET =
+  '不要写“收到”“好的，我先……”这类回执，也不要在调用工具前预告要做什么：界面会自动显示你在工作。每条用户消息只回一次，开头就是结果或需要用户做的事。'
+
 const PLAN_HINT =
   '做多步骤的任务时，用 update_status 写任务计划并随进度更新；卡在难点上时用 set_blocker 写一句，遇到新难点再写，解决了清掉。简单问答不需要这些。'
 

@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { useApp } from './store'
+import './tokens.css'
 import './styles.css'
 
 document.documentElement.classList.add(window.ancora.platform === 'darwin' ? 'mac' : 'not-mac')

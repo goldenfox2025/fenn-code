@@ -40,7 +40,7 @@ const send = async (text) => {
   await page.keyboard.press('Enter')
   // Done when the working indicator above the composer goes away.
   await page.waitForTimeout(300)
-  await page.waitForSelector('.working-timer', { state: 'detached', timeout: 20000 })
+  await page.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
 }
 
 await check('thanks in a project chat shows the coordinator 👍 on the message', async () => {
@@ -349,7 +349,7 @@ await check('every 「…」 menu opens next to its button, inside the window', 
   const header = page.locator('.chat-header .icon-btn:has(.lucide-ellipsis), .chat-header .icon-btn:has(.lucide-more-horizontal)').last()
   await header.click()
   await near(header, 'chat header')
-  await page.waitForSelector('.working-timer', { state: 'detached', timeout: 20000 })
+  await page.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
 })
 
 await check('a chat shows its plan under the title, opening to the full plan and obstacles', async () => {
@@ -569,7 +569,7 @@ await app.close()
     await bar.locator('.btn:has-text("重试")').click()
     await p2.waitForSelector('.msg-error.interrupted', { state: 'detached', timeout: 8000 })
     await p2.waitForTimeout(300)
-    await p2.waitForSelector('.working-timer', { state: 'detached', timeout: 20000 })
+    await p2.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
     const reply = await p2.locator('.msg.assistant, .assistant').last().innerText().catch(() => '')
     if (reply.includes('春眠不觉晓')) throw new Error('the cut-off reply was not replaced')
   })

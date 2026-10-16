@@ -596,6 +596,22 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     await stream(sessionId, "已在上一条回复里更正。", abort);
     return;
   }
+  // 「#啰嗦」: a talkative agent that narrates every move (as some models do); 「#啰嗦慢」 lingers so the working mark shows.
+  if (/#啰嗦/.test(text)) {
+    const slow = /#啰嗦慢/.test(text);
+    await stream(sessionId, "收到，先在这里留一句，方便你在看板上看到。", abort);
+    await stream(sessionId, "用户想确认看板上的讨论串。先看进度，再回答。", abort, "agent_thought_chunk");
+    await stream(sessionId, "这是一次看板上的讨论串测试。我先更新进度，再用一两句话确认你能在看板上看到它。", abort);
+    for (const [i, file] of ["README.md", "docs/plan.md"].entries()) {
+      notify(sessionId, { sessionUpdate: "tool_call", toolCallId: `chat${s.turns}-${i}`, title: `读取 ${file}`, kind: "read", status: "completed", rawInput: { path: file } });
+      await sleep(slow ? 1500 : 50);
+    }
+    if (slow) await sleep(4000);
+    await stream(sessionId, "这个讨论串已经在看板上，你可以直接打开查看。进度那一栏会随着讨论串的推进自动更新，不需要你手动刷新。\n\n如果之后想把它拆成更小的任务，在讨论串里直接说就行，我会在原处更新，不会另开新的对话。", abort);
+    const sub = /开子对话/.test(text) ? await callTool(sessionId, s, "start_subconversation", { title: "整理看板说明", task: "把看板的用法写成一页说明。" }) : null;
+    if (sub) await stream(sessionId, "", abort);
+    return;
+  }
   // 「开子对话 标题」 hands side work to a sub-conversation.
   const sub = text.match(/开子对话\s*(\S+)/);
   if (sub) {

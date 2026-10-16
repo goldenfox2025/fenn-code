@@ -20,7 +20,6 @@ import {
   RotateCcw,
   Search,
   SmilePlus,
-  Sparkles,
   SquareTerminal,
   Wrench,
   CornerUpLeft,
@@ -239,18 +238,17 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
   const streaming = m.state === 'streaming'
   const connecting = m.blocks.find((b): b is Extract<Block, { type: 'notice' }> => b.type === 'notice' && b.key === 'starting')
   const groups = groupBlocks(m.blocks)
-  const lastText = [...m.blocks].reverse().find((b) => b.type === 'text')
   const [menu, openMenu] = useMenu()
   const inProjectChat = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.kind === 'project')
   if (!streaming && m.state === 'done' && groups.length === 0 && !m.reactions?.length) return null
 
   return (
-    <div className="msg msg-assistant">
+    <div className={'msg msg-assistant turn' + (streaming ? ' streaming' : '')}>
       {groups.map((g, i) => {
         if (Array.isArray(g)) return <Steps key={i} steps={g} live={streaming && i === groups.length - 1} />
         switch (g.type) {
           case 'text':
-            return <Markdown key={i} text={g.text} cursor={streaming && g === lastText} />
+            return <Markdown key={i} text={g.text} />
           case 'notice':
             // 「正在连接…」 is the waiting line itself, not a note in the reply.
             if (g.key === 'starting') return null
@@ -273,12 +271,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
             return null
         }
       })}
-      {streaming && !m.blocks.some((b) => b.type === 'text' && b.text) && !m.blocks.some((b) => b.type === 'thought' || (b.type === 'tool' && !APP_TOOL.test(b.title))) && (
-        <div className="thinking-row">
-          <Sparkles size={16} className="spark" />
-          {connecting?.text ?? (m.blocks.length ? t('正在处理…') : t('正在思考…'))}
-        </div>
-      )}
+      {streaming && <WorkingMark since={m.createdAt} label={connecting?.text} />}
       {m.editedAt && (
         <div className="edited-mark small muted" data-tip={new Date(m.editedAt).toLocaleString()}>
           {t('已编辑')}
@@ -332,9 +325,9 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
   )
 }
 
-const Markdown = memo(function Markdown({ text, cursor }: { text: string; cursor?: boolean }) {
+const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
-    <div className={'md' + (cursor ? ' cursor-host' : '')}>
+    <div className="md">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -348,7 +341,6 @@ const Markdown = memo(function Markdown({ text, cursor }: { text: string; cursor
       >
         {text}
       </ReactMarkdown>
-      {cursor && <span className="cursor" />}
     </div>
   )
 })
@@ -825,6 +817,31 @@ function PlacedLine({ path }: { path: string }) {
       <button className="link" onClick={open}>
         {platform === 'darwin' ? t('在访达中打开') : platform === 'win32' ? t('在资源管理器中打开') : t('打开文件夹')}
       </button>
+    </div>
+  )
+}
+
+/**
+ * Claude's working mark: three pulsing dots and the time so far, always at the
+ * very bottom of the turn, where the next words will appear. It takes the
+ * place of the action row, so nothing moves when the turn ends.
+ */
+function WorkingMark({ since, label }: { since: number; label?: string }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const s = Math.max(0, Math.round((Date.now() - since) / 1000))
+  return (
+    <div className="working-mark" role="status">
+      <span className="working-dots" aria-hidden>
+        <i />
+        <i />
+        <i />
+      </span>
+      {label && <span>{label}</span>}
+      <span className="working-time">{s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}</span>
     </div>
   )
 }

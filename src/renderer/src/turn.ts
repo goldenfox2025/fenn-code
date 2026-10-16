@@ -3,7 +3,7 @@ import type { Block } from '@shared/model'
 export type ToolBlock = Extract<Block, { type: 'tool' }>
 
 /** The app's own coordination tools are plumbing; their effects show up as cards and status instead. */
-export const APP_TOOL = /(^|[/_.:\s])(publish_page|ask_decision|start_thread|message_thread|list_threads|read_thread|set_thread_resolved|update_status|set_title|set_resolved|react|correct_message|memory_list|memory_read|memory_write|memory_delete|set_blocker|progress_read|progress_update)\b/
+export const APP_TOOL = /(^|[/_.:\s])(publish_page|ask_decision|start_thread|start_subconversation|message_thread|list_threads|read_thread|set_thread_resolved|update_status|set_title|set_resolved|react|correct_message|memory_list|memory_read|memory_write|memory_delete|set_blocker|progress_read|progress_update)\b/
 
 /** Tools whose result is the card itself. */
 export const OUTPUT_TOOL = /(^|[/_.:\s])(attach_output|project_file_write)\b/

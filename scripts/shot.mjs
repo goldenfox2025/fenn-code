@@ -102,6 +102,23 @@ const scenarios = {
     await wait(300)
     await shot('subchat-child')
   },
+  // One turn: steps line, answer, a card and the action row; then the working mark mid-turn.
+  async turn() {
+    const c = await page.evaluate(() => window.ancora.startChat({ text: '#啰嗦 开子对话 看板上能看到这个讨论串吗？', backendId: 'mock' }))
+    await page.click('.sidebar .nav-item >> text=/啰嗦/')
+    await page.waitForSelector('.thread-card', { timeout: 20000 })
+    await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
+    await wait(600)
+    await page.hover('.turn .md')
+    await wait(300)
+    await shot('turn-done')
+    await page.fill('.composer textarea', '#啰嗦慢 再确认一次')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.working-mark')
+    await wait(2600)
+    await shot('turn-working')
+    void c
+  },
   // Many agents: the backend menu keeps four and puts the rest under 更多后端.
   async many() {
     await wait(1500)

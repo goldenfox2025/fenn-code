@@ -350,7 +350,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
 
   return (
     <div className={'composer-wrap v-' + variant}>
-      {busy && conversation && <WorkingTimer conversationId={conversation.id} />}
+      {busy && conversation && <HousekeepingTimer conversationId={conversation.id} />}
       <div
         className={'composer' + (dragging ? ' dragging' : '')}
         onClick={() => ta.current?.focus()}
@@ -437,7 +437,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
 }
 
 /** Time since the current reply started, like Claude's "Working… 12s". */
-function WorkingTimer({ conversationId }: { conversationId: string }) {
+/** A hidden turn (saving project memory before a handoff) has no message to show its working mark in. */
+function HousekeepingTimer({ conversationId }: { conversationId: string }) {
   const since = useApp((s) => {
     const list = s.messages[conversationId] ?? []
     for (let i = list.length - 1; i >= 0; i--) if (list[i].state === 'streaming') return list[i].createdAt
@@ -454,12 +455,12 @@ function WorkingTimer({ conversationId }: { conversationId: string }) {
     const t = setInterval(() => tick((n) => n + 1), 1000)
     return () => clearInterval(t)
   }, [])
-  if (since === undefined) return null
+  if (since === undefined || !housekeeping) return null
   const s = Math.max(0, Math.round((Date.now() - since) / 1000))
   return (
     <div className="working-timer">
       <span className="dot working" />
-      {housekeeping ? t('正在整理项目记忆') : t('正在处理')} {s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}
+      {t('正在整理项目记忆')} {s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}
     </div>
   )
 }
