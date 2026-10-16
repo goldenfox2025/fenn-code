@@ -371,6 +371,7 @@ function userText(raw) {
   let t = raw
     .replace(/<ancora-context[\s\S]*?<\/ancora-context>/g, "")
     .replace(/<thread-updates>[\s\S]*?<\/thread-updates>/g, "")
+    .replace(/<threads>[\s\S]*?<\/threads>/g, "")
     .replace(/以下是此前的对话记录[\s\S]*?<\/history>/g, "");
   const i = t.lastIndexOf("新消息：");
   if (i >= 0) t = t.slice(i + 4);
