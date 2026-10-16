@@ -504,7 +504,9 @@ export class AppCore {
       if (before.status === 'working' || before.status === 'waiting') throw new Error(t('请先停止当前回复，再切换后端。'))
       this.chat.forgetSession(id)
       patch = { ...patch, sessionRef: undefined, models: undefined, modelId: this.store.settings.backendModelDefaults?.[nextBackendId],
-        sessionOptions: undefined, optionValues: undefined, status: 'idle' }
+        sessionOptions: undefined, optionValues: undefined, status: 'idle',
+        // The ring shows the new agent's context, which starts empty.
+        usage: before.usage && { ...before.usage, contextUsed: undefined, contextSize: undefined, contextSource: undefined, contextSizeSource: undefined } }
       if (before.kind === 'project') {
         const project = this.store.project(before.projectId)
         if (project) {

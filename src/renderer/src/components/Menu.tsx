@@ -144,6 +144,14 @@ export function Menu({
     else if (bottom > menu.scrollTop + menu.clientHeight) menu.scrollTop = bottom - menu.clientHeight
   }, [active])
 
+  // The control that opened the menu says so; its tooltip stays hidden meanwhile.
+  useEffect(() => {
+    const was = anchor.getAttribute('aria-expanded')
+    if (!anchor.hasAttribute('aria-haspopup')) anchor.setAttribute('aria-haspopup', 'menu')
+    anchor.setAttribute('aria-expanded', 'true')
+    return () => (was === null ? anchor.removeAttribute('aria-expanded') : anchor.setAttribute('aria-expanded', was))
+  }, [anchor])
+
   useEffect(() => {
     const down = (e: MouseEvent) => {
       // A click in this menu's own submenu (another .menu) isn't outside it.

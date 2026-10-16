@@ -156,3 +156,35 @@ describe('per-agent model and reasoning preferences', () => {
     } finally { await dispose() }
   })
 })
+
+describe('switching backend mid-conversation', () => {
+  it('drops a session still opening for the old backend, so its model and modes never come back', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      await core.backends.setPlugins([...loadPlugins(), acpPlugin({ id: 'slow', name: 'Slow agent',
+        launch: () => ({ command: process.execPath, args: [join(__dirname, '../resources/mock-agent.mjs')], env: { MOCK_SLOW_START: '600' } }) })])
+      await core.setModelDefault('mock', 'mock-fast')
+      const c = await core.startChat({ backendId: 'mock', text: 'before the switch' })
+      await until(() => store.conversation(c.id)?.status === 'idle')
+      await core.updateConversation(c.id, { backendId: 'slow' })
+      core.chat.patchConversation(c.id, { modelId: 'mock-smart', optionValues: { mode: 'bypassPermissions' } })
+      const setModel = vi.spyOn(core.backends, 'setModel')
+      const setOption = vi.spyOn(core.backends, 'setOption')
+      await core.prepareConversation(c.id)
+      // The user switches again while the slow agent is still starting.
+      await core.updateConversation(c.id, { backendId: 'mock' })
+      expect(store.conversation(c.id)).toMatchObject({ backendId: 'mock', modelId: 'mock-fast' })
+      expect(store.conversation(c.id)?.optionValues).toBeUndefined()
+      await new Promise((r) => setTimeout(r, 1500))
+      const after = store.conversation(c.id)
+      expect(after?.modelId).toBe('mock-fast')
+      expect(after?.sessionRef?.backendId).not.toBe('slow')
+      expect(after?.sessionOptions?.find((o) => o.category === 'mode')?.current ?? 'default').toBe('default')
+      await core.send(c.id, 'after the switch')
+      await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).filter((m) => m.role === 'assistant' && m.state === 'done').length >= 2)
+      expect(store.conversation(c.id)).toMatchObject({ backendId: 'mock', modelId: 'mock-fast', sessionRef: { backendId: 'mock' } })
+      expect(setModel.mock.calls.filter((call) => call[0] === 'slow' || call[2] === 'mock-smart')).toEqual([])
+      expect(setOption.mock.calls.filter((call) => call[0] === 'slow')).toEqual([])
+    } finally { await dispose() }
+  })
+})

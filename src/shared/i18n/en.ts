@@ -804,4 +804,5 @@ export const en: Record<string, string> = {
   "没选文件夹的对话，agent 一做出文件，就在这里按对话标题建一个文件夹，把文件放进去。只聊天的对话不会建。": "When a chat without a folder makes files, a folder named after the chat is created here and the files go into it. Chats that only talk never get one.",
   "这个 agent 不报告上下文用量": "This agent doesn’t report context usage",
   "{0} 未登录，本次用 {1}": "{0} is signed out; using {1} this time",
+  "已切换后端，旧的会话不再使用。": "The backend was switched; the old session is no longer used.",
 }

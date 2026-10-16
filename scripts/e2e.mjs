@@ -250,6 +250,12 @@ await check('the sidebar has no Agent 后端 entry; the agent menu ends with 管
   await page.click('.sidebar .nav-item:has-text("新建")')
   await page.locator('.composer-row .backend-chip').click()
   await page.waitForSelector('.menu')
+  // The chip's own tooltip stays hidden while its menu is open, even as the pointer comes back to it.
+  await page.mouse.move(0, 0)
+  await page.locator('.composer-row .backend-chip').hover()
+  await page.waitForTimeout(700)
+  if (await page.locator('.tooltip.on').count()) throw new Error('tooltip shown over the open agent menu')
+  if ((await page.locator('.composer-row .backend-chip').getAttribute('aria-expanded')) !== 'true') throw new Error('agent chip not marked expanded')
   const last = (await page.locator('.menu .menu-item').last().innerText()).trim()
   if (!last.includes('管理 Agent 后端')) throw new Error('last item: ' + last)
   await page.locator('.menu .menu-item').last().click()

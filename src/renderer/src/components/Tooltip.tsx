@@ -12,6 +12,8 @@ const DELAY = 400
 const WARM_MS = 300
 const GAP = 6
 const EDGE = 8
+// A control whose menu is open shows the menu, not its tooltip.
+const expanded = (el: Element) => !!el.closest('[aria-haspopup][aria-expanded="true"]')
 
 interface Tip {
   text: string
@@ -37,12 +39,13 @@ export function TooltipLayer() {
     }
     const open = (el: Element) => {
       if (el === current) return
+      if (expanded(el)) return hide()
       hide()
       current = el
       const warm = Date.now() - lastHidden < WARM_MS
       timer = setTimeout(() => {
         const text = el.getAttribute('data-tip')
-        if (!el.isConnected || !text || current !== el) return
+        if (!el.isConnected || !text || current !== el || expanded(el)) return
         shown = true
         setTip({ text, el })
       }, warm ? 0 : DELAY)
@@ -103,10 +106,10 @@ export function TooltipLayer() {
     if (!tip) return
     const watch = new MutationObserver(() => {
       const text = tip.el.getAttribute('data-tip')
-      if (!tip.el.isConnected || !text) setTip(null)
+      if (!tip.el.isConnected || !text || expanded(tip.el)) setTip(null)
       else if (text !== tip.text) setTip({ ...tip, text })
     })
-    watch.observe(tip.el, { attributes: true, attributeFilter: ['data-tip'] })
+    watch.observe(tip.el, { attributes: true, attributeFilter: ['data-tip', 'aria-expanded'] })
     return () => watch.disconnect()
   }, [tip])
 

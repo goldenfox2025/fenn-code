@@ -321,6 +321,8 @@ export class ChatService {
 
   /** Sessions being opened, so a message sent meanwhile waits for the same one. */
   private connecting = new Map<string, Promise<{ live: Live; fresh: boolean }>>()
+  // Bumped whenever a conversation's session is dropped: a session still opening for the old backend is then discarded.
+  private epochs = new Map<string, number>()
 
   /**
    * Opens the conversation's agent session ahead of the first message, while
@@ -352,6 +354,11 @@ export class ChatService {
   }
 
   private async openSession(saved: Conversation): Promise<{ live: Live; fresh: boolean }> {
+    const epoch = this.epochs.get(saved.id) ?? 0
+    // The conversation switched backend (or dropped its session) while this one was opening.
+    const stale = () => {
+      if ((this.epochs.get(saved.id) ?? 0) !== epoch) throw new Error(t('已切换后端，旧的会话不再使用。'))
+    }
     // A stand-in runs this session only: the conversation keeps its backend, model and choices.
     const standIn = this.hooks.standIn?.(saved)
     const conv: Conversation = standIn
@@ -377,6 +384,7 @@ export class ChatService {
     info ??= await withTimeout(this.backends.newSession(conv.backendId, opts), CONNECT_TIMEOUT,
       t('{0} 在 {1} 秒内没有连上。请确认它在终端里能正常运行，然后点重试。', name, CONNECT_TIMEOUT / 1000))
 
+    stale()
     const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, unprompted: { fresh } }
     // A new session starts with an empty context; the old session's figures no longer apply.
     if (fresh) {
@@ -394,6 +402,7 @@ export class ChatService {
     if (conv.modelId && conv.modelId !== info.currentModelId && info.models?.some((m) => m.id === conv.modelId)) {
       try { await this.backends.setModel(conv.backendId, info.sessionId, conv.modelId) }
       catch (error) { this.forgetSession(conv.id); throw error }
+      stale()
       modelId = conv.modelId
     }
     // The conversation's own choices win; a new conversation starts with the backend's defaults.
@@ -407,6 +416,7 @@ export class ChatService {
         options = (await this.backends.setOption(conv.backendId, info.sessionId, o.id, v)) ?? options?.map((x) => (x.id === o.id ? { ...x, current: v } : x))
       } catch (error) { this.forgetSession(conv.id); throw error }
     }
+    stale()
     this.patchConversation(conv.id, standIn ? { sessionRef: live } : {
       models: info.models ?? conv.models,
       modelId: modelId ?? conv.modelId,
@@ -499,6 +509,8 @@ export class ChatService {
 
   /** Drops the live session so the next turn starts fresh (e.g. after a backend switch). */
   forgetSession(conversationId: string): void {
+    this.epochs.set(conversationId, (this.epochs.get(conversationId) ?? 0) + 1)
+    this.connecting.delete(conversationId)
     const live = this.live.get(conversationId)
     if (live) this.bySession.delete(`${live.backendId}:${live.sessionId}`)
     this.live.delete(conversationId)
