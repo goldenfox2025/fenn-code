@@ -176,7 +176,8 @@ export function UsageButton({
   timing,
   className = 'usage-btn',
   align = 'right',
-  children
+  children,
+  creditsOnly
 }: {
   usage: UsageTotals | undefined
   scope: string
@@ -185,9 +186,12 @@ export function UsageButton({
   className?: string
   align?: 'left' | 'right'
   children?: ReactNode
+  /** In a conversation header: token usage lives in the composer's ring, so only account credits show here. */
+  creditsOnly?: boolean
 }) {
   const credits = useApp(usesCredits(backendId))
   if (credits && backendId) return <CreditsButton backendId={backendId} className={className} activity={(usage?.turns ?? 0) + (usage?.unreported ?? 0)} />
+  if (creditsOnly) return null
   return <TokensButton usage={usage} scope={scope} timing={timing} className={className} align={align}>{children}</TokensButton>
 }
 

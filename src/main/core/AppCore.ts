@@ -155,7 +155,8 @@ export class AppCore {
     const conv = this.store.conversation(conversationId)
     if (!conv || conv.kind !== 'chat' || conv.routineId || this.chat.folderOf(conv) || this.chat.isBusy(conv.id)) return
     const scratch = this.chat.scratchPath(conv.id)
-    if (!existsSync(scratch) || !readdirSync(scratch).length) return
+    // Only files a person would see count: an agent's hidden config or cache alone doesn't make a folder.
+    if (!existsSync(scratch) || !readdirSync(scratch).some((name) => !name.startsWith('.'))) return
     const root = this.autoFolderRoot()
     mkdirSync(root, { recursive: true })
     const target = uniqueDir(root, folderSafeName(conv.title, t('新对话')))

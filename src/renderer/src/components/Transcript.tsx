@@ -577,7 +577,8 @@ function Steps({ steps, live }: { steps: StepBlock[]; live: boolean }) {
                     toolIcon(s.toolKind)
                   )}
                   <span className="t">{toolTitle(s)}</span>
-                  <StatusIcon status={s.status} />
+                  {/* Like Claude: a finished step needs no mark; running and failed ones do. */}
+                  {s.status !== 'completed' && <StatusIcon status={s.status} />}
                 </button>
                 {tool === s.toolId && (
                   <div className="tool-detail">
@@ -811,9 +812,9 @@ function PlacedLine({ path }: { path: string }) {
     if (!r.ok) toast(r.error ?? t('打不开这个文件夹'), 'error')
   }
   return (
-    <div className="placed-line" data-tip={path}>
+    <div className="placed-line">
       <FolderOpen size={14} />
-      <span>{t('已放在 {0}', name)}</span>
+      <span data-tip={path}>{t('已放在 {0}', name)}</span>
       <button className="link" onClick={open}>
         {platform === 'darwin' ? t('在访达中打开') : platform === 'win32' ? t('在资源管理器中打开') : t('打开文件夹')}
       </button>

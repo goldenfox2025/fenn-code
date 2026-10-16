@@ -181,6 +181,8 @@
   --turn-row: 28px;
   --turn-after: var(--space-6);
   --turn-space: calc(var(--turn-row) + var(--turn-after));
+  /* Rows in an opened steps list: thinking, interim text and tool lines alike. */
+  --step-line: 20px;
   /* A thread card's second line starts under its title, past the icon. */
   --thread-indent: 23px;
 }
@@ -194,6 +196,10 @@
 :root[data-theme='dark'] {
   --tip-bg: #3d3d3a;
   --tip-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+}
+/* Popovers over the deep glass backdrop: opaque enough that the page doesn't show through. */
+:root[data-theme='glass'] {
+  --glass-pop-bg: rgba(20, 22, 33, 0.95);
 }
 :root[data-theme='glass'],
 :root[data-theme='glass-light'] {

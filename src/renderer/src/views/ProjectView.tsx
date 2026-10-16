@@ -524,7 +524,7 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
           {th.resolved ? t('已解决') : STATUS_LABEL[st]}
         </span>
         <span className="spacer" />
-        <UsageButton usage={th.usage} timing={th.timing} backendId={th.backendId} scope={t('本讨论串用量')} />
+        <UsageButton usage={th.usage} timing={th.timing} backendId={th.backendId} scope={t('本讨论串用量')} creditsOnly />
         <button className="icon-btn" onClick={() => setWide(!wide)}>
           {wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </button>

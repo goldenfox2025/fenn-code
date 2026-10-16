@@ -296,8 +296,9 @@ try {
   console.log('Qoder account Credits and stable usage/more popovers passed in three themes')
 
   await page.locator('.sidebar .nav-item').filter({ hasText: '打包测试保留' }).click()
-  await page.locator('.chat-header .usage-btn').filter({ hasText: 'tokens' }).waitFor()
-  await page.locator('.chat-header .usage-btn').click()
+  // Token usage lives in the composer's ring; the header only shows account credits.
+  assert.equal(await page.locator('.chat-header .usage-btn').count(), 0)
+  await page.locator('.composer .context-ring').click()
   assert.match(await page.locator('.menu').innerText(), /新输入\n[\d,.k]+\n输出/)
   assert(!/未提供/.test(await page.locator('.menu').innerText()))
   await page.keyboard.press('Escape')
@@ -309,7 +310,7 @@ try {
   await page.locator('.sidebar .nav-item').filter({ hasText: 'Observed timing smoke' }).click()
   for (const theme of ['light', 'dark', 'glass']) {
     await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
-    const trigger = page.locator('.chat-header .usage-btn')
+    const trigger = page.locator('.composer .context-ring')
     const before = await geometry()
     await trigger.click()
     const panel = page.locator('.menu')

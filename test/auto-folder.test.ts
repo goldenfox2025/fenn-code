@@ -58,6 +58,16 @@ describe('folders for chats', () => {
     await dispose()
   }, 30000)
 
+  it('makes no folder for hidden files alone', async () => {
+    const { core, store, dispose } = await makeCore()
+    const c = await core.startChat({ text: '写文件 .agentrc', backendId: 'mock' })
+    await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).length >= 2)
+    await new Promise((r) => setTimeout(r, 1500))
+    expect(store.conversation(c.id)?.cwd).toBeUndefined()
+    expect(existsSync(join(core.chat.scratchPath(c.id), '.agentrc'))).toBe(true)
+    await dispose()
+  }, 30000)
+
   it('numbers a folder whose name is taken', () => {
     expect(uniqueDir(process.cwd(), 'test')).toBe(join(process.cwd(), 'test 2'))
   })

@@ -704,11 +704,11 @@ select {
   overflow: auto;
 }
 .step-thought {
-  font-size: 14px;
+  font-size: var(--font-sm);
   color: var(--text-3);
-  line-height: 1.65;
+  line-height: var(--step-line);
   white-space: pre-wrap;
-  padding: var(--space-1) 0 var(--space-3);
+  padding: var(--space-1) 0;
 }
 .status-ic {
   flex: none;
@@ -731,9 +731,10 @@ select {
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: 3px 0;
+  padding: var(--space-1) 0;
   color: var(--text-3);
-  font-size: 13.5px;
+  font-size: var(--font-sm);
+  line-height: var(--step-line);
   width: 100%;
   text-align: left;
 }
@@ -741,7 +742,7 @@ select {
   color: var(--text);
 }
 .tool-row .t {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3134,8 +3135,8 @@ details.advanced > summary {
   background: #e9e7e1;
 }
 :root[data-theme='glass'] .effort-pop {
-  background: rgba(20, 22, 33, 0.82);
-  backdrop-filter: blur(28px) saturate(160%);
+  background: var(--glass-pop-bg);
+  backdrop-filter: blur(32px) saturate(160%);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 :root[data-theme='glass'] .effort-track { background: rgba(255, 255, 255, 0.12); }
@@ -3531,7 +3532,7 @@ details.advanced > summary {
   margin-bottom: var(--turn-after);
 }
 .turn > .steps {
-  margin-bottom: calc(var(--space-2) - var(--turn-gap)) !important;
+  margin-bottom: calc(var(--space-5) - var(--turn-gap)) !important;
 }
 .turn > .steps:last-child {
   margin-bottom: 0 !important;
@@ -3575,14 +3576,17 @@ details.advanced > summary {
   .working-dots i { animation: none; opacity: 0.7; }
 }
 .step-text {
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   color: var(--text-3);
-  padding: var(--space-1) 0 var(--space-3);
+  padding: var(--space-1) 0;
 }
 .step-text .md {
   font-size: inherit;
   color: inherit;
-  line-height: var(--line-ui);
+  line-height: var(--step-line);
+}
+.step-text .md p {
+  margin: 0;
 }
 
 /* Footer chips say they open a menu, as Claude's do. */

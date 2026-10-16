@@ -36,7 +36,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
           </button>
         )}
         <span className="spacer" />
-        <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} />
+        <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} creditsOnly />
         <button
           className="icon-btn"
           data-tip={t('更多对话操作')}
