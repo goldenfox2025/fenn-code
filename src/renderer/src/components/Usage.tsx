@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
-import { formatCost, formatTokens, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
+import { formatCost, formatTokens, headline, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
 import { useMenu, type MenuItem } from './Menu'
 import { api, useApp } from '../store'
 import { t } from '../i18n'
@@ -11,7 +11,7 @@ import { tk } from '@shared/i18n'
 /** "1,234 tokens · $0.003" for one reply. */
 export function usageLine(u: MessageUsage): string {
   const parts: string[] = []
-  const total = u.total ?? (u.input ?? 0) + (u.output ?? 0)
+  const total = headline(u)
   if (u.input !== undefined || u.output !== undefined || u.total !== undefined)
     parts.push(u.estimated ? t('约 {0} tokens', formatTokens(total)) : t('{0} tokens', formatTokens(total)))
   if (u.cost) parts.push(formatCost(u.cost))
@@ -244,7 +244,7 @@ export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; sco
   return (
     <>
       <button
-        className={'context-ring' + (share >= 0.9 ? ' full' : share >= 0.7 ? ' high' : '')}
+        className={'context-ring' + (share >= 0.9 ? ' full' : share >= 0.75 ? ' high' : '')}
         title={title}
         aria-label={title}
         onClick={(e) => {

@@ -57,6 +57,8 @@ interface Live {
   chars: number
   /** The app's token estimate of what the session holds, for agents that report no usage. */
   estTokens: number
+  /** Set while a session opened ahead of the first message has not been prompted yet: whether it starts empty. */
+  unprompted?: { fresh: boolean }
   /** The session's cumulative cost as the backend last reported it (ACP usage_update). */
   cost?: Cost
 }
@@ -209,15 +211,14 @@ export class ChatService {
     let result: TurnResult
     let live: Live | undefined
     let costAtStart: Cost | undefined
-    // Starting an agent can be slow (the first launch may download it); say so instead of looking stuck.
-    const slow = setTimeout(() => {
+    // Starting an agent takes a moment (the first launch may download it): say it is connecting, not thinking.
+    if (this.live.get(conversationId)?.backendId !== conv.backendId) {
       const name = this.backends.list().find((b) => b.id === conv!.backendId)?.name ?? 'agent'
-      applyEvent(reply.blocks, { kind: 'notice', level: 'info', key: 'starting', text: t('正在启动 {0}……', name) })
+      applyEvent(reply.blocks, { kind: 'notice', level: 'info', key: 'starting', text: t('正在连接 {0}…', name) })
       this.scheduleEmit(reply)
-    }, 5000)
+    }
     try {
       const session = await this.ensureSession(conv).finally(() => {
-        clearTimeout(slow)
         const i = reply.blocks.findIndex((b) => b.type === 'notice' && b.key === 'starting')
         if (i >= 0) {
           reply.blocks.splice(i, 1)
@@ -225,6 +226,7 @@ export class ChatService {
         }
       })
       live = session.live
+      live.unprompted = undefined
       let promptText = text
       const updates = this.hooks.beforePrompt?.(conv) ?? ''
       if (session.fresh) {
@@ -306,9 +308,39 @@ export class ChatService {
     this.patchConversation(conversationId, { sessionRef: undefined })
   }
 
+  /** Sessions being opened, so a message sent meanwhile waits for the same one. */
+  private connecting = new Map<string, Promise<{ live: Live; fresh: boolean }>>()
+
+  /**
+   * Opens the conversation's agent session ahead of the first message, while
+   * the user is still reading or typing, so sending only sends. Nothing is
+   * prompted; failures are left for the send to report.
+   */
+  prepare(conversationId: string): void {
+    const conv = this.store.conversation(conversationId)
+    if (!conv || conv.status === 'working' || conv.status === 'waiting' || !this.backends.has(conv.backendId)) return
+    if (this.live.get(conv.id)?.backendId === conv.backendId || this.connecting.has(conv.id)) return
+    this.ensureSession(conv).catch(() => undefined)
+  }
+
   private async ensureSession(conv: Conversation): Promise<{ live: Live; fresh: boolean }> {
     const existing = this.live.get(conv.id)
-    if (existing && existing.backendId === conv.backendId) return { live: existing, fresh: false }
+    if (existing && existing.backendId === conv.backendId) return { live: existing, fresh: existing.unprompted?.fresh ?? false }
+    const pending = this.connecting.get(conv.id)
+    if (pending) {
+      const done = await pending.catch(() => undefined)
+      if (done && done.live.backendId === conv.backendId && this.live.get(conv.id) === done.live) return { live: done.live, fresh: done.live.unprompted?.fresh ?? false }
+    }
+    const opening = this.openSession(conv)
+    this.connecting.set(conv.id, opening)
+    try {
+      return await opening
+    } finally {
+      if (this.connecting.get(conv.id) === opening) this.connecting.delete(conv.id)
+    }
+  }
+
+  private async openSession(conv: Conversation): Promise<{ live: Live; fresh: boolean }> {
     // With a working folder the agent works there; without one it gets a private, empty
     // folder of its own, so it never lands in the user's home by default.
     const folder = this.folderOf(conv)
@@ -318,12 +350,20 @@ export class ChatService {
     let info: SessionInfo | null = null
     let fresh = true
     if (conv.sessionRef?.backendId === conv.backendId) {
-      info = await this.backends.resumeSession(conv.backendId, conv.sessionRef.sessionId, opts).catch(() => null)
+      info = await withTimeout(this.backends.resumeSession(conv.backendId, conv.sessionRef.sessionId, opts), CONNECT_TIMEOUT, '').catch(() => null)
       fresh = !info
     }
-    info ??= await this.backends.newSession(conv.backendId, opts)
+    const name = this.backends.list().find((b) => b.id === conv.backendId)?.name ?? conv.backendId
+    info ??= await withTimeout(this.backends.newSession(conv.backendId, opts), CONNECT_TIMEOUT,
+      t('{0} 在 {1} 秒内没有连上。请确认它在终端里能正常运行，然后点重试。', name, CONNECT_TIMEOUT / 1000))
 
-    const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, estTokens: 0 }
+    const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, estTokens: 0, unprompted: { fresh } }
+    // A new session starts with an empty context; the old session's figures no longer apply.
+    if (fresh) {
+      const u = this.store.conversation(conv.id)?.usage
+      if (u && (u.contextUsed !== undefined || u.contextSize !== undefined || u.contextEstimate !== undefined))
+        this.patchConversation(conv.id, { usage: { ...u, contextUsed: undefined, contextSize: undefined, contextEstimate: undefined } })
+    }
     this.live.set(conv.id, live)
     this.bySession.set(`${conv.backendId}:${info.sessionId}`, conv.id)
     // A new session's offered options replace the previous session's capabilities.
@@ -636,6 +676,19 @@ export function estimateReply(m: Message): { output: number; tools: number } {
     }
   }
   return { output, tools }
+}
+
+/** How long opening an agent session may take before the app says so and offers a retry. */
+const CONNECT_TIMEOUT = 60_000
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message || 'timeout')), ms)
+    p.then(
+      (v) => (clearTimeout(timer), resolve(v)),
+      (e) => (clearTimeout(timer), reject(e))
+    )
+  })
 }
 
 export function textOf(m: Message): string {

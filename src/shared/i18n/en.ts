@@ -760,4 +760,6 @@ export const en: Record<string, string> = {
   "玻璃效果": "Glass",
   "半透明的磨砂玻璃界面，浅色和深色都可以用。": "A translucent frosted-glass look, in light or dark.",
   "退出玻璃效果": "Turn off glass",
+  "正在连接 {0}…": "Connecting to {0}…",
+  "{0} 在 {1} 秒内没有连上。请确认它在终端里能正常运行，然后点重试。": "{0} didn't connect within {1} seconds. Check that it runs in a terminal, then retry.",
 }

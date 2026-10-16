@@ -123,6 +123,12 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     return undefined
   }
 
+  // Connect to the agent while the user reads or types, so pressing Enter only sends (no prompt is sent here).
+  const ready = !!conversation && !!currentBackend && !accountHint(bid)
+  useEffect(() => {
+    if (ready && conversation && !busy) void api().prepareConversation(conversation.id).catch(() => undefined)
+  }, [conversation?.id, bid, ready])
+
   // The models a backend offers, read from a fresh session before the first message (no prompt is sent).
   const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string }>({ for: '', loading: false })
   const [retry, setRetry] = useState(0)

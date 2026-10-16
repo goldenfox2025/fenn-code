@@ -439,6 +439,8 @@ export interface AncoraApi {
   /** Whether the user is signed in to a backend, if it can tell. */
   backendAccount(backendId: string): Promise<AccountStatus>
   backendCredits(backendId: string, refresh?: boolean): Promise<CreditQuota | undefined>
+  /** Opens the conversation's agent session in the background, before the first message. Sends nothing. */
+  prepareConversation(conversationId: string): Promise<void>
   /** Reads the agent's session metadata without sending a prompt or creating a chat. */
   backendModels(backendId: string, modelId?: string): Promise<BackendModelCatalog>
   backendLatestVersion(backendId: string): Promise<string | undefined>

@@ -362,7 +362,6 @@ try {
   await chooseEffort(LOW)
   await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.optionValues?.effort === 'low', qoderChat)
   assert.deepEqual(await page.evaluate((id) => window.ancora.messages(id), qoderChat), beforeCold)
-  assert.equal(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.sessionRef, qoderChat), undefined)
   for (const theme of ['light', 'dark', 'glass']) {
     await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     assert(await effortIs(LOW))

@@ -236,6 +236,7 @@ function VersionSwitch({ m, busy }: { m: Message; busy?: boolean }) {
 
 function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?: boolean }) {
   const streaming = m.state === 'streaming'
+  const connecting = m.blocks.find((b): b is Extract<Block, { type: 'notice' }> => b.type === 'notice' && b.key === 'starting')
   const groups = groupBlocks(m.blocks)
   const lastText = [...m.blocks].reverse().find((b) => b.type === 'text')
   const [menu, openMenu] = useMenu()
@@ -250,6 +251,8 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           case 'text':
             return <Markdown key={i} text={g.text} cursor={streaming && g === lastText} />
           case 'notice':
+            // 「正在连接…」 is the waiting line itself, not a note in the reply.
+            if (g.key === 'starting') return null
             return (
               <div key={i} className={'notice ' + g.level}>
                 {g.text}
@@ -270,7 +273,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
       {streaming && !m.blocks.some((b) => b.type === 'text' && b.text) && !m.blocks.some((b) => b.type === 'thought' || (b.type === 'tool' && !APP_TOOL.test(b.title))) && (
         <div className="thinking-row">
           <Sparkles size={16} className="spark" />
-          {m.blocks.length ? t('正在处理…') : t('正在思考…')}
+          {connecting?.text ?? (m.blocks.length ? t('正在处理…') : t('正在思考…'))}
         </div>
       )}
       {m.editedAt && (

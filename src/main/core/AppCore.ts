@@ -286,6 +286,10 @@ export class AppCore {
     return this.backends.account(backendId)
   }
 
+  async prepareConversation(conversationId: string): Promise<void> {
+    this.chat.prepare(conversationId)
+  }
+
   backendCredits(backendId: string, refresh = false) {
     return this.backends.credits(backendId, refresh)
   }

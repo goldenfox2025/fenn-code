@@ -57,6 +57,15 @@ function addCost(a: Cost | undefined, b: Cost | undefined): Cost | undefined {
   return a.currency === b.currency ? { amount: a.amount + b.amount, currency: a.currency } : a
 }
 
+/**
+ * The tokens a turn is shown as: new input plus output. Some agents' own total
+ * also counts cache reads, once per tool call (Claude Code's does), which
+ * makes a few turns read as millions; cache figures stay in the details.
+ */
+export function headline(u: TurnUsage): number {
+  return u.input !== undefined || u.output !== undefined ? (u.input ?? 0) + (u.output ?? 0) : (u.total ?? 0)
+}
+
 /** Adds one turn: its usage when reported, otherwise one more unreported turn. */
 export function addTurn(t: UsageTotals | undefined, u: MessageUsage | undefined): UsageTotals {
   const x = { ...(t ?? emptyTotals()) }
@@ -67,7 +76,7 @@ export function addTurn(t: UsageTotals | undefined, u: MessageUsage | undefined)
   }
   x.input += u.input ?? 0
   x.output += u.output ?? 0
-  x.total += u.total ?? (u.input ?? 0) + (u.output ?? 0)
+  x.total += headline(u)
   x.thought = add(x.thought, u.thought)
   x.cachedRead = add(x.cachedRead, u.cachedRead)
   x.cachedWrite = add(x.cachedWrite, u.cachedWrite)

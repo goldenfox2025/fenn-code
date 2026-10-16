@@ -95,4 +95,10 @@ describe('usage in conversations', () => {
     expect(estimateTokens('你好世界')).toBe(4)
     expect(estimateTokens('hello world!')).toBe(3)
   })
+
+  it('shows new input plus output, leaving cache reads to the details', () => {
+    const t = addTurn(undefined, { input: 2000, output: 400, cachedRead: 160000, total: 162400 })
+    expect(t.total).toBe(2400)
+    expect(t.cachedRead).toBe(160000)
+  })
 })
