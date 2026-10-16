@@ -301,8 +301,13 @@ export class ChatService {
     return conv.cwd || this.store.project(conv.projectId)?.cwd || undefined
   }
 
+  /** Where an agent works for a conversation with no folder, until it makes files (see AppCore.placeChat). */
+  scratchPath(conversationId: string): string {
+    return join(this.store.dir, 'workspaces', conversationId.replace(/[^a-zA-Z0-9-]/g, ''))
+  }
+
   private scratchDir(conversationId: string): string {
-    const dir = join(this.store.dir, 'workspaces', conversationId.replace(/[^a-zA-Z0-9-]/g, ''))
+    const dir = this.scratchPath(conversationId)
     mkdirSync(dir, { recursive: true })
     return dir
   }

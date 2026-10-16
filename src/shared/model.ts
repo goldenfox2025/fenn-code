@@ -25,6 +25,8 @@ export type Block =
   | { type: 'tool'; toolId: string; title: string; toolKind?: string; status: ToolStatus; input?: string; output?: string }
   | { type: 'plan'; entries: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string; key?: string }
+  /** The chat was given this folder because the agent made files (「已放在 …」). */
+  | { type: 'placed'; path: string }
   /** In a project chat: the card of a thread started from this message. */
   | { type: 'thread-card'; threadId: string }
   /** A result the agent handed over: a file on this computer or a link. Shown as a card under the reply. */
@@ -99,6 +101,8 @@ export interface Conversation {
   parentId?: string
   /** What the parent's agent handed over when it started this sub-conversation. */
   handoff?: { by: string; task: string; context?: string }
+  /** cwd is a folder the app made for this chat once it made files; listed with folderless chats. */
+  autoFolder?: boolean
   backendId: string
   modelId?: string
   models?: ModelInfo[]
@@ -324,6 +328,8 @@ export interface AppSettings {
   backendModelOptionDefaults?: Record<string, Record<string, Record<string, string>>>
   /** Working folders the user chose, newest first. */
   recentFolders?: string[]
+  /** Where a chat that makes files gets its own folder; Documents/Ancora when unset. */
+  autoFolderRoot?: string
 }
 
 export interface AppInfo {

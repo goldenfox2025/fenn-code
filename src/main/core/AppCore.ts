@@ -3,7 +3,7 @@
  * be driven from tests; main/index.ts only wires it to IPC.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
@@ -18,6 +18,7 @@ import { Artifacts } from './Artifacts'
 import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
 import { ChatService, textOf } from './ChatService'
 import { AutoAssigner } from './AutoAssigner'
+import { folderSafeName, moveContents, uniqueDir } from './autoFolder'
 import { Orchestrator } from './Orchestrator'
 import { ProjectMemory } from './ProjectMemory'
 import { Scheduler } from './Scheduler'
@@ -74,7 +75,8 @@ export class AppCore {
       this.chat,
       backends,
       () => [...new Set([...(store.settings.recentFolders ?? []), ...store.projects.map((p) => p.cwd ?? ''), store.settings.defaultCwd ?? ''].filter(Boolean))],
-      (id, folder) => void this.updateConversation(id, { cwd: folder }).catch(() => {})
+      (id, folder) => void this.updateConversation(id, { cwd: folder }).catch(() => {}),
+      [join(store.dir, 'workspaces')]
     )
     this.scheduler = new Scheduler(store, this)
     this.orchestrator.extraServers = () => this.connectorServers()
@@ -120,8 +122,48 @@ export class AppCore {
     const orchestrate = this.chat.hooks.afterTurn
     this.chat.hooks.afterTurn = (conv, reply, result) => {
       orchestrate?.(conv, reply, result)
-      void this.autoAssigner.consider(conv, reply)
+      // Titled first, so a folder made for the chat carries its real name.
+      void this.autoAssigner.consider(conv, reply).catch(() => {}).then(() => this.placeChat(conv.id, reply.id)).catch(() => {})
     }
+    const digest = this.chat.hooks.beforePrompt
+    this.chat.hooks.beforePrompt = (conv) => {
+      const moved = this.movedNotes.get(conv.id)
+      this.movedNotes.delete(conv.id)
+      return [moved, digest?.(conv)].filter(Boolean).join('\n\n')
+    }
+  }
+
+  /** Set by the Electron shell: the user's Documents folder. */
+  documentsDir = join(homedir(), 'Documents')
+  private movedNotes = new Map<string, string>()
+
+  /** Where chats that made files get their own folder (Settings → 通用). */
+  autoFolderRoot(): string {
+    return this.store.settings.autoFolderRoot || join(this.documentsDir, 'Ancora')
+  }
+
+  /**
+   * A chat with no folder works in a private scratch space. Once the agent has
+   * made files there, the chat gets a readable folder named after it, under
+   * autoFolderRoot(), with those files moved in. A chat that never makes files keeps none.
+   */
+  async placeChat(conversationId: string, replyId?: string): Promise<string | undefined> {
+    const conv = this.store.conversation(conversationId)
+    if (!conv || conv.kind !== 'chat' || conv.routineId || this.chat.folderOf(conv) || this.chat.isBusy(conv.id)) return
+    const scratch = this.chat.scratchPath(conv.id)
+    if (!existsSync(scratch) || !readdirSync(scratch).length) return
+    const root = this.autoFolderRoot()
+    mkdirSync(root, { recursive: true })
+    const target = uniqueDir(root, folderSafeName(conv.title, t('新对话')))
+    moveContents(scratch, target)
+    try { rmdirSync(scratch) } catch { /* the agent may still hold it open; it is empty either way */ }
+    this.movedNotes.set(conv.id, t('（应用说明：这个对话的文件已从 {0} 移到 {1}，之后请在 {1} 里工作。）', scratch, target))
+    // Not remembered as a recent folder: the user never chose it.
+    this.chat.patchConversation(conv.id, { cwd: target, autoFolder: true })
+    this.chat.forgetSession(conv.id)
+    const reply = replyId ? this.store.messagesOf(conv.id).find((m) => m.id === replyId) : undefined
+    if (reply) this.chat.updateMessage({ ...reply, blocks: [...reply.blocks, { type: 'placed', path: target }] })
+    return target
   }
 
   snapshot(): AppSnapshot {
@@ -424,7 +466,7 @@ export class AppCore {
   async openOutput(path: string, reveal = false): Promise<{ ok: boolean; error?: string }> {
     if (!existsSync(path)) return { ok: false, error: t('文件已不在原来的位置。') }
     // Programs and scripts are only ever shown in their folder, never run from a card.
-    const opens = !reveal && SAFE_TO_OPEN.test(path)
+    const opens = !reveal && (SAFE_TO_OPEN.test(path) || statSync(path).isDirectory())
     const err = await this.shellOpen?.(path, !opens)
     return err ? { ok: false, error: err } : { ok: true }
   }
@@ -469,6 +511,8 @@ export class AppCore {
     }
     // A title the user typed is theirs; the app stops improving it.
     if ('title' in patch) patch = { ...patch, titleAuto: false }
+    // A folder the user picks is theirs, even in place of one the app made.
+    if ('cwd' in patch) patch = { ...patch, autoFolder: undefined }
     this.chat.patchConversation(id, patch)
     // A session is tied to its folder: the next turn starts a new one there, with the conversation so far.
     if ('cwd' in patch && before && (before.cwd || undefined) !== (patch.cwd || undefined)) this.chat.forgetSession(id)

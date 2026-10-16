@@ -295,6 +295,20 @@ await check('the new-chat page keeps the greeting and composer in place', async 
   await page.fill('.composer textarea', '')
 })
 
+await check('the home composer has no project picker, and a chat that makes files gets a folder', async () => {
+  await page.click('.sidebar .nav-item:has-text("新建")')
+  if (await page.locator('.home .composer .select-btn:has-text("项目")').count()) throw new Error('project picker still on the home composer')
+  if (await page.locator('.home .folder-chip.on').count()) throw new Error('a folder is picked by default')
+  await page.locator('.composer-row .backend-chip').click()
+  await page.locator('.menu .menu-item', { hasText: '演示 Agent' }).click()
+  await page.fill('.composer textarea', '写文件 计划.md')
+  await page.keyboard.press('Enter')
+  const line = page.locator('.placed-line')
+  await line.waitFor({ timeout: 20000 })
+  if (!/已放在 .+/.test(await line.innerText())) throw new Error('reads: ' + (await line.innerText()))
+  if (!(await page.locator('.composer .folder-chip.on').count())) throw new Error('the composer does not show the new folder')
+})
+
 await check('a new project is not pinned and is listed by recent activity', async () => {
   const pinned = await page.locator('.section-head:has-text("已置顶")').count()
   if (pinned) throw new Error('projects went into 已置顶')

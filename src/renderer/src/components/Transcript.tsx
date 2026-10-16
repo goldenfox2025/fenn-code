@@ -25,11 +25,12 @@ import {
   Wrench,
   CornerUpLeft,
   Split,
-  PackageOpen
+  PackageOpen,
+  FolderOpen
 } from 'lucide-react'
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
 import { planHeadline } from './PlanLine'
-import { api, useApp } from '../store'
+import { api, toast, useApp } from '../store'
 import { dayLabel, STATUS_LABEL, textOf, threadState } from '../util'
 import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
@@ -258,6 +259,8 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
                 {g.text}
               </div>
             )
+          case 'placed':
+            return <PlacedLine key={i} path={g.path} />
           case 'thread-card':
             return <ThreadCard key={i} threadId={g.threadId} />
           case 'artifact':
@@ -834,6 +837,25 @@ function ThreadSuggestion({ m, last, busy }: { m: Message; last?: boolean; busy?
         }}
       >
         {t('转为讨论串')}</button>
+    </div>
+  )
+}
+
+/** 「已放在 <文件夹>」: the chat made files, so the app gave it a folder of its own. */
+function PlacedLine({ path }: { path: string }) {
+  const platform = useApp((s) => s.platform)
+  const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
+  const open = async () => {
+    const r = await api().openOutput(path)
+    if (!r.ok) toast(r.error ?? t('打不开这个文件夹'), 'error')
+  }
+  return (
+    <div className="placed-line" title={path}>
+      <FolderOpen size={14} />
+      <span>{t('已放在 {0}', name)}</span>
+      <button className="link" onClick={open}>
+        {platform === 'darwin' ? t('在访达中打开') : platform === 'win32' ? t('在资源管理器中打开') : t('打开文件夹')}
+      </button>
     </div>
   )
 }

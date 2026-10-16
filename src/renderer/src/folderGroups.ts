@@ -30,9 +30,11 @@ export function groupByFolder(chats: Conversation[]): FolderGroup[] {
   for (const c of chats) if (c.parentId && ids.has(c.parentId)) children.set(c.parentId, [...(children.get(c.parentId) ?? []), c])
   for (const c of [...chats].sort((a, b) => b.updatedAt - a.updatedAt)) {
     if (c.parentId && ids.has(c.parentId)) continue
-    const key = keyOf(c.cwd)
+    // A folder the app made for one chat is not a place the user works in; it stays with the plain chats.
+    const cwd = c.autoFolder ? undefined : c.cwd
+    const key = keyOf(cwd)
     let g = groups.get(key)
-    if (!g) groups.set(key, (g = { key: key || '~none', folder: c.cwd || undefined, name: c.cwd ? folderName(c.cwd) : t('对话'), chats: [] }))
+    if (!g) groups.set(key, (g = { key: key || '~none', folder: cwd || undefined, name: cwd ? folderName(cwd) : t('对话'), chats: [] }))
     g.chats.push(c, ...(children.get(c.id) ?? []).sort((a, b) => a.createdAt - b.createdAt))
   }
   const list = [...groups.values()]

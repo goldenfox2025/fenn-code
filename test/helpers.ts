@@ -29,6 +29,7 @@ export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), ag
     events.push(e)
     if (e.type === 'permission') void core.respondPermission(e.request.requestId, e.request.options[0].id)
   }, 'linux', tools)
+  core.documentsDir = join(dir, 'Documents')
   const dispose = async () => {
     await backends.disposeAll()
     tools.stop()

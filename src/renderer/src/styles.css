@@ -3623,3 +3623,27 @@ details.advanced > summary {
   color: var(--text-2);
   padding-top: 0;
 }
+
+/* 「已放在 <文件夹>」 under a reply that made files */
+.placed-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.placed-line .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+}
+.placed-line .link:hover {
+  color: var(--text);
+}

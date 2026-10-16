@@ -500,33 +500,6 @@ async function readAttachment(f: File): Promise<Attachment> {
   return { name: f.name, mimeType: f.type || 'text/plain', size: f.size, kind: 'file', text, path }
 }
 
-export function ProjectPicker({ projectId, onChange }: { projectId?: string; onChange: (id?: string) => void }) {
-  const projects = useApp((s) => s.projects)
-  const [menu, openMenu] = useMenu({ placement: 'below' })
-  const current = projects.find((p) => p.id === projectId)
-  return (
-    <>
-      <button
-        className="select-btn"
-        onClick={(e) => {
-          e.stopPropagation()
-          openMenu(e.currentTarget, [
-            { label: t('不放入项目'), checked: !projectId, onClick: () => onChange(undefined) },
-            ...(projects.length ? [{ separator: true } as MenuItem] : []),
-            ...projects.filter((p) => !p.archived || p.id === projectId).map((p) => ({ label: p.name, checked: p.id === projectId, onClick: () => onChange(p.id) }))
-          ])
-        }}
-      >
-        <FolderKanban size={15} />
-        {current?.name ?? t('项目')}
-        <ChevronDown size={13} />
-      </button>
-      {menu}
-    </>
-  )
-}
-
-
 /** Folders the user said no to in this session. */
 const dismissedFolders = new Set<string>()
 

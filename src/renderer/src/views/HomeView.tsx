@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
-import { Composer, ProjectPicker } from '../components/Composer'
+import { Composer } from '../components/Composer'
 import type { Attachment } from '@shared/model'
 import { api, toast, useApp } from '../store'
 import { greeting } from '../util'
@@ -13,7 +13,7 @@ const SUGGESTIONS = [
   { icon: <Sparkles size={15} />, label: t('生活'), text: t('给我一些建议：') }
 ]
 
-export function HomeView({ projectId: initialProject, folder: initialFolder }: { projectId?: string; folder?: string }) {
+export function HomeView({ folder: initialFolder }: { folder?: string }) {
   const settings = useApp((s) => s.settings)
   const navigate = useApp((s) => s.navigate)
   const [backendId, setBackendId] = useState(settings.defaultBackendId)
@@ -22,19 +22,14 @@ export function HomeView({ projectId: initialProject, folder: initialFolder }: {
     setBackendId(settings.defaultBackendId)
     setModelId(undefined)
   }, [settings.defaultBackendId])
-  const [projectId, setProjectId] = useState<string | undefined>(initialProject)
   const [seed, setSeed] = useState(0)
-  // undefined: follow the project's folder or the default one.
-  const [folder, setFolder] = useState<string | undefined>(initialFolder)
-  const project = useApp((s) => s.projects.find((p) => p.id === projectId))
-  const folderShown = folder ?? (project?.cwd || '')
+  // No folder unless the user picks one; one is found or made once the chat needs it.
+  const [folder, setFolder] = useState<string>(initialFolder ?? '')
 
   const start = async (text: string, attachments: Attachment[], optionValues?: Record<string, string>) => {
     try {
-      const conv = await api().startChat({ text, attachments, backendId, projectId, cwd: folder, modelId, optionValues })
-      // A message for a project goes to the project's own chat.
-      if (conv.kind === 'project' && conv.projectId) navigate({ view: 'project', projectId: conv.projectId })
-      else navigate({ view: 'chat', conversationId: conv.id })
+      const conv = await api().startChat({ text, attachments, backendId, cwd: folder || undefined, modelId, optionValues })
+      navigate({ view: 'chat', conversationId: conv.id })
     } catch (e) {
       toast(String(e), 'error')
     }
@@ -58,9 +53,8 @@ export function HomeView({ projectId: initialProject, folder: initialFolder }: {
         }}
         modelId={modelId}
         onModelChange={setModelId}
-        folder={folderShown}
+        folder={folder}
         onFolderChange={setFolder}
-        leading={<ProjectPicker projectId={projectId} onChange={setProjectId} />}
       />
       <div className="chips">
         {SUGGESTIONS.map((s) => (

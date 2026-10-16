@@ -5,6 +5,7 @@
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // MOCK_STDIO_MCP=1 makes the mock accept only stdio MCP servers, like some real agents.
 const STDIO_ONLY = process.env.MOCK_STDIO_MCP === "1";
@@ -109,11 +110,12 @@ const handlers = {
       };
     return { sessionId, configOptions: configOptions("mock-fast", sessions.get(sessionId)) };
   },
-  "session/resume": ({ sessionId }) => {
+  "session/resume": ({ sessionId, cwd }) => {
     // Sessions live only as long as this process; after a restart there is nothing to resume.
     if (!sessions.has(sessionId))
       throw { code: -32602, message: "unknown session id" };
     const s = sessions.get(sessionId);
+    if (cwd) s.cwd = cwd;
     return { configOptions: configOptions(s.model, s) };
   },
   "session/set_mode": ({ sessionId, modeId }) => {
@@ -599,6 +601,19 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
   if (sub) {
     const r = await callTool(sessionId, s, "start_subconversation", { title: sub[1], task: `把「${sub[1]}」单独处理好，量出改动前后的差别。`, context: "原对话在讨论整体方案。" });
     await stream(sessionId, typeof r === "string" ? r : "已开启子对话。", abort);
+    return;
+  }
+  if (/在哪里工作/.test(text)) {
+    await stream(sessionId, `我在 ${s.cwd} 里工作。`, abort);
+    return;
+  }
+  // 「写文件 名字」 writes a file in the working folder, as a coding agent does; 「在哪里工作」 says where that is.
+  const write = text.match(/写文件\s*(\S+)/);
+  if (write) {
+    const path = join(s.cwd, write[1]);
+    writeFileSync(path, `# ${write[1]}\n`);
+    notify(sessionId, { sessionUpdate: "tool_call", toolCallId: `w${Date.now()}`, title: `写入 ${path}`, kind: "edit", status: "completed", rawInput: { path } });
+    await stream(sessionId, `写好了 ${write[1]}。`, abort);
     return;
   }
   // 「交付文件 名字」 writes a project file; 「附上 路径」 or 「附上链接 URL」 attaches an output.

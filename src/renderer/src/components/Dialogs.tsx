@@ -357,6 +357,27 @@ function GeneralSettings() {
         <div className="small muted">{t('排在输入框文件夹菜单的第一个。新对话默认不带文件夹，选了文件夹，agent 才能读写其中的文件、运行命令。')}</div>
       </div>
       <div className="field">
+        <label>{t('自动建的文件夹放在')}</label>
+        <div className="field-row">
+          <input className="input" value={settings.autoFolderRoot ?? ''} readOnly placeholder={t('文档/Ancora')} />
+          <button
+            className="btn"
+            onClick={async () => {
+              const dir = await api().pickFolder()
+              if (dir) void api().updateSettings({ autoFolderRoot: dir })
+            }}
+          >
+            <FolderOpen size={15} />
+          </button>
+          {settings.autoFolderRoot && (
+            <button className="btn" title={t('恢复默认')} onClick={() => void api().updateSettings({ autoFolderRoot: '' })}>
+              <X size={15} />
+            </button>
+          )}
+        </div>
+        <div className="small muted">{t('没选文件夹的对话，agent 一做出文件，就在这里按对话标题建一个文件夹，把文件放进去。只聊天的对话不会建。')}</div>
+      </div>
+      <div className="field">
         <div className="row-between">
           <div>
             <label>{t('桌面通知')}</label>

@@ -377,6 +377,10 @@ const configWatcher = watch(configDir, (_event, filename) => {
 });
 configWatcher.unref();
 core.openTerminal = openTerminal;
+// Test runs keep the folders made for chats inside their own data folder.
+core.documentsDir = process.env.ANCORA_DATA_DIR
+  ? join(process.env.ANCORA_DATA_DIR, "Documents")
+  : app.getPath("documents");
 core.shellOpen = async (path, reveal) => {
   if (reveal) {
     shell.showItemInFolder(path);

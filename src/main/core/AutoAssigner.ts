@@ -27,7 +27,9 @@ export class AutoAssigner {
     private readonly backends: BackendManager,
     /** Folders the app knows (recent ones, projects', the default). */
     private readonly knownFolders: () => string[] = () => [],
-    private readonly attachFolder: (conversationId: string, folder: string) => void = () => {}
+    private readonly attachFolder: (conversationId: string, folder: string) => void = () => {},
+    /** The app's own scratch spaces: work there says nothing about the user's folders. */
+    private readonly ignored: string[] = []
   ) {}
 
   private retitled = new Set<string>()
@@ -49,7 +51,7 @@ export class AutoAssigner {
     if (again) this.retitled.add(conv.id)
 
     if (first && !conv.cwd && !conv.routineId) {
-      const folder = folderOfTurn(reply, this.knownFolders())
+      const folder = folderOfTurn(reply, this.knownFolders(), this.ignored)
       if (folder) this.attachFolder(conv.id, folder)
     }
 
@@ -108,8 +110,10 @@ const inside = (path: string, folder: string) => {
  * path must be inside some known folder, and one of those folders must hold
  * them all (with nested known folders, the outermost that does).
  */
-export function folderOfTurn(reply: Message, known: string[]): string | undefined {
-  const paths = reply.blocks.flatMap((b) => (b.type === 'tool' ? pathsIn(`${b.title}\n${b.input ?? ''}`) : []))
+export function folderOfTurn(reply: Message, known: string[], ignored: string[] = []): string | undefined {
+  const paths = reply.blocks
+    .flatMap((b) => (b.type === 'tool' ? pathsIn(`${b.title}\n${b.input ?? ''}`) : []))
+    .filter((p) => !ignored.some((d) => inside(p, d)))
   if (!paths.length) return undefined
   const holding = known.filter((f) => paths.every((p) => inside(p, f)))
   // The outermost such folder is the one that clearly fits; a parent of it holding them too would be the outermost instead.
