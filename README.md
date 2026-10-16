@@ -55,9 +55,9 @@ Run a prompt once, every few minutes, daily, weekly or on a cron schedule, and h
 
 ### Themes and languages
 
-Light, dark and a translucent Glass theme, in English or Simplified Chinese. The language follows your system until you pick one in Settings → General.
+Light, dark or follow the system, with an optional translucent glass look on top, in English or Simplified Chinese. The language follows your system until you pick one in Settings → General.
 
-![The same view in the Light, Dark and Glass themes](docs/screenshots/en/themes.webp)
+![The same view in light, dark and glass](docs/screenshots/en/themes.webp)
 
 Also included: attachments, editing and regenerating with version history, token and cost usage as the backend reports it, working folders with file and terminal tools, MCP connectors, full-text search, automatic filing of loose chats into projects, and desktop notifications.
 

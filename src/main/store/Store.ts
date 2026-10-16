@@ -5,7 +5,7 @@
 import { demoAgentEnabled } from '../demo'
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AppSettings, Connector, Conversation, Message, Project, Routine } from '../../shared/model'
+import { normalizeTheme, type AppSettings, type Connector, type Conversation, type Message, type Project, type Routine } from '../../shared/model'
 
 interface StateFile {
   version: 1
@@ -47,7 +47,7 @@ export class Store {
       conversations: loaded?.conversations ?? [],
       routines: loaded?.routines ?? [],
       connectors: loaded?.connectors ?? [],
-      settings: { ...DEFAULT_SETTINGS, ...loaded?.settings },
+      settings: normalizeTheme({ ...DEFAULT_SETTINGS, ...loaded?.settings }),
       backendSettings: loaded?.backendSettings ?? {}
     }
     // Data from before the first-run guide existed: the user is already set up, so don't guide them again.
@@ -230,7 +230,7 @@ export class Store {
     return this.state.settings
   }
   patchSettings(patch: Partial<AppSettings>): AppSettings {
-    this.state.settings = { ...this.state.settings, ...patch }
+    this.state.settings = normalizeTheme({ ...this.state.settings, ...patch })
     this.touch()
     return this.state.settings
   }

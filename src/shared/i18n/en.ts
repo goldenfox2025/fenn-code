@@ -756,4 +756,8 @@ export const en: Record<string, string> = {
   "努力程度越高，agent 思考得越多：回答更周到，但更慢，也更耗额度。": "Higher effort means the agent thinks more: more thorough answers, but slower and using more of your quota.",
   "速度更快": "Faster",
   "更智能": "Smarter",
+  "颜色": "Color",
+  "玻璃效果": "Glass",
+  "半透明的磨砂玻璃界面，浅色和深色都可以用。": "A translucent frosted-glass look, in light or dark.",
+  "退出玻璃效果": "Turn off glass",
 }

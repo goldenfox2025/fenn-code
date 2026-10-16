@@ -300,7 +300,7 @@ async function launch(extraEnv = {}) {
 }
 const wait = (page, ms) => page.waitForTimeout(ms)
 const theme = async (page, th) => {
-  await page.evaluate((x) => window.ancora.updateSettings({ theme: x }), th)
+  await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), th)
   await wait(page, 500)
 }
 const snap = (page, name, clip) => page.screenshot({ path: join(out, `${name}.png`), ...(clip ? { clip } : {}) })

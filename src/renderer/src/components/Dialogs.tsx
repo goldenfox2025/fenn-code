@@ -508,17 +508,27 @@ function AboutSettings() {
 
 function AppearanceSettings() {
   const theme = useApp((s) => s.settings.theme)
+  const glass = useApp((s) => !!s.settings.glass)
   return (
     <>
       <h2>{t('外观')}</h2>
       <div className="field">
-        <label>{t('主题')}</label>
+        <label>{t('颜色')}</label>
         <div className="seg-control">
-          {(['system', 'light', 'dark', 'glass'] as const).map((th) => (
+          {(['light', 'dark', 'system'] as const).map((th) => (
             <button key={th} className={theme === th ? 'on' : ''} onClick={() => api().updateSettings({ theme: th })}>
-              {{ system: t('跟随系统'), light: t('浅色'), dark: t('深色'), glass: t('太空玻璃') }[th]}
+              {{ system: t('跟随系统'), light: t('浅色'), dark: t('深色') }[th]}
             </button>
           ))}
+        </div>
+      </div>
+      <div className="field">
+        <div className="row-between">
+          <div>
+            <label>{t('玻璃效果')}</label>
+            <div className="help">{t('半透明的磨砂玻璃界面，浅色和深色都可以用。')}</div>
+          </div>
+          <button className={'switch' + (glass ? ' on' : '')} role="switch" aria-checked={glass} aria-label={t('玻璃效果')} onClick={() => api().updateSettings({ glass: !glass })} />
         </div>
       </div>
       <div className="field">

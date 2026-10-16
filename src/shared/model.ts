@@ -286,7 +286,10 @@ export interface AppSettings {
   secretsToReenter?: string[]
   /** The app name the one-time repair of secrets saved under old names last ran for. */
   secretsRepairedFor?: string
+  /** Color scheme; 'system' follows the OS. ('glass' is the pre-0.1.1 setting, read as dark + glass.) */
   theme: 'system' | 'light' | 'dark' | 'glass'
+  /** The frosted glass look, layered over the color scheme. */
+  glass?: boolean
   /** UI language (Settings → 通用); 'system' follows the OS. */
   language?: 'system' | 'zh' | 'en'
   userName: string
@@ -504,4 +507,9 @@ export interface AncoraApi {
 
   platform: string
   windowControl(action: 'minimize' | 'maximize' | 'close'): void
+}
+
+/** Glass used to be a theme of its own (always dark); it is now a switch over light or dark. */
+export function normalizeTheme<T extends Partial<Pick<AppSettings, 'theme' | 'glass'>>>(s: T): T {
+  return s.theme === 'glass' ? { ...s, theme: 'dark', glass: true } : s
 }

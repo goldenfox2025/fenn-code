@@ -153,7 +153,7 @@ try {
   await card.getByRole('button', { name: '检查更新', exact: true }).click()
   await card.getByRole('button', { name: '升级', exact: true }).waitFor()
   for (const [theme, width, height] of [['glass', 1200, 800], ['glass', 860, 560], ['light', 860, 560], ['dark', 860, 560]]) {
-    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     await page.setViewportSize({ width, height })
     await card.getByRole('button', { name: '升级', exact: true }).click()
     const modal = page.locator('.modal.confirm')
@@ -192,7 +192,7 @@ try {
   })
   await waitState(async (ids) => (await window.ancora.snapshot()).conversations.filter((c) => ids.includes(c.id)).every((c) => c.status === 'idle'), chats)
   await page.locator('.sidebar').getByRole('button', { name: '对话', exact: true }).click()
-  await page.evaluate(() => window.ancora.updateSettings({ theme: 'light' }))
+  await page.evaluate(() => window.ancora.updateSettings({ theme: 'light', glass: false }))
   const remove = page.getByRole('button', { name: '删除对话「打包测试待删除」', exact: true })
   await remove.click()
   await page.locator('.confirm-cancel').click()
@@ -263,7 +263,7 @@ try {
     })
   }))
   for (const theme of ['light', 'dark', 'glass']) {
-    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     for (const selector of ['.chat-header .usage-btn', '.chat-header button[aria-label="更多对话操作"]']) {
       await page.locator('.center > .scroll').evaluate((el) => {
         el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - 24)
@@ -302,7 +302,7 @@ try {
   await page.evaluate((id) => window.ancora.updateConversation(id, { title: 'Observed timing smoke' }), metricsChat)
   await page.locator('.sidebar .nav-item').filter({ hasText: 'Observed timing smoke' }).click()
   for (const theme of ['light', 'dark', 'glass']) {
-    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     const trigger = page.locator('.chat-header .usage-btn')
     const before = await geometry()
     await trigger.click()
@@ -364,7 +364,7 @@ try {
   assert.deepEqual(await page.evaluate((id) => window.ancora.messages(id), qoderChat), beforeCold)
   assert.equal(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.sessionRef, qoderChat), undefined)
   for (const theme of ['light', 'dark', 'glass']) {
-    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     assert(await effortIs(LOW))
     await page.locator('.composer .effort-chip').click()
     await page.screenshot({ path: join(shots, `effort-${theme}.png`) })
@@ -380,7 +380,7 @@ try {
   // Project and routine choices use the same availability policy as the composer.
   await page.locator('.sidebar').getByRole('button', { name: '项目', exact: true }).first().click()
   for (const [theme, width, height] of [['light', 1200, 800], ['dark', 860, 560], ['glass', 860, 560]]) {
-    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     await page.setViewportSize({ width, height })
     await page.getByRole('button', { name: '新建项目', exact: true }).click()
     const modal = page.locator('.modal').filter({ has: page.getByRole('heading', { name: '新建项目', exact: true }) })

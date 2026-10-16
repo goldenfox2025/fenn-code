@@ -3280,3 +3280,136 @@ details.advanced > summary {
 }
 :root[data-theme='glass'] .effort-track { background: rgba(255, 255, 255, 0.07); }
 :root[data-theme='glass'] .effort-fill { background: rgba(255, 255, 255, 0.16); }
+
+/* ---------- 玻璃效果 over light: frosted white panels on a soft daylight backdrop ---------- */
+:root[data-theme='glass-light'] {
+  --bg: #eef0f6;
+  --bg-sidebar: rgba(255, 255, 255, 0.42);
+  --bg-elevated: rgba(255, 255, 255, 0.74);
+  --bg-panel: rgba(255, 255, 255, 0.52);
+  --bg-hover: rgba(22, 26, 44, 0.05);
+  --bg-active: rgba(22, 26, 44, 0.085);
+  --bg-input: rgba(255, 255, 255, 0.72);
+  --bg-user: rgba(75, 86, 210, 0.1);
+  --bg-code: rgba(255, 255, 255, 0.62);
+  --text: #15171f;
+  --text-2: #343745;
+  --text-3: #5a5e70;
+  --text-4: #8b8fa1;
+  --border: rgba(22, 26, 44, 0.09);
+  --border-strong: rgba(22, 26, 44, 0.17);
+  --accent: #4b56d2;
+  --accent-hover: #3d47bf;
+  --accent-soft: rgba(75, 86, 210, 0.12);
+  --link: #3a4ecf;
+  --green: #2c7a4c;
+  --amber: #96620e;
+  --red: #bd3831;
+  --blue: #3a63c9;
+  --hairline-top: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --frost: blur(22px) saturate(170%);
+  --focus-border: rgba(75, 86, 210, 0.5);
+  --focus-ring: rgba(75, 86, 210, 0.6);
+  --shadow: var(--hairline-top), 0 1px 2px rgba(22, 26, 44, 0.05), 0 8px 28px rgba(22, 26, 44, 0.07);
+  --shadow-pop: var(--hairline-top), 0 14px 44px rgba(22, 26, 44, 0.16), 0 0 0 1px rgba(22, 26, 44, 0.07);
+  color-scheme: light;
+}
+:root[data-theme='glass-light'] body {
+  background:
+    radial-gradient(1100px 760px at 88% -12%, rgba(170, 182, 255, 0.55), transparent 62%),
+    radial-gradient(900px 700px at -8% 108%, rgba(255, 205, 184, 0.5), transparent 60%),
+    radial-gradient(800px 600px at 45% 55%, rgba(186, 228, 222, 0.32), transparent 70%),
+    linear-gradient(180deg, #f1f2f8 0%, #e7e9f2 100%);
+  background-attachment: fixed;
+}
+:root.native-glass[data-theme='glass-light'] body {
+  background: linear-gradient(180deg, rgba(246, 247, 252, 0.6), rgba(236, 238, 246, 0.72));
+}
+:root[data-theme='glass-light'] #root {
+  isolation: isolate;
+}
+:root[data-theme='glass-light'] :is(.sidebar, .panel, .page-panel) {
+  backdrop-filter: var(--frost);
+  box-shadow: var(--hairline-top);
+}
+:root[data-theme='glass-light'] .composer {
+  backdrop-filter: var(--frost);
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: var(--shadow);
+}
+:root[data-theme='glass-light'] .composer:focus-within {
+  border-color: rgba(75, 86, 210, 0.42);
+  box-shadow: var(--shadow), 0 0 22px rgba(75, 86, 210, 0.1);
+}
+:root[data-theme='glass-light'] :is(.menu, .toast, .effort-pop) {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+:root[data-theme='glass-light'] :is(.modal, .onboarding-card) {
+  background: rgba(250, 251, 255, 0.96);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+:root[data-theme='glass-light'] .overlay {
+  background: rgba(22, 26, 44, 0.22);
+  backdrop-filter: blur(8px);
+}
+:root[data-theme='glass-light'] .onboarding {
+  background: transparent;
+}
+:root[data-theme='glass-light'] :is(.card, .board-card, .thread-card, .status-card, .decision, .perm, .page-card, .choice) {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: var(--hairline-top), 0 1px 3px rgba(22, 26, 44, 0.05);
+}
+:root[data-theme='glass-light'] :is(.chip, .attach-chip, .decision-opt) {
+  background: rgba(255, 255, 255, 0.5);
+}
+:root[data-theme='glass-light'] :is(.chip, .attach-chip, .decision-opt, .card, .board-card, .thread-card):hover {
+  background: rgba(255, 255, 255, 0.78);
+}
+:root[data-theme='glass-light'] .bubble {
+  border: 1px solid rgba(75, 86, 210, 0.08);
+}
+:root[data-theme='glass-light'] :is(.btn, .dropdown, .input, .textarea, .select, .search) {
+  border-color: rgba(22, 26, 44, 0.1);
+  box-shadow: var(--hairline-top);
+}
+:root[data-theme='glass-light'] :focus-visible {
+  outline: 2px solid rgba(75, 86, 210, 0.75);
+  outline-offset: 2px;
+}
+:root[data-theme='glass-light'] :is(input, textarea, [contenteditable]):focus-visible,
+:root[data-theme='glass-light'] .menu:focus-visible {
+  outline: none;
+}
+:root[data-theme='glass-light'] .menu-item:focus-visible {
+  outline-offset: -2px;
+}
+:root[data-theme='glass-light'] :is(.input, .textarea):focus {
+  border-color: rgba(75, 86, 210, 0.5);
+  box-shadow: 0 0 0 3px rgba(75, 86, 210, 0.12);
+}
+:root[data-theme='glass-light'] :is(.menu-check, .logo) {
+  color: var(--accent);
+}
+:root[data-theme='glass-light'] .send-btn:not(:disabled) {
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(75, 86, 210, 0.3);
+}
+:root[data-theme='glass-light'] .effort-track { background: rgba(22, 26, 44, 0.07); }
+:root[data-theme='glass-light'] .effort-fill { background: rgba(22, 26, 44, 0.14); }
+:root[data-theme='glass-light'] ::-webkit-scrollbar-thumb {
+  background: rgba(22, 26, 44, 0.16);
+  background-clip: content-box;
+}
+:root.no-blur[data-theme='glass-light'] * {
+  backdrop-filter: none !important;
+}
+:root.no-blur[data-theme='glass-light'] :is(.sidebar, .panel, .page-panel, .composer) {
+  background-color: rgba(250, 251, 255, 0.86);
+}
+:root.no-blur[data-theme='glass-light'] :is(.menu, .modal, .onboarding-card, .toast, .effort-pop) {
+  background: rgba(252, 252, 255, 0.98);
+}

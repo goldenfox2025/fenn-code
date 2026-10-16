@@ -35,7 +35,7 @@ if (!process.env.KEEP_ONBOARDING && (await page.locator('.onboarding').count()))
 }
 // UI_THEME=glass|light|dark sets the app's own theme setting.
 if (process.env.UI_THEME) {
-  await page.evaluate((th) => window.ancora.updateSettings({ theme: th }), process.env.UI_THEME)
+  await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), process.env.UI_THEME)
   await page.waitForTimeout(300)
 }
 const shot = (name) => page.screenshot({ path: join(out, name + '.png') })
@@ -69,6 +69,10 @@ const scenarios = {
     await page.click('.context-ring')
     await wait(300)
     await page.screenshot({ path: `${out}/footer-ring.png`, clip })
+    await page.keyboard.press('Escape')
+    await page.click('.composer .effort-chip')
+    await wait(300)
+    await shot('footer-full')
   },
   async versions() {
     await page.fill('.composer textarea', '你好')

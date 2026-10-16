@@ -97,7 +97,7 @@ const nativeGlass =
   (process.platform === "win32" && Number(release().split(".")[2] ?? 0) >= 22621);
 
 function publish(e: AppEvent): void {
-  if (e.type === "settings") applyWindowMaterial(e.settings.theme);
+  if (e.type === "settings") applyWindowMaterial(e.settings);
   win?.webContents.send("oc:event", e);
   notifier.observe(e);
 }
@@ -439,14 +439,15 @@ ipcMain.on("oc:window", (_e, action: string) => {
   else if (action === "close") win.close();
 });
 
-/** The 太空玻璃 theme lets the desktop show through, blurred, where the OS can do it. */
-function applyWindowMaterial(theme: string | undefined): void {
+/** The glass look lets the desktop show through, blurred, where the OS can do it. */
+function applyWindowMaterial(settings: { theme?: string; glass?: boolean }): void {
   if (!win || !nativeGlass) return;
-  const glass = theme === "glass";
+  const glass = !!settings.glass;
+  const dark = settings.theme === "dark" || (settings.theme !== "light" && nativeTheme.shouldUseDarkColors);
   try {
     if (process.platform === "darwin") win.setVibrancy(glass ? "under-window" : null);
     else win.setBackgroundMaterial(glass ? "acrylic" : "none");
-    win.setBackgroundColor(glass ? "#00000000" : nativeTheme.shouldUseDarkColors ? "#262624" : "#faf9f5");
+    win.setBackgroundColor(glass ? "#00000000" : dark ? "#262624" : "#faf9f5");
   } catch (err) {
     console.warn("window material", err);
   }
@@ -474,7 +475,7 @@ function createWindow(): void {
       contextIsolation: true,
     },
   });
-  applyWindowMaterial(store.settings.theme);
+  applyWindowMaterial(store.settings);
   win.once("ready-to-show", () => win?.show());
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);

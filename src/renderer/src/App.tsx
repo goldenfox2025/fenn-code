@@ -16,6 +16,7 @@ export function App() {
   const ready = useApp((s) => s.ready)
   const route = useApp((s) => s.route)
   const theme = useApp((s) => s.settings.theme)
+  const glass = useApp((s) => !!s.settings.glass)
   const sidebarOpen = useApp((s) => s.sidebarOpen)
   const page = useApp((s) => s.page)
   const platform = useApp((s) => s.platform)
@@ -23,7 +24,7 @@ export function App() {
   // Shown until the guide is finished or skipped, so leaving it half-way brings it back next time.
   const firstRun = useApp((s) => !s.settings.onboarded)
 
-  useTheme(theme)
+  useTheme(theme, glass)
   useShortcuts()
   useReenterNotice()
   useLanguageSync()
@@ -105,22 +106,12 @@ function WindowControls() {
   )
 }
 
-/** One click into the 太空玻璃 theme and back to the theme before it. */
+/** One click to turn the glass look on or off, over whichever color scheme is set. */
 function GlassToggle() {
-  const theme = useApp((s) => s.settings.theme)
-  const on = theme === 'glass'
-  const toggle = () => {
-    let back: 'system' | 'light' | 'dark' = 'system'
-    try {
-      if (on) back = (localStorage.getItem('oc-theme-before-glass') as typeof back) || 'system'
-      else localStorage.setItem('oc-theme-before-glass', theme)
-    } catch {
-      // Storage unavailable: fall back to the system theme.
-    }
-    void api().updateSettings({ theme: on ? back : 'glass' })
-  }
+  const on = useApp((s) => !!s.settings.glass)
+  const toggle = () => void api().updateSettings({ glass: !on })
   return (
-    <button className={'icon-btn glass-toggle' + (on ? ' on' : '')} title={on ? t('退出太空玻璃') : t('太空玻璃')} aria-pressed={on} onClick={toggle}>
+    <button className={'icon-btn glass-toggle' + (on ? ' on' : '')} title={on ? t('退出玻璃效果') : t('玻璃效果')} aria-pressed={on} onClick={toggle}>
       <Orbit size={16} />
     </button>
   )
@@ -129,14 +120,15 @@ function GlassToggle() {
 let nativeGlass: boolean | undefined
 let softwareRendering = false
 
-function useTheme(theme: 'system' | 'light' | 'dark' | 'glass') {
+function useTheme(theme: 'system' | 'light' | 'dark' | 'glass', glass: boolean) {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const root = document.documentElement
     const apply = () => {
-      const dark = theme === 'dark' || (theme === 'system' && mq.matches)
-      root.dataset.theme = theme === 'glass' ? 'glass' : dark ? 'dark' : 'light'
-      root.classList.toggle('native-glass', theme === 'glass' && !!nativeGlass)
+      const dark = theme === 'dark' || theme === 'glass' || (theme === 'system' && mq.matches)
+      // Glass over dark keeps its old name, 'glass'; glass over light is 'glass-light'.
+      root.dataset.theme = glass ? (dark ? 'glass' : 'glass-light') : dark ? 'dark' : 'light'
+      root.classList.toggle('native-glass', glass && !!nativeGlass)
       root.classList.toggle('no-blur', softwareRendering)
     }
     if (nativeGlass === undefined)
@@ -150,7 +142,7 @@ function useTheme(theme: 'system' | 'light' | 'dark' | 'glass') {
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
-  }, [theme])
+  }, [theme, glass])
 }
 
 /** Once per launch: secrets the rename couldn't carry over need entering again. */

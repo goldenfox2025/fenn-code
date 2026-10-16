@@ -70,7 +70,7 @@ await check('a long chat keeps the composer on screen', async () => {
   if (!box || box.y + box.height > vp.height || box.y < 0) throw new Error(`composer at ${JSON.stringify(box)}`)
 })
 
-await check('one click turns 太空玻璃 on and back off, and the long chat still scrolls smoothly', async () => {
+await check('one click turns 玻璃效果 on and back off, and the long chat still scrolls smoothly', async () => {
   const theme = () => page.evaluate(() => document.documentElement.dataset.theme)
   const before = await theme()
   // Scroll the long chat to the top and back, timing frames.
@@ -90,7 +90,7 @@ await check('one click turns 太空玻璃 on and back off, and the long chat sti
   })
   const plain = await scrollTest()
   await page.click('.glass-toggle')
-  await page.waitForFunction(() => document.documentElement.dataset.theme === 'glass')
+  await page.waitForFunction(() => /^glass/.test(document.documentElement.dataset.theme))
   await page.waitForTimeout(200)
   const glass = await scrollTest()
   console.log(`   slowest scroll frame: ${Math.round(plain)} ms ${before}, ${Math.round(glass)} ms glass (software rendering)`)
