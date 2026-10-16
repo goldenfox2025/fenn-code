@@ -245,10 +245,10 @@ await check('the connector form has one 取消 and one 保存; settings close fr
   await page.waitForSelector('.overlay', { state: 'detached', timeout: 2000 })
 })
 
-await check('the sidebar has no Agent 后端 entry; the composer picker ends with 管理 Agent 后端…', async () => {
+await check('the sidebar has no Agent 后端 entry; the agent menu ends with 管理 Agent 后端…', async () => {
   if (await page.locator('.sidebar .nav-item:has-text("Agent 后端")').count()) throw new Error('sidebar still has Agent 后端')
   await page.click('.sidebar .nav-item:has-text("新建")')
-  await page.locator('.composer-row .select-btn').last().click()
+  await page.locator('.composer-row .backend-chip').click()
   await page.waitForSelector('.menu')
   const last = (await page.locator('.menu .menu-item').last().innerText()).trim()
   if (!last.includes('管理 Agent 后端')) throw new Error('last item: ' + last)
@@ -277,8 +277,9 @@ await check('agent errors at send time read as plain Chinese, with the original 
 
 await check('the home composer shows the model name, as inside a chat', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
-  const label = (await page.locator('.composer .select-btn').last().innerText()).trim()
+  const label = (await page.locator('.composer .model-btn').innerText()).trim()
   if (!/^Mock (Fast|Smart)/.test(label)) throw new Error('home shows: ' + label)
+  if ((await page.locator('.composer .backend-chip').innerText()).trim() !== '演示 Agent') throw new Error('no agent chip left of the model')
 })
 
 await check('the new-chat page keeps the greeting and composer in place', async () => {
@@ -286,7 +287,7 @@ await check('the new-chat page keeps the greeting and composer in place', async 
   const top = async () => Math.round((await page.locator('.home .composer').boundingBox()).y)
   const greet = async () => Math.round((await page.locator('.home .greeting').boundingBox()).y)
   const [c0, g0] = [await top(), await greet()]
-  await page.locator('.composer-row .select-btn').last().click()
+  await page.locator('.composer-row .backend-chip').click()
   await page.locator('.menu .menu-item', { hasText: '演示 Agent' }).click()
   await page.fill('.composer textarea', '一\n二\n三\n四\n五\n六')
   await page.waitForTimeout(200)
@@ -462,8 +463,11 @@ await check('the model menu offers the agent’s permission modes and thinking l
   if (!(await page.locator('.composer .context-ring').count())) throw new Error('no context ring')
   const btn = page.locator('.composer .model-btn').last()
   await btn.click()
-  for (const h of ['Agent 后端', '模型', '权限模式']) if (!(await page.locator(`.menu .menu-label:has-text("${h}")`).count())) throw new Error('no ' + h)
-  await page.click('.menu-item:has-text("自动接受编辑")')
+  // Claude's model menu: models with a check or a number key; modes one level down.
+  if (!(await page.locator('.menu.compact .menu-item[aria-checked="true"]').count())) throw new Error('no checked model')
+  if (!(await page.locator('.menu.compact .menu-key').count())) throw new Error('no number keys')
+  await page.hover('.menu-item:has-text("权限模式")')
+  await page.click('.menu.is-sub .menu-item:has-text("自动接受编辑")')
   await page.waitForSelector('.select-btn .mode-note:has-text("自动接受编辑")', { timeout: 3000 })
   await send('写一段话')
   if (await page.locator('.perm').count()) throw new Error('asked for permission in accept-edits mode')
@@ -473,8 +477,9 @@ await check('the model menu offers the agent’s permission modes and thinking l
 
 await check('a mode picked on the new-chat page applies to that chat only', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
-  await page.locator('.composer-row .select-btn').last().click()
-  await page.click('.menu-item:has-text("全部允许")')
+  await page.locator('.composer-row .model-btn').click()
+  await page.hover('.menu-item:has-text("权限模式")')
+  await page.click('.menu.is-sub .menu-item:has-text("全部允许")')
   await page.waitForSelector('.composer-row .mode-note:has-text("全部允许")', { timeout: 2000 })
   await send('写个开头')
   if (!(await page.locator('.msg-assistant').last().innerText()).includes('bypassPermissions')) throw new Error('the chat did not get the mode')

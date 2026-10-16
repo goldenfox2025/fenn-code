@@ -22,4 +22,16 @@ describe('backend sign-in', () => {
     expect(textOf(ok)).toContain('再试一次')
     await dispose()
   }, 30000)
+
+  it('reads a signed-out agent as needing sign-in when loading models early, without throwing', async () => {
+    const { core, dispose } = await makeCore(undefined, { MOCK_AUTH: '1' })
+    const catalog = await core.backendModels('mock')
+    expect(catalog).toEqual({ models: [], needsLogin: true })
+    await expect(core.setModelDefault('mock', 'mock-smart')).rejects.toThrow(/需要登录/)
+    // Signing in makes the models available.
+    await core.backendLogin('mock', 'mock-login')
+    expect((await core.backendModels('mock')).models.length).toBeGreaterThan(0)
+    await dispose()
+  }, 30000)
 })
+

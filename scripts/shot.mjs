@@ -2,7 +2,8 @@
 // Usage: xvfb-run -a node scripts/shot.mjs <outDir> [scenario]
 import { _electron as electron } from 'playwright-core'
 import { execSync } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { declareTestAgent } from './test-agent.mjs'
@@ -10,6 +11,12 @@ import { declareTestAgent } from './test-agent.mjs'
 const out = process.argv[2] ?? 'shots'
 const scenario = process.argv[3] ?? 'basic'
 const dataDir = process.env.ANCORA_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'oc-'))
+// MANY_BACKENDS=12 declares that many extra agents (copies of the demo one), to see long lists.
+if (process.env.MANY_BACKENDS) {
+  const names = ['Gemini CLI', 'Qwen Code', 'Kimi CLI', 'OpenCode', 'Goose', 'Cline', 'Augment', 'Cursor Agent', 'Aider', 'Amp', 'Crush', 'Junie', 'Warp', 'Devin', 'Roo']
+  const agent = fileURLToPath(new URL('../resources/mock-agent.mjs', import.meta.url))
+  writeFileSync(join(dataDir, 'backends.json'), JSON.stringify(names.slice(0, Number(process.env.MANY_BACKENDS)).map((name, i) => ({ id: 'extra' + i, name, command: process.execPath, args: [agent] }))))
+}
 declareTestAgent(dataDir)
 const app = await electron.launch({
   ...(process.env.APP_PATH ? { executablePath: process.env.APP_PATH, args: ['--no-sandbox'] } : { args: ['.', '--no-sandbox'] }),
@@ -45,6 +52,31 @@ page.on('console', (m) => m.type() === 'error' && console.log('[renderer]', m.te
 page.on('pageerror', (e) => console.log('[pageerror]', e.message, e.stack?.split('\n').slice(0, 4).join(' | ')))
 
 const scenarios = {
+  // MOCK_AUTH=1: the agent is installed but signed out; the picker says so instead of failing.
+  async signedout() {
+    await wait(2500)
+    await page.click('.model-btn')
+    await wait(500)
+    await shot('signed-out-picker')
+  },
+  // Many agents: the backend menu keeps four and puts the rest under 更多后端.
+  async many() {
+    await wait(1500)
+    const box = await page.locator('.composer-wrap').boundingBox()
+    const clip = { x: box.x - 20, y: box.y - 420, width: box.width + 300, height: 960 - (box.y - 420) }
+    await page.click('.backend-chip')
+    await wait(300)
+    await page.screenshot({ path: `${out}/many-backends.png`, clip })
+    await page.hover('.menu .menu-item:has-text("更多后端")')
+    await wait(500)
+    await page.screenshot({ path: `${out}/many-backends-more.png`, clip })
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await page.click('.model-btn')
+    await wait(300)
+    await page.screenshot({ path: `${out}/many-models.png`, clip })
+    await page.keyboard.press('Escape')
+  },
   // The composer footer: model list, effort slider and context ring.
   async footer() {
     await page.fill('.composer textarea', '你好')
@@ -52,9 +84,7 @@ const scenarios = {
     await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
     await wait(600)
     const box = await page.locator('.composer-wrap').boundingBox()
-    const group = await page.locator('.model-group').boundingBox()
-    const right = Math.min(group.x + group.width + 120, 1600)
-    const clip = { x: right - 520, y: box.y - 300, width: 520, height: box.height + 300 }
+    const clip = { x: box.x + box.width - 640, y: box.y - 300, width: 660, height: box.height + 310 }
     await page.click('.effort-chip')
     await wait(300)
     await page.screenshot({ path: `${out}/footer-effort.png`, clip })

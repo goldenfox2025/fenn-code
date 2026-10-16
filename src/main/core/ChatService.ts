@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionInfo, SessionOption, TurnResult } from '../../shared/contract'
 import type { PromptPart } from '../../shared/contract'
 import type { AppEvent, Attachment, Block, Conversation, Message } from '../../shared/model'
-import { addTurn, emptyTotals, estimateTokens, type MessageUsage } from '../../shared/usage'
+import { addTurn, emptyTotals, type MessageUsage } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import { t } from '../../shared/i18n'
@@ -55,8 +55,6 @@ interface Live {
   /** Turns and characters exchanged in this session, for deciding when to hand off. */
   turns: number
   chars: number
-  /** The app's token estimate of what the session holds, for agents that report no usage. */
-  estTokens: number
   /** Set while a session opened ahead of the first message has not been prompted yet: whether it starts empty. */
   unprompted?: { fresh: boolean }
   /** The session's cumulative cost as the backend last reported it (ACP usage_update). */
@@ -239,7 +237,6 @@ export class ChatService {
       const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
       live.turns++
       live.chars += promptText.length
-      live.estTokens += estimateTokens(promptText) + attachments.reduce((n, a) => n + estimateTokens(a.text ?? ''), 0)
       costAtStart = live.cost
       this.meters.set(conversationId, new TurnMeter(performance.now()))
       result = await this.backends.prompt(live.backendId, live.sessionId, parts)
@@ -251,15 +248,7 @@ export class ChatService {
     this.current.delete(conversationId)
     reply.state = result.stopReason === 'error' ? 'error' : result.stopReason === 'cancelled' ? 'cancelled' : 'done'
     if (result.error) reply.error = result.error
-    let usage = turnUsageOf(result, costAtStart, live?.cost)
-    // No token counts from the agent: count what went back and forth, and say it is an estimate.
-    const reported = usage && (usage.input !== undefined || usage.output !== undefined || usage.total !== undefined)
-    const produced = estimateReply(reply)
-    if (live) live.estTokens += produced.output + produced.tools
-    if (!reported && live && result.stopReason !== 'error' && (produced.output || produced.tools)) {
-      const input = live.estTokens - produced.output
-      usage = { ...usage, input, output: produced.output, total: input + produced.output, estimated: true }
-    }
+    const usage = turnUsageOf(result, costAtStart, live?.cost)
     if (usage) reply.usage = usage
     reply.timing = this.meters.get(conversationId)?.finish(result.usage, result.stopReason,
       !this.backends.list().find((b) => b.id === conv!.backendId)?.credits)
@@ -268,7 +257,7 @@ export class ChatService {
     // A turn that failed before the agent answered says nothing about what the backend reports.
     if (usage || (live && result.stopReason !== 'error')) {
       const c = this.store.conversation(conversationId)
-      if (c) this.patchConversation(conversationId, { usage: { ...addTurn(c.usage, usage), contextUsed: c.usage?.contextUsed, contextSize: c.usage?.contextSize, contextEstimate: live?.estTokens ?? c.usage?.contextEstimate } })
+      if (c) this.patchConversation(conversationId, { usage: { ...addTurn(c.usage, usage), contextUsed: c.usage?.contextUsed, contextSize: c.usage?.contextSize } })
     }
 
     if (live) live.chars += JSON.stringify(reply.blocks).length
@@ -357,12 +346,12 @@ export class ChatService {
     info ??= await withTimeout(this.backends.newSession(conv.backendId, opts), CONNECT_TIMEOUT,
       t('{0} 在 {1} 秒内没有连上。请确认它在终端里能正常运行，然后点重试。', name, CONNECT_TIMEOUT / 1000))
 
-    const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, estTokens: 0, unprompted: { fresh } }
+    const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, unprompted: { fresh } }
     // A new session starts with an empty context; the old session's figures no longer apply.
     if (fresh) {
       const u = this.store.conversation(conv.id)?.usage
-      if (u && (u.contextUsed !== undefined || u.contextSize !== undefined || u.contextEstimate !== undefined))
-        this.patchConversation(conv.id, { usage: { ...u, contextUsed: undefined, contextSize: undefined, contextEstimate: undefined } })
+      if (u && (u.contextUsed !== undefined || u.contextSize !== undefined))
+        this.patchConversation(conv.id, { usage: { ...u, contextUsed: undefined, contextSize: undefined } })
     }
     this.live.set(conv.id, live)
     this.bySession.set(`${conv.backendId}:${info.sessionId}`, conv.id)
@@ -662,20 +651,6 @@ export function plainPreview(md: string, max = 140): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, max)
-}
-
-/** Estimated tokens a reply generated (text, thinking, tool calls) and tool results it read back in. */
-export function estimateReply(m: Message): { output: number; tools: number } {
-  let output = 0
-  let tools = 0
-  for (const b of m.blocks) {
-    if (b.type === 'text' || b.type === 'thought') output += estimateTokens(b.text)
-    else if (b.type === 'tool') {
-      output += estimateTokens(b.input ?? '') + estimateTokens(b.title)
-      tools += estimateTokens(b.output ?? '')
-    }
-  }
-  return { output, tools }
 }
 
 /** How long opening an agent session may take before the app says so and offers a retry. */

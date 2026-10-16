@@ -389,7 +389,7 @@ export class Orchestrator {
       title,
       projectId: project.id,
       anchorMessageId: anchor?.id,
-      backendId: project.backendId,
+      backendId: this.pickBackend?.(project.backendId) ?? project.backendId,
       cwd: project.cwd
     })
     if (anchor) {
@@ -480,6 +480,9 @@ export class Orchestrator {
       }
     ]
   }
+
+  /** Set by the core: the installed backend a new thread should use, given the project's. */
+  pickBackend?: (preferred?: string) => string
 
   /** Called when a project's library of outputs changes. */
   onProjectChanged?: (p: Project) => void

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 
 export interface MenuItem {
   label?: ReactNode
@@ -14,6 +14,12 @@ export interface MenuItem {
   checked?: boolean
   /** A line of information, not a choice (shown at full strength, never clickable). */
   info?: boolean
+  /** A key (shown muted on the right) that picks this item while the menu is open, as in Claude's model menu. */
+  shortcut?: string
+  /** Muted text on the right, e.g. the current value of a submenu. */
+  hint?: string
+  /** Opens beside the menu on hover, click or →. */
+  submenu?: MenuItem[]
 }
 
 /** The button whose menu item was chosen last: a dialog that item opens returns focus there. */
@@ -21,6 +27,7 @@ let lastAnchor: HTMLElement | null = null
 export const lastMenuAnchor = () => lastAnchor
 
 const actionable = (it: MenuItem) => !it.separator && !it.heading && !it.disabled && !it.info
+const inAnyMenu = (target: EventTarget | null) => !!(target as Element | null)?.closest?.('.menu')
 
 /**
  * The app's one popover menu, used for every dropdown and "…" menu:
@@ -44,7 +51,10 @@ export function Menu({
   onClose,
   align = 'left',
   placement = 'below',
-  matchWidth
+  matchWidth,
+  compact,
+  onPicked,
+  parentFocus
 }: {
   anchor: HTMLElement
   /** Where the anchor was when the menu opened, used if the anchor has been redrawn away since. */
@@ -52,9 +62,15 @@ export function Menu({
   items: MenuItem[]
   onClose: () => void
   align?: 'left' | 'right'
-  placement?: 'below' | 'above'
+  placement?: 'below' | 'above' | 'side'
   /** At least as wide as the anchor (form dropdowns). */
   matchWidth?: boolean
+  /** Claude's model-menu look: narrow, one line per item. */
+  compact?: boolean
+  /** A submenu: closes the whole menu once something is chosen. */
+  onPicked?: () => void
+  /** A submenu: where ← and Esc return focus. */
+  parentFocus?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const anchor = liveAnchor(opener) ?? opener
@@ -63,7 +79,10 @@ export function Menu({
     const sel = items.findIndex((it) => it.checked && actionable(it))
     return sel >= 0 ? sel : items.findIndex(actionable)
   })
-  const hasChecks = items.some((it) => it.checked !== undefined)
+  const hasChecks = items.some((it) => it.checked !== undefined || it.shortcut || it.submenu || it.hint)
+  const [sub, setSub] = useState<{ index: number; el: HTMLElement } | null>(null)
+  const subTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(subTimer.current), [])
 
   useLayoutEffect(() => {
     const place = () => {
@@ -83,6 +102,15 @@ export function Menu({
       element.style.left = previousLeft
       element.style.maxHeight = previousMaxHeight
       const width = Math.max(m.width, matchWidth ? r.width : 0)
+      if (placement === 'side') {
+        // Beside the item it opened from, flipping to the left edge when the right has no room.
+        let sideLeft = r.right + 6
+        if (sideLeft + width > window.innerWidth - 8) sideLeft = Math.max(8, r.left - width - 6)
+        const maxHeight = Math.min(m.height, window.innerHeight - 16)
+        const sideTop = Math.max(8, Math.min(r.top - 5, window.innerHeight - maxHeight - 8))
+        setPos({ left: sideLeft, top: sideTop, maxHeight })
+        return
+      }
       let left = align === 'right' ? r.right - width : r.left
       const gap = 8
       const room = { above: Math.max(0, r.top - gap - 8), below: Math.max(0, window.innerHeight - r.bottom - gap - 8) }
@@ -115,17 +143,26 @@ export function Menu({
 
   useEffect(() => {
     const down = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node) && !anchor.contains(e.target as Node)) onClose()
+      // A click in this menu's own submenu (another .menu) isn't outside it.
+      if (!ref.current?.contains(e.target as Node) && !anchor.contains(e.target as Node) && !inAnyMenu(e.target)) onClose()
     }
     document.addEventListener('mousedown', down)
     return () => document.removeEventListener('mousedown', down)
   }, [anchor, onClose])
 
-  const choose = (it: MenuItem) => {
+  const openSub = (i: number, focus = false) => {
+    const el = ref.current?.querySelector<HTMLElement>(`[data-index="${i}"]`)
+    if (!el || !items[i]?.submenu) return
+    setSub({ index: i, el })
+    if (focus) requestAnimationFrame(() => document.querySelector<HTMLElement>('.menu.is-sub')?.focus({ preventScroll: true }))
+  }
+  const choose = (it: MenuItem, i = items.indexOf(it)) => {
     if (!actionable(it)) return
+    if (it.submenu) return openSub(i, true)
     onClose()
+    onPicked?.()
     const back = liveAnchor(opener) ?? anchor
-    back.focus()
+    if (!onPicked) back.focus()
     lastAnchor = back
     it.onClick?.()
   }
@@ -136,14 +173,25 @@ export function Menu({
     }
   }
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') move(active, 1)
+    if (e.target !== e.currentTarget) return
+    const byKey = items.findIndex((it) => it.shortcut === e.key && actionable(it))
+    if (byKey >= 0) {
+      e.preventDefault()
+      return choose(items[byKey], byKey)
+    }
+    if (e.key === 'ArrowRight' && items[active]?.submenu) openSub(active, true)
+    else if (e.key === 'ArrowLeft' && parentFocus) {
+      onClose()
+      parentFocus()
+    } else if (e.key === 'ArrowDown') move(active, 1)
     else if (e.key === 'ArrowUp') move(active < 0 ? 0 : active, -1)
     else if (e.key === 'Home') move(-1, 1)
     else if (e.key === 'End') move(0, -1)
     else if (e.key === 'Enter' || e.key === ' ') items[active] && choose(items[active])
     else if (e.key === 'Escape' || e.key === 'Tab') {
       onClose()
-      ;(liveAnchor(opener) ?? anchor).focus()
+      if (parentFocus) parentFocus()
+      else (liveAnchor(opener) ?? anchor).focus()
     } else if (e.key.length === 1) {
       // Jump to the next item starting with the typed letter.
       const k = e.key.toLowerCase()
@@ -163,7 +211,7 @@ export function Menu({
   }
 
   return createPortal(
-    <div className="menu" role="menu" tabIndex={-1} ref={ref} style={pos} onKeyDown={onKey}>
+    <div className={'menu' + (compact ? ' compact' : '') + (parentFocus ? ' is-sub' : '')} role="menu" tabIndex={-1} ref={ref} style={pos} onKeyDown={onKey}>
       {items.map((it, i) =>
         it.separator ? (
           <div key={i} className="menu-sep" role="separator" />
@@ -177,20 +225,51 @@ export function Menu({
             data-index={i}
             role={it.checked !== undefined ? 'menuitemradio' : 'menuitem'}
             aria-checked={it.checked !== undefined ? it.checked : undefined}
+            aria-haspopup={it.submenu ? 'menu' : undefined}
+            aria-expanded={it.submenu ? sub?.index === i : undefined}
+            aria-keyshortcuts={it.shortcut}
             tabIndex={-1}
             disabled={it.disabled || it.info}
-            className={'menu-item' + (it.info ? ' info' : '') + (it.danger ? ' danger' : '') + (i === active ? ' active' : '')}
-            onMouseEnter={() => actionable(it) && setActive(i)}
-            onClick={() => choose(it)}
+            className={'menu-item' + (it.info ? ' info' : '') + (it.danger ? ' danger' : '') + (i === active || sub?.index === i ? ' active' : '')}
+            onMouseEnter={() => {
+              if (actionable(it)) setActive(i)
+              clearTimeout(subTimer.current)
+              // A short pause, so moving the pointer diagonally into an open submenu doesn't close it.
+              subTimer.current = setTimeout(() => (it.submenu ? openSub(i) : setSub(null)), it.submenu ? 80 : 220)
+            }}
+            onClick={() => choose(it, i)}
           >
             {it.icon}
             <span className="menu-text">
               {it.label}
               {it.sub && <span className="sub">{it.sub}</span>}
             </span>
-            {hasChecks && <span className="menu-check">{it.checked && <Check size={15} />}</span>}
+            {it.hint && <span className="menu-hint">{it.hint}</span>}
+            {hasChecks && (
+              <span className="menu-check">
+                {it.submenu ? <ChevronRight size={15} /> : it.checked ? <Check size={15} /> : it.shortcut ? <span className="menu-key">{it.shortcut}</span> : null}
+              </span>
+            )}
           </button>
         )
+      )}
+      {sub && items[sub.index]?.submenu && (
+        <Menu
+          anchor={sub.el}
+          items={items[sub.index].submenu!}
+          placement="side"
+          compact={compact}
+          onClose={() => setSub(null)}
+          onPicked={() => {
+            onClose()
+            onPicked?.()
+            ;(liveAnchor(opener) ?? anchor).focus()
+          }}
+          parentFocus={() => {
+            ref.current?.focus({ preventScroll: true })
+            setActive(sub.index)
+          }}
+        />
       )}
     </div>,
     document.body
@@ -198,7 +277,7 @@ export function Menu({
 }
 
 /** Hook: const [menu, open] = useMenu(); <button onClick={e => open(e.currentTarget, items)}> {menu} */
-export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 'above'; matchWidth?: boolean } = {}) {
+export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 'above'; matchWidth?: boolean; compact?: boolean } = {}) {
   const [state, setState] = useState<{ anchor: HTMLElement; rect: DOMRect; items: MenuItem[] } | null>(null)
   const node = state ? <Menu anchor={state.anchor} rect={state.rect} items={state.items} onClose={() => setState(null)} {...opts} /> : null
   return [

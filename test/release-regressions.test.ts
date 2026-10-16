@@ -29,16 +29,16 @@ function startup(availability: Record<string, boolean>, saved = '') {
 }
 
 describe('first-run backend selection', () => {
-  it('selects an installed agent without running sign-in commands or an agent', () => {
-    const { store, account } = startup({ codex: false, 'claude-code': false, qoder: true })
+  it('selects an installed agent without launching an agent', () => {
+    const { store } = startup({ codex: false, 'claude-code': false, qoder: true })
     expect(store.settings.defaultBackendId).toBe('qoder')
-    expect(account).not.toHaveBeenCalled()
   })
-  it('falls back to Codex when no programs are installed', () => {
-    expect(startup({ custom: false, qoder: false, codex: false }).store.settings.defaultBackendId).toBe('codex')
+  it('picks no agent when none is installed, and never one that is missing', () => {
+    expect(startup({ custom: false, qoder: false, codex: false }).store.settings.defaultBackendId).toBe('')
   })
-  it('preserves a saved choice even if another agent is installed', () => {
-    expect(startup({ codex: true, qoder: false }, 'qoder').store.settings.defaultBackendId).toBe('qoder')
+  it('preserves a saved choice while it is installed, and moves off one that is not', () => {
+    expect(startup({ codex: true, qoder: true }, 'qoder').store.settings.defaultBackendId).toBe('qoder')
+    expect(startup({ codex: true, qoder: false }, 'qoder').store.settings.defaultBackendId).toBe('codex')
   })
   it('requires the ACP adapter as well as the CLI', () => {
     const program = join(mkdtempSync(join(tmpdir(), 'ancora-program-')), 'agent')

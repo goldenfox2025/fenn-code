@@ -93,10 +93,14 @@ try {
   // As in Claude's composer: one list for the agent, its models and modes, and an effort slider beside it.
   const picker = () => page.locator('.composer .model-btn')
   const openPicker = () => picker().click()
+  // Agents are in the chip left of the model; anything past the first few is one level down.
+  const AGENTS = /Qoder|演示 Agent|Cold catalog|Codex|Claude Code|Grok/
   const choose = async (name) => {
-    await openPicker()
-    await page.getByRole('menuitemradio', { name }).click()
-    await page.locator('.menu').waitFor({ state: 'detached' })
+    await (AGENTS.test(String(name)) ? page.locator('.composer .backend-chip') : picker()).click()
+    const item = page.getByRole('menuitemradio', { name })
+    if (!(await item.count())) await page.getByRole('menuitem', { name: /^更多(后端|模型)/ }).hover()
+    await item.first().click()
+    await page.locator('.menu').first().waitFor({ state: 'detached' })
   }
   const effortStops = async () => {
     await page.locator('.composer .effort-chip').click()

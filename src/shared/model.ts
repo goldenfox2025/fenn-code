@@ -278,6 +278,8 @@ export interface BackendModelCatalog {
   models: ModelInfo[]
   current?: string
   options?: SessionOption[]
+  /** The agent wouldn't open a session because it isn't signed in; no models until it is. */
+  needsLogin?: boolean
 }
 
 export interface AppSettings {

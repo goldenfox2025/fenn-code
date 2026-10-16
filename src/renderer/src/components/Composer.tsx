@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp, ChevronDown, SlidersHorizontal, CornerDownLeft, FileText, Folder, FolderGit2, FolderKanban, FolderOpen, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, CornerDownLeft, FileText, Folder, FolderGit2, FolderKanban, FolderOpen, Plus, Square, X } from 'lucide-react'
 import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp } from '../store'
@@ -50,7 +50,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   useEffect(() => {
     for (const b of backends) if (b.account) void refreshAccount(b.id, 60_000)
   }, [backends])
-  const [menu, openMenu, updateMenu] = useMenu({ placement: 'above', align: 'right' })
+  const [menu, openMenu, updateMenu] = useMenu({ placement: 'above', align: 'right', compact: true })
   const hasPermission = useApp((s) => !!conversation && s.permissions.some((p) => p.conversationId === conversation.id))
   const busy = conversation?.status === 'working' || hasPermission
   const draftKey = conversation ? `draft:${conversation.id}` : 'draft:new'
@@ -112,16 +112,21 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   }
   const modeOpt = options.find((o) => o.category === 'mode')
   const modeValue = modeOpt && valueOf(modeOpt)
-  const modeNote = modeOpt && modeValue && modeValue !== modeOpt.choices[0]?.value ? choiceLabel(modeOpt.choices.find((c) => c.value === modeValue)?.name ?? modeValue) : ''
+  const modeNote = modeOpt && modeValue && modeValue !== modeOpt.choices[0]?.value ? choiceLabel(modeOpt.choices.find((c) => c.value === modeValue)?.name ?? modeValue, modeValue) : ''
   // Thinking level gets its own slider beside the model, like Claude's effort control.
   const effortOpt = options.find((o) => o.category === 'thought_level' || (!o.category && /reasoning|effort|thinking/i.test(o.id)))
 
-  const accountHint = (id: string): string | undefined => {
+  // Set below once the model probe has answered: an agent that refused because it is signed out.
+  const catalogFor = useRef<{ id: string; needsLogin?: boolean }>({ id: '' })
+  // What the account check says; the model probe can also find an agent signed out.
+  const accountState = (id: string): string | undefined => {
     const b = backends.find((x) => x.id === id)
     if ((accounts[id]?.installed ?? b?.installed) === false) return t('未安装')
     if (accounts[id]?.signedIn === false) return t('未登录')
     return undefined
   }
+  const accountHint = (id: string): string | undefined =>
+    accountState(id) ?? (id === catalogFor.current.id && catalogFor.current.needsLogin ? t('未登录') : undefined)
 
   // Connect to the agent while the user reads or types, so pressing Enter only sends (no prompt is sent here).
   const ready = !!conversation && !!currentBackend && !accountHint(bid)
@@ -130,17 +135,17 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   }, [conversation?.id, bid, ready])
 
   // The models a backend offers, read from a fresh session before the first message (no prompt is sent).
-  const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string }>({ for: '', loading: false })
+  const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string; needsLogin?: boolean }>({ for: '', loading: false })
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     let live = true
     const known = models.length > 0 && (!wanted || remembered?.current === wanted || !!conversation?.sessionRef)
-    if (!bid || busy || accountHint(bid) || known) return setCatalog({ for: bid, loading: false })
+    if (!bid || busy || accountState(bid) || known) return setCatalog({ for: bid, loading: false })
     setCatalog({ for: bid, loading: true })
     api()
       .backendModels(bid, wanted)
       .then(
-        () => live && setCatalog({ for: bid, loading: false }),
+        (c) => live && setCatalog({ for: bid, loading: false, needsLogin: c.needsLogin }),
         (e) => live && setCatalog({ for: bid, loading: false, error: e instanceof Error ? e.message : String(e) })
       )
     return () => {
@@ -148,6 +153,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     }
   }, [bid, wanted, conversation?.id, conversation?.sessionRef?.sessionId, busy, currentBackend?.installed, accounts[bid]?.signedIn, retry])
   const loadingModels = catalog.loading || catalog.for !== bid
+  catalogFor.current = { id: catalog.for, needsLogin: catalog.needsLogin }
 
   // One choice at a time; the message waits until it has been applied.
   const [selecting, setSelecting] = useState(false)
@@ -170,86 +176,103 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     void choose(() => (conversation ? api().setOption(conversation.id, o.id, value) : api().setOptionDefault(bid, o.id, value)))
   }
 
-  // Like Claude's model list: the agent, then its models, then its modes, each with a check mark.
-  const pickerItems = (): MenuItem[] => {
-    const items: MenuItem[] = []
-    const canPick = !!(conversation || onModelChange)
-    // Only backends that can answer; installing and signing in live in Settings. A chat can change
-    // agent while it is idle: the new one gets the conversation so far.
-    if (onBackendChange || conversation) {
-      const usable = backends.filter((b) => b.id === bid || backendAvailable(b, accounts[b.id]))
-      items.push({ heading: usable.length ? t('Agent 后端') : t('还没有可用的 Agent 后端，请在设置里安装或登录') })
-      for (const b of usable)
-        items.push({
-          label: b.name,
-          sub: b.description,
-          checked: b.id === bid,
-          disabled: busy,
-          onClick: () => {
-            if (b.id === bid) return
-            if (conversation) void choose(() => api().updateConversation(conversation.id, { backendId: b.id }))
-            else onBackendChange?.(b.id)
-          }
-        })
+  const canPick = !!(conversation || onModelChange)
+  const canSwitch = !!(conversation || onBackendChange)
+  const manageItem: MenuItem = { label: t('管理 Agent 后端…'), onClick: () => useApp.getState().set({ settingsOpen: 'backends' }) }
+  const signedOut = !!currentBackend && accountHint(bid) === t('未登录')
+
+  // As in Claude's model menu: a few items with a check or a number key, the rest one level down.
+  const SHOWN = 4
+  const firstFew = <T,>(list: T[], current: (x: T) => boolean): [T[], T[]] => {
+    if (list.length <= SHOWN + 1) return [list, []]
+    const top = list.slice(0, SHOWN)
+    const cur = list.find(current)
+    if (cur && !top.includes(cur)) top[SHOWN - 1] = cur
+    return [top, list.filter((x) => !top.includes(x))]
+  }
+
+  // The agent: installed ones only (installing and signing in live in Settings). An idle chat can
+  // change agent; the new one gets the conversation so far.
+  const backendItems = (): MenuItem[] => {
+    const usable = backends.filter((b) => b.id === bid || backendAvailable(b, accounts[b.id]))
+    const pick = (id: string) => {
+      if (id === bid) return
+      if (conversation) void choose(() => api().updateConversation(conversation.id, { backendId: id }))
+      else onBackendChange?.(id)
     }
-    if (canPick && models.length) {
-      items.push({ heading: t('模型') })
-      for (const m of models)
-        items.push({
-          label: m.name,
-          sub: m.description,
-          checked: m.id === currentModel?.id,
-          disabled: busy,
-          onClick: () =>
-            void choose(async () => {
-              if (conversation) return api().setModel(conversation.id, m.id)
-              await api().setModelDefault(bid, m.id)
-              onModelChange?.(m.id)
-            })
-        })
-    } else if (canPick && currentBackend && !accountHint(bid)) {
-      items.push({ heading: t('模型') })
-      if (loadingModels) items.push({ label: t('正在加载模型…'), info: true })
-      else if (catalog.error) items.push({ label: t('无法加载模型列表'), sub: catalog.error, onClick: () => setRetry((n) => n + 1) })
-      else items.push({ label: t('{0} 没有提供模型选择', currentBackend.name), info: true })
-    }
-    if (canPick)
-      for (const o of options) {
-        if (o === effortOpt) continue
-        items.push({ heading: optionLabel(o) })
-        const now = valueOf(o)
-        for (const c of o.choices) {
-          const label = choiceLabel(c.name)
-          items.push({ label, sub: label !== c.name ? c.name : c.description, checked: c.value === now, disabled: busy, onClick: () => setOptionValue(o, c.value) })
-        }
-      }
-    const manage = () => useApp.getState().set({ settingsOpen: 'backends' })
-    items.push({ separator: true })
-    items.push({ icon: <SlidersHorizontal size={15} />, label: t('管理 Agent 后端…'), onClick: manage })
+    const [top, rest] = firstFew(usable, (b) => b.id === bid)
+    const items: MenuItem[] = top.map((b, i) => ({ label: b.name, checked: b.id === bid, shortcut: String(i + 1), disabled: busy, onClick: () => pick(b.id) }))
+    if (!usable.length) items.push({ label: t('还没有可用的 Agent 后端'), info: true })
+    if (rest.length) items.push({ separator: true }, { label: t('更多后端'), submenu: rest.map((b) => ({ label: b.name, checked: false, disabled: busy, onClick: () => pick(b.id) })) })
+    items.push({ separator: true }, manageItem)
     return items
   }
-  // An open picker shows the models as soon as they arrive.
-  useEffect(() => updateMenu(pickerItems()), [models.length, loadingModels, catalog.error])
 
-  const note = modeNote
+  // The current agent's models; its permission modes one level down.
+  const modelItems = (): MenuItem[] => {
+    const items: MenuItem[] = []
+    if (signedOut) items.push({ label: t('{0} 还没登录', currentBackend!.name), hint: t('去登录'), onClick: manageItem.onClick })
+    else if (!models.length) {
+      if (loadingModels) items.push({ label: t('正在加载模型…'), info: true })
+      else if (catalog.error) items.push({ label: t('无法加载模型列表'), hint: t('重试'), onClick: () => setRetry((n) => n + 1) })
+    }
+    const setModel = (id: string) =>
+      void choose(async () => {
+        if (conversation) return api().setModel(conversation.id, id)
+        await api().setModelDefault(bid, id)
+        onModelChange?.(id)
+      })
+    const [top, rest] = firstFew(models, (m) => m.id === currentModel?.id)
+    top.forEach((m, i) => items.push({ label: m.name, checked: m.id === currentModel?.id, shortcut: String(i + 1), disabled: busy, onClick: () => setModel(m.id) }))
+    const more: MenuItem[] = []
+    if (rest.length) more.push({ label: t('更多模型'), submenu: rest.map((m) => ({ label: m.name, checked: false, disabled: busy, onClick: () => setModel(m.id) })) })
+    for (const o of options) {
+      if (o === effortOpt) continue
+      const now = valueOf(o)
+      more.push({
+        label: optionLabel(o),
+        hint: choiceLabel(o.choices.find((c) => c.value === now)?.name ?? '', now),
+        submenu: o.choices.map((c) => ({ label: choiceLabel(c.name, c.value), checked: c.value === now, disabled: busy, onClick: () => setOptionValue(o, c.value) }))
+      })
+    }
+    if (more.length && items.length) items.push({ separator: true })
+    items.push(...more)
+    return items
+  }
+  // An open menu shows the models as soon as they arrive.
+  useEffect(() => updateMenu(menuFor.current === 'model' ? modelItems() : backendItems()), [models.length, loadingModels, catalog.error, catalog.needsLogin, bid])
+  const menuFor = useRef<'model' | 'backend'>('model')
+  const open = (which: 'model' | 'backend', el: HTMLElement) => {
+    menuFor.current = which
+    openMenu(el, which === 'model' ? modelItems() : backendItems())
+  }
+
+  const showModel = canPick && (models.length > 0 || loadingModels || !!catalog.error || signedOut)
   const modelButton = (
     <span className="model-group">
-    <button
-      className="select-btn model-btn"
-      aria-busy={loadingModels || selecting}
-      onClick={(e) => {
-        e.stopPropagation()
-        openMenu(e.currentTarget, pickerItems())
-      }}
-    >
-      {currentModel?.name ?? currentBackend?.name ?? t('选择后端')}
-      {note && <span className="mode-note"> · {note}</span>}
-      {currentBackend && accountHint(currentBackend.id) && <span className="mode-note warn"> · {accountHint(currentBackend.id)}</span>}
-    </button>
-    {effortOpt && (conversation || onModelChange) && (
-      <EffortPicker option={effortOpt} value={valueOf(effortOpt)} disabled={busy} onChange={(v) => setOptionValue(effortOpt, v)} />
-    )}
-    {conversation && <ContextRing usage={conversation.usage} timing={conversation.timing} scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')} />}
+      {canSwitch && (
+        <button className="footer-chip backend-chip" aria-haspopup="menu" title={t('Agent 后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
+          {currentBackend?.name ?? t('选择后端')}
+        </button>
+      )}
+      {showModel && (
+        <button
+          className="footer-chip select-btn model-btn"
+          aria-haspopup="menu"
+          aria-busy={loadingModels || selecting}
+          title={t('模型')}
+          onClick={(e) => (e.stopPropagation(), open('model', e.currentTarget))}
+        >
+          {signedOut ? <span className="mode-note warn">{t('未登录')}</span> : (currentModel?.name ?? <span className="muted">{t('模型')}</span>)}
+          {modeNote && <span className="mode-note"> · {modeNote}</span>}
+        </button>
+      )}
+      {effortOpt && canPick && !signedOut && (
+        <EffortPicker option={effortOpt} value={valueOf(effortOpt)} disabled={busy} onChange={(v) => setOptionValue(effortOpt, v)} />
+      )}
+      {conversation?.usage?.contextSize ? (
+        <ContextRing usage={conversation.usage} timing={conversation.timing} scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')} />
+      ) : null}
     </span>
   )
   // The working folder: a project's own for its chat and threads, else the conversation's.

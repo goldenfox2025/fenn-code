@@ -25,6 +25,7 @@ import { applyPatch, removeItem } from './progress'
 import { FolderFinder, foldersInText, matchingFolders, rankFolders } from './folders'
 import { localeTag, t, tk } from '../../shared/i18n'
 import type { BackendModelCatalog } from '../../shared/model'
+import { classifyError } from '../../shared/errors'
 
 /** An unanswered request to control the computer gives up after this long. */
 const ASK_TIMEOUT_MS = 3 * 60_000
@@ -63,6 +64,7 @@ export class AppCore {
     this.orchestrator = new Orchestrator(store, this.chat, tools, this.memory, this.files, this.artifacts, backends)
     this.orchestrator.progress = (projectId, patch, by) => this.applyProgress(projectId, patch, by)
     this.orchestrator.onProjectChanged = (project) => this.publish({ type: 'project', project })
+    this.orchestrator.pickBackend = (preferred) => this.resolveBackend(preferred)
     this.orchestrator.extraTools = (conv) => [...this.routineTools(conv), ...(this.computer?.tools(conv) ?? [])]
     this.autoAssigner = new AutoAssigner(store, this.chat, backends)
     this.scheduler = new Scheduler(store, this)
@@ -104,6 +106,7 @@ export class AppCore {
       this.chat.turnEndListeners.add((id) => computer.turnEnded(id))
     }
     this.repairBackends()
+    this.signInRepair = this.repairSignIns().catch(() => undefined)
     const orchestrate = this.chat.hooks.afterTurn
     this.chat.hooks.afterTurn = (conv, reply, result) => {
       orchestrate?.(conv, reply, result)
@@ -128,10 +131,25 @@ export class AppCore {
 
   // ---- chats --------------------------------------------------------------
 
+  /**
+   * The backend new work goes to: the one asked for, else the default, as long
+   * as it isn't known to be missing; otherwise the first installed one (Codex
+   * first). An agent that isn't installed is never picked on the user's behalf.
+   */
   resolveBackend(preferred?: string): string {
-    if (preferred && this.backends.has(preferred)) return preferred
+    const list = this.backends.list()
+    const ok = (id?: string): id is string => !!id && list.some((b) => b.id === id && b.installed !== false)
+    if (ok(preferred)) return preferred
     const def = this.store.settings.defaultBackendId
-    return this.backends.has(def) ? def : this.backends.list()[0].id
+    if (ok(def)) return def
+    return this.firstInstalledBackend() ?? (preferred && this.backends.has(preferred) ? preferred : def)
+  }
+
+  /** The first installed agent in the preferred order (Codex first), if any is. */
+  firstInstalledBackend(): string | undefined {
+    const list = this.backends.list()
+    const installed = (id: string) => list.some((b) => b.id === id && b.installed === true)
+    return PREFERRED_BACKENDS.find(installed) ?? list.find((b) => b.installed === true)?.id
   }
 
   /**
@@ -149,12 +167,16 @@ export class AppCore {
     // While backends.json is broken its backends only look missing: leave their chats alone
     // until the file is fixed. Only the retired demo agent is gone for good.
     const gone = (id: string) => !this.backends.has(id) && (!this.backendsConfigError || id === 'mock')
-    if (gone(this.store.settings.defaultBackendId)) {
-      const next = list.find((b) => b.installed === true)?.id
-        ?? PREFERRED_BACKENDS.find((id) => this.backends.has(id)) ?? list[0].id
-      this.publish({ type: 'settings', settings: this.store.patchSettings({ defaultBackendId: next }) })
+    // A default that is gone or not installed (an older version defaulted to Qoder) moves to an
+    // installed agent, Codex first; with none installed it stays empty and Settings is the way in.
+    const current = this.store.settings.defaultBackendId
+    const missing = list.find((b) => b.id === current)?.installed === false
+    if (!current || gone(current) || missing) {
+      const next = this.firstInstalledBackend() ?? (missing || gone(current) ? '' : current)
+      if (next !== current) this.publish({ type: 'settings', settings: this.store.patchSettings({ defaultBackendId: next }) })
     }
-    const def = this.store.settings.defaultBackendId
+    // Chats on a vanished backend need some backend to show their history under; sending tells them what is missing.
+    const def = this.store.settings.defaultBackendId || PREFERRED_BACKENDS.find((id) => this.backends.has(id)) || list[0].id
     for (const c of this.store.conversations)
       if (gone(c.backendId)) this.chat.patchConversation(c.id, { backendId: def, sessionRef: undefined, models: undefined, modelId: undefined, sessionOptions: undefined, optionValues: undefined })
     for (const p of this.store.projects)
@@ -169,6 +191,57 @@ export class AppCore {
         this.store.putRoutine(next)
         this.publish({ type: 'routine', routine: next })
       }
+  }
+
+  /**
+   * Defaults that point at an agent that isn't installed or isn't signed in (0.1.0's guide
+   * defaulted to Qoder) move to one that is: signed in first, Codex first. Projects and
+   * scheduled tasks on such an agent move too. Checks run once, in the background.
+   */
+  /** The startup check above, for whoever needs it finished. */
+  signInRepair?: Promise<void>
+
+  async repairSignIns(): Promise<void> {
+    const list = this.backends.list()
+    const installed = (id: string) => list.find((b) => b.id === id)?.installed === true
+    const order = [...PREFERRED_BACKENDS, ...list.map((b) => b.id).filter((id) => !PREFERRED_BACKENDS.includes(id))].filter(installed)
+    const seen = new Map<string, Promise<boolean | undefined>>()
+    const signedIn = (id: string) => {
+      if (!seen.has(id)) seen.set(id, this.backends.account(id).then((a) => a.signedIn, () => undefined))
+      return seen.get(id)!
+    }
+    const usable = async (id: string) => list.find((b) => b.id === id)?.installed !== false && (await signedIn(id)) !== false
+    let best: Promise<string | undefined> | undefined
+    const pick = () =>
+      (best ??= (async () => {
+        for (const id of order) if ((await signedIn(id)) === true) return id
+        for (const id of order) if ((await signedIn(id)) !== false) return id
+        return undefined
+      })())
+    const def = this.store.settings.defaultBackendId
+    if (def && !(await usable(def))) {
+      const next = await pick()
+      if (next && next !== def) this.publish({ type: 'settings', settings: this.store.patchSettings({ defaultBackendId: next }) })
+    }
+    for (const p of this.store.projects) {
+      if (!p.backendId || p.archived || (await usable(p.backendId))) continue
+      const next = await pick()
+      if (!next || next === p.backendId) continue
+      const project = { ...p, backendId: next }
+      this.store.putProject(project)
+      this.publish({ type: 'project', project })
+      const chat = this.store.conversation(p.conversationId)
+      if (chat && chat.backendId === p.backendId && chat.status !== 'working' && chat.status !== 'waiting')
+        this.chat.patchConversation(chat.id, { backendId: next, sessionRef: undefined, models: undefined, modelId: undefined, sessionOptions: undefined, optionValues: undefined })
+    }
+    for (const r of this.store.routines) {
+      if (!r.backendId || (await usable(r.backendId))) continue
+      const next = await pick()
+      if (!next || next === r.backendId) continue
+      const routine = { ...r, backendId: next }
+      this.store.putRoutine(routine)
+      this.publish({ type: 'routine', routine })
+    }
   }
 
   resumeInterrupted(): void {
@@ -263,6 +336,7 @@ export class AppCore {
 
   async setModelDefault(backendId: string, modelId: string): Promise<void> {
     const catalog = await this.backendModels(backendId, modelId)
+    if (catalog.needsLogin) throw new Error(t('{0} 需要登录。可以在 设置 → Agent 后端 里点「登录」。', this.backends.list().find((b) => b.id === backendId)?.name ?? backendId))
     if (!catalog.models.some((m) => m.id === modelId)) throw new Error(t('无法加载模型：{0}', modelId))
     this.rememberModelDefault(backendId, modelId)
   }
@@ -306,6 +380,11 @@ export class AppCore {
       const catalog = { models: info.models ?? [], current: info.currentModelId, options: info.options }
       this.chat.rememberModels(backendId, catalog.models, catalog.current, catalog.options)
       return catalog
+    }, (err: unknown): BackendModelCatalog => {
+      // Signed out is a state the picker shows (with a way to sign in), not a failure.
+      const kind = classifyError(err instanceof Error ? err.message : String(err))
+      if (kind === 'auth' || kind === 'refresh') return { models: [], needsLogin: true }
+      throw err
     }).finally(() => this.modelProbes.delete(key))
     this.modelProbes.set(key, probe)
     return probe
@@ -802,6 +881,7 @@ export class AppCore {
       }
     }
     this.repairBackends()
+    void this.repairSignIns().catch(() => undefined)
     const list = this.backends.list()
     this.publish({ type: 'backends', backends: list })
     return { backends: list, error: this.backendsConfigError }

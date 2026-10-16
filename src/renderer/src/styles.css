@@ -3136,27 +3136,13 @@ details.advanced > summary {
 .model-group .model-btn {
   min-width: 0;
 }
-.effort-chip {
-  height: 26px;
-  padding: 0 7px;
-  border-radius: 7px;
-  font-size: 13px;
-  color: var(--text-2);
-  background: var(--bg-hover);
-  white-space: nowrap;
-}
-.effort-chip:hover,
-.effort-chip.open {
-  background: var(--bg-active);
-  color: var(--text);
-}
 .context-ring {
   display: inline-grid;
   place-items: center;
   width: 28px;
   height: 28px;
   border-radius: 7px;
-  color: var(--blue);
+  color: var(--text-3);
 }
 .context-ring:hover {
   background: var(--bg-hover);
@@ -3210,24 +3196,24 @@ details.advanced > summary {
   margin-bottom: 8px;
 }
 .effort-slider {
+  position: relative;
+  padding: 10px 0;
   outline: none;
-  border-radius: 9px;
   cursor: pointer;
   touch-action: none;
 }
 .effort-slider.disabled { cursor: default; opacity: 0.6; }
-.effort-slider:focus-visible .effort-thumb { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2px var(--focus-ring); }
 .effort-track {
   position: relative;
-  height: 30px;
-  border-radius: 9px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--bg-active);
-  overflow: hidden;
 }
 .effort-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: var(--border-strong);
+  border-radius: 3px;
+  background: var(--text-4);
   transition: width 0.12s ease;
 }
 .effort-stop {
@@ -3239,35 +3225,44 @@ details.advanced > summary {
   border-radius: 50%;
   background: var(--text-4);
 }
-.effort-stop.rec {
-  width: 3px;
-  height: 14px;
-  margin: -7px 0 0 -1.5px;
-  border-radius: 2px;
-  background: var(--text-3);
+.effort-stop.under {
+  background: var(--bg-elevated);
+  opacity: 0.85;
 }
 .effort-thumb {
   position: absolute;
   top: 50%;
-  width: 24px;
-  height: 24px;
-  margin: -12px 0 0 -12px;
-  border-radius: 7px;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.12);
   transition: left 0.12s ease;
 }
+.effort-slider:focus-visible .effort-thumb { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 3px var(--focus-ring); }
 .effort-marks {
   position: relative;
-  height: 24px;
+  height: 22px;
 }
 .effort-rec {
   position: absolute;
-  top: 6px;
+  top: 0;
   transform: translateX(-50%);
-  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
   color: var(--text-3);
   white-space: nowrap;
+}
+.effort-rec::before {
+  content: '';
+  width: 1.5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--text-4);
 }
 :root[data-theme='dark'] .effort-thumb,
 :root[data-theme='glass'] .effort-thumb {
@@ -3278,8 +3273,8 @@ details.advanced > summary {
   backdrop-filter: blur(28px) saturate(160%);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
-:root[data-theme='glass'] .effort-track { background: rgba(255, 255, 255, 0.07); }
-:root[data-theme='glass'] .effort-fill { background: rgba(255, 255, 255, 0.16); }
+:root[data-theme='glass'] .effort-track { background: rgba(255, 255, 255, 0.12); }
+:root[data-theme='glass'] .effort-fill { background: rgba(255, 255, 255, 0.42); }
 
 /* ---------- 玻璃效果 over light: frosted white panels on a soft daylight backdrop ---------- */
 :root[data-theme='glass-light'] {
@@ -3398,8 +3393,8 @@ details.advanced > summary {
   color: #fff;
   box-shadow: 0 2px 12px rgba(75, 86, 210, 0.3);
 }
-:root[data-theme='glass-light'] .effort-track { background: rgba(22, 26, 44, 0.07); }
-:root[data-theme='glass-light'] .effort-fill { background: rgba(22, 26, 44, 0.14); }
+:root[data-theme='glass-light'] .effort-track { background: rgba(22, 26, 44, 0.1); }
+:root[data-theme='glass-light'] .effort-fill { background: rgba(22, 26, 44, 0.32); }
 :root[data-theme='glass-light'] ::-webkit-scrollbar-thumb {
   background: rgba(22, 26, 44, 0.16);
   background-clip: content-box;
@@ -3412,4 +3407,84 @@ details.advanced > summary {
 }
 :root.no-blur[data-theme='glass-light'] :is(.menu, .modal, .onboarding-card, .toast, .effort-pop) {
   background: rgba(252, 252, 255, 0.98);
+}
+
+/* ---------- Claude's model menu: narrow, one line per item, a check or a number key on the right ---------- */
+.menu.compact {
+  min-width: 176px;
+  max-width: 280px;
+  padding: 5px;
+  border-radius: 12px;
+}
+.menu.compact .menu-item {
+  min-height: 34px;
+  padding: 6px 8px 6px 11px;
+  gap: 12px;
+  font-size: 14px;
+  border-radius: 8px;
+  color: var(--text);
+}
+.menu.compact .menu-item.active {
+  background: var(--bg-hover);
+}
+.menu.compact .menu-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.menu.compact .menu-check {
+  width: 18px;
+  color: var(--blue);
+}
+.menu.compact .menu-check svg.lucide-chevron-right {
+  color: var(--text-3);
+}
+.menu-key {
+  font-size: 13px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+.menu-hint {
+  flex: none;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.menu.compact .menu-sep {
+  margin: 5px 6px;
+}
+
+/* The composer footer: [agent] [model] [effort] [ring], each a quiet text chip as in Claude. */
+.composer-row .model-group,
+.composer-under .model-group {
+  gap: 1px;
+}
+.footer-chip,
+.effort-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-2);
+  background: transparent;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.footer-chip:hover,
+.effort-chip:hover,
+.effort-chip.open,
+.footer-chip[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.backend-chip {
+  color: var(--text-3);
+}
+.footer-chip.select-btn {
+  height: 28px;
+  font-size: 14px;
 }

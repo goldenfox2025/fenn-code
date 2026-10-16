@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
 import type { SessionOption } from '@shared/contract'
-import { choiceLabel } from './sessionOptionLabels'
+import { effortLabel } from './sessionOptionLabels'
 import { t } from '../i18n'
 
 /**
@@ -23,7 +23,7 @@ export function EffortPicker({ option, value, disabled, onChange }: { option: Se
   const [open, setOpen] = useState(false)
   const chip = useRef<HTMLButtonElement>(null)
   const index = Math.max(0, option.choices.findIndex((c) => c.value === value))
-  const label = choiceLabel(option.choices[index]?.name ?? '')
+  const label = effortLabel(option, index)
   return (
     <>
       <button
@@ -63,8 +63,8 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
   const n = option.choices.length
   const rec = recommendedEffort(option)
   const frac = (i: number) => (n > 1 ? i / (n - 1) : 0.5)
-  // Stops sit inside the track's rounded ends, 14px from each edge.
-  const x = (i: number) => `calc(14px + ${frac(i)} * (100% - 28px))`
+  // Stops are evenly spaced from end to end; the thumb, the fill and 推荐 all line up on them.
+  const x = (i: number) => `${frac(i) * 100}%`
 
   useLayoutEffect(() => {
     const place = () => {
@@ -96,7 +96,7 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
   }
   const fromPointer = (clientX: number) => {
     const r = track.current!.getBoundingClientRect()
-    return Math.round(Math.max(0, Math.min(1, (clientX - r.left - 14) / Math.max(1, r.width - 28))) * (n - 1))
+    return Math.round(Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width))) * (n - 1))
   }
   const onKey = (e: React.KeyboardEvent) => {
     const step: Record<string, number> = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }
@@ -110,8 +110,7 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
     e.preventDefault()
     e.stopPropagation()
   }
-  const current = option.choices[at]
-  const name = choiceLabel(current?.name ?? '')
+  const name = effortLabel(option, at)
 
   return createPortal(
     <div className="effort-pop" role="dialog" aria-label={t('努力程度')} ref={ref} style={pos} onClick={(e) => e.stopPropagation()}>
@@ -146,9 +145,9 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
         onPointerMove={(e) => e.buttons === 1 && e.currentTarget.hasPointerCapture(e.pointerId) && pick(fromPointer(e.clientX))}
       >
         <div className="effort-track" ref={track}>
-          <div className="effort-fill" style={{ width: `calc(28px + ${frac(at)} * (100% - 28px))` }} />
+          <div className="effort-fill" style={{ width: x(at) }} />
           {option.choices.map((c, i) => (
-            <span key={c.value} className={'effort-stop' + (i === rec ? ' rec' : '') + (i < at ? ' under' : '')} style={{ left: x(i) }} title={choiceLabel(c.name)} />
+            <span key={c.value} className={'effort-stop' + (i < at ? ' under' : '')} style={{ left: x(i) }} title={effortLabel(option, i)} />
           ))}
           <span className="effort-thumb" style={{ left: x(at) }} />
         </div>
