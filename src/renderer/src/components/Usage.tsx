@@ -12,7 +12,8 @@ import { tk } from '@shared/i18n'
 export function usageLine(u: MessageUsage): string {
   const parts: string[] = []
   const total = u.total ?? (u.input ?? 0) + (u.output ?? 0)
-  if (u.input !== undefined || u.output !== undefined || u.total !== undefined) parts.push(t('{0} tokens', formatTokens(total)))
+  if (u.input !== undefined || u.output !== undefined || u.total !== undefined)
+    parts.push(u.estimated ? t('约 {0} tokens', formatTokens(total)) : t('{0} tokens', formatTokens(total)))
   if (u.cost) parts.push(formatCost(u.cost))
   return parts.join(' · ')
 }
@@ -46,7 +47,7 @@ export function MessageUsageLabel({ m }: { m: Message }) {
   if (credits || !m.usage) return null
   const line = usageLine(m.usage)
   if (!line) return null
-  const title = [...detailLines(m.usage), m.usage.cost ? t('费用 {0}', formatCost(m.usage.cost)) : '', m.timing ? timingLine(m.timing) : '']
+  const title = [...detailLines(m.usage), m.usage.estimated ? t('应用估算的数字：agent 没有报告用量') : '', m.usage.cost ? t('费用 {0}', formatCost(m.usage.cost)) : '', m.timing ? timingLine(m.timing) : '']
   return (
     <span className="msg-usage" title={title.filter(Boolean).join('\n')}>
       {line}
@@ -76,7 +77,8 @@ export function usageMenu(u: UsageTotals | undefined, scope: string, timing?: Ge
     items.push({ label: t('后端未提供'), sub: t('这个 agent 没有报告用量，所以这里不显示数字。'), info: true })
     return items
   }
-  items.push({ label: t('{0} tokens', formatTokens(u.total)), sub: detailLines(u).join(' · '), info: true })
+  const allEstimated = !!u.estimated && u.estimated >= u.turns
+  items.push({ label: allEstimated ? t('约 {0} tokens', formatTokens(u.total)) : t('{0} tokens', formatTokens(u.total)), sub: detailLines(u).join(' · '), info: true })
   if (u.cost) items.push({ label: t('费用 {0}', formatCost(u.cost)), sub: u.costSkipped ? t('另有 {0} 轮的费用用的是别的币种，没有计入', u.costSkipped) : undefined, info: true })
   if (u.contextSize) {
     const used = u.contextUsed ?? 0
@@ -86,10 +88,15 @@ export function usageMenu(u: UsageTotals | undefined, scope: string, timing?: Ge
       info: true
     })
   }
+  if (!u.contextSize && u.contextEstimate)
+    items.push({ label: t('上下文约 {0}', formatTokens(u.contextEstimate)), sub: t('agent 没有报告上下文窗口大小'), info: true })
   if (timing) items.push({ label: t('最近一次回复'), sub: timingLine(timing), info: true })
   items.push({
     label: t('共 {0} 轮', u.turns + u.unreported),
-    sub: u.unreported ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : undefined,
+    sub: [
+      u.estimated ? t('其中 {0} 轮 agent 没有报告用量，由应用按文字估算', u.estimated) : '',
+      u.unreported ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : ''
+    ].filter(Boolean).join(' · ') || undefined,
     info: true
   })
   return items
@@ -156,7 +163,7 @@ function TokensButton({ usage, scope, timing, className, align, children }: {
 }) {
   const [menu, openMenu] = useMenu({ align })
   if (!usage || usage.turns + usage.unreported === 0) return null
-  const label = usage.turns ? usageLine({ total: usage.total, cost: usage.cost }) : t('用量：后端未提供')
+  const label = usage.turns ? usageLine({ total: usage.total, cost: usage.cost, estimated: !!usage.estimated && usage.estimated >= usage.turns }) : t('用量：后端未提供')
   return (
     <>
       <button className={className} title={t('用量')} onClick={(e) => openMenu(e.currentTarget, usageMenu(usage, scope, timing))}>
@@ -211,6 +218,44 @@ function CreditsButton({ backendId, className, activity }: { backendId: string; 
       >
         <Gauge size={14} />
         <span>{label}</span>
+      </button>
+      {menu}
+    </>
+  )
+}
+
+/**
+ * How full the context window is, as a small ring beside the model name (like
+ * Claude's). Uses the agent's own figures; without a window size it shows an
+ * empty ring and the app's estimate in the tooltip. Click for the usage details.
+ */
+export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming }) {
+  const [menu, openMenu] = useMenu({ align: 'right', placement: 'above' })
+  const size = usage?.contextSize
+  const used = usage?.contextUsed ?? 0
+  const share = size ? Math.max(0, Math.min(1, used / size)) : 0
+  const title = size
+    ? t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(size), percent(used, size))
+    : usage?.contextEstimate
+      ? t('上下文约 {0}', formatTokens(usage.contextEstimate))
+      : t('上下文')
+  const r = 6.5
+  const c = 2 * Math.PI * r
+  return (
+    <>
+      <button
+        className={'context-ring' + (share >= 0.9 ? ' full' : share >= 0.7 ? ' high' : '')}
+        title={title}
+        aria-label={title}
+        onClick={(e) => {
+          e.stopPropagation()
+          openMenu(e.currentTarget, usageMenu(usage, scope, timing))
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <circle cx="9" cy="9" r={r} className="ring-track" />
+          {share > 0 && <circle cx="9" cy="9" r={r} className="ring-fill" strokeDasharray={`${Math.max(share * c, 1.5)} ${c}`} transform="rotate(-90 9 9)" />}
+        </svg>
       </button>
       {menu}
     </>

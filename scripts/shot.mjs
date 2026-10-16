@@ -45,6 +45,31 @@ page.on('console', (m) => m.type() === 'error' && console.log('[renderer]', m.te
 page.on('pageerror', (e) => console.log('[pageerror]', e.message, e.stack?.split('\n').slice(0, 4).join(' | ')))
 
 const scenarios = {
+  // The composer footer: model list, effort slider and context ring.
+  async footer() {
+    await page.fill('.composer textarea', '你好')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
+    await wait(600)
+    const box = await page.locator('.composer-wrap').boundingBox()
+    const group = await page.locator('.model-group').boundingBox()
+    const right = Math.min(group.x + group.width + 120, 1600)
+    const clip = { x: right - 520, y: box.y - 300, width: 520, height: box.height + 300 }
+    await page.click('.effort-chip')
+    await wait(300)
+    await page.screenshot({ path: `${out}/footer-effort.png`, clip })
+    await page.keyboard.press('ArrowRight')
+    await wait(800)
+    await page.screenshot({ path: `${out}/footer-effort-high.png`, clip })
+    await page.keyboard.press('Escape')
+    await page.click('.model-btn')
+    await wait(300)
+    await page.screenshot({ path: `${out}/footer-models.png`, clip: { ...clip, y: clip.y - 200, height: clip.height + 200 } })
+    await page.keyboard.press('Escape')
+    await page.click('.context-ring')
+    await wait(300)
+    await page.screenshot({ path: `${out}/footer-ring.png`, clip })
+  },
   async versions() {
     await page.fill('.composer textarea', '你好')
     await page.keyboard.press('Enter')

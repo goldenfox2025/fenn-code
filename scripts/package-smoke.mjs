@@ -90,7 +90,7 @@ try {
     bounds: BrowserWindow.getAllWindows()[0].getBounds(), workArea: screen.getPrimaryDisplay().workArea
   })))
 
-  // One picker holds models, the thinking level and the agent, as in Claude's composer.
+  // As in Claude's composer: one list for the agent, its models and modes, and an effort slider beside it.
   const picker = () => page.locator('.composer .model-btn')
   const openPicker = () => picker().click()
   const choose = async (name) => {
@@ -98,6 +98,20 @@ try {
     await page.getByRole('menuitemradio', { name }).click()
     await page.locator('.menu').waitFor({ state: 'detached' })
   }
+  const effortStops = async () => {
+    await page.locator('.composer .effort-chip').click()
+    const titles = await page.locator('.effort-pop .effort-stop').evaluateAll((els) => els.map((e) => e.getAttribute('title')))
+    return titles
+  }
+  const chooseEffort = async (name) => {
+    const titles = await effortStops()
+    const i = titles.findIndex((x) => name.test(x))
+    assert(i >= 0, `no effort stop ${name}: ${titles}`)
+    await page.locator('.effort-pop .effort-stop').nth(i).click({ force: true })
+    await page.keyboard.press('Escape')
+    await page.locator('.effort-pop').waitFor({ state: 'detached' })
+  }
+  const effortIs = async (name) => name.test(await page.locator('.composer .effort-chip').innerText())
   const NONE = /^不启用推理/
   const LOW = /^低/
 
@@ -106,7 +120,7 @@ try {
   assert.equal(await page.evaluate(async () => (await window.ancora.snapshot()).conversations.length), 0)
   await picker().filter({ hasText: 'Mock Smart' }).waitFor()
   await waitState(async () => (await window.ancora.snapshot()).settings.backendModelDefaults?.mock === 'mock-smart')
-  await choose(NONE)
+  await chooseEffort(NONE)
   await waitState(async () => (await window.ancora.snapshot()).settings.backendOptionDefaults?.mock?.effort === 'none')
   console.log('Model selection before the first message passed')
 
@@ -314,26 +328,20 @@ try {
   console.log('Usage menu, hidden missing costs, context meter, observed timing and keyboard focus passed')
 
   // Each agent remembers its own model and thinking level.
-  const checked = async (name) => {
-    await openPicker()
-    const value = await page.getByRole('menuitemradio', { name }).getAttribute('aria-checked')
-    await page.keyboard.press('Escape')
-    return value
-  }
   await page.locator('.sidebar').getByRole('button', { name: '新建', exact: true }).click()
   await picker().filter({ hasText: 'Mock Smart' }).waitFor()
-  assert.equal(await checked(NONE), 'true')
+  assert(await effortIs(NONE))
   await choose(/^Qoder/)
   await choose(/^Mock Smart/)
   await waitState(async () => (await window.ancora.snapshot()).settings.backendModelDefaults?.qoder === 'mock-smart')
-  await openPicker()
-  assert.equal(await page.getByRole('menuitemradio', { name: NONE }).count(), 0, 'Qoder does not expose none')
-  await page.getByRole('menuitemradio', { name: LOW }).click()
+  assert(!(await effortStops()).some((x) => NONE.test(x)), 'Qoder does not expose none')
+  await page.keyboard.press('Escape')
+  await chooseEffort(LOW)
   await waitState(async () => (await window.ancora.snapshot()).settings.backendOptionDefaults?.qoder?.effort === 'low')
   await choose(/^演示 Agent/)
-  assert.equal(await checked(NONE), 'true')
+  await page.waitForFunction(() => /^不启用推理/.test(document.querySelector('.composer .effort-chip')?.textContent ?? ''))
   await choose(/^Qoder/)
-  assert.equal(await checked(LOW), 'true')
+  await page.waitForFunction(() => /^低/.test(document.querySelector('.composer .effort-chip')?.textContent ?? ''))
   console.log('Per-agent model and reasoning restoration passed')
 
   // An idle chat can change agent; the new agent's models load without sending anything.
@@ -351,14 +359,17 @@ try {
   })
   await page.getByRole('menuitemradio', { name: /^Mock Smart/ }).click()
   await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.modelId === 'mock-smart', qoderChat)
-  await choose(LOW)
+  await chooseEffort(LOW)
   await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.optionValues?.effort === 'low', qoderChat)
   assert.deepEqual(await page.evaluate((id) => window.ancora.messages(id), qoderChat), beforeCold)
   assert.equal(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.sessionRef, qoderChat), undefined)
   for (const theme of ['light', 'dark', 'glass']) {
     await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    assert(await effortIs(LOW))
+    await page.locator('.composer .effort-chip').click()
+    await page.screenshot({ path: join(shots, `effort-${theme}.png`) })
+    await page.keyboard.press('Escape')
     await openPicker()
-    assert.equal(await page.getByRole('menuitemradio', { name: LOW }).getAttribute('aria-checked'), 'true')
     await page.keyboard.press('ArrowDown')
     assert.match(await page.locator('.menu-item.active').getAttribute('role'), /^menuitem/)
     await page.screenshot({ path: join(shots, `model-picker-${theme}.png`) })

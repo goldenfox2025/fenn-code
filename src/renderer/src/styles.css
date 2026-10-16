@@ -3125,3 +3125,158 @@ details.advanced > summary {
   outline: none;
   box-shadow: var(--shadow-pop);
 }
+
+/* ---------- composer footer: model, effort chip, context ring (as in Claude) ---------- */
+.model-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.model-group .model-btn {
+  min-width: 0;
+}
+.effort-chip {
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--bg-hover);
+  white-space: nowrap;
+}
+.effort-chip:hover,
+.effort-chip.open {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.context-ring {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--blue);
+}
+.context-ring:hover {
+  background: var(--bg-hover);
+}
+.context-ring .ring-track {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 2.2;
+}
+.context-ring .ring-fill {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.context-ring.high { color: var(--amber); }
+.context-ring.full { color: var(--red); }
+
+.effort-pop {
+  position: fixed;
+  z-index: 60;
+  width: 300px;
+  padding: 14px 16px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  animation: menu-in 0.08s ease-out;
+  user-select: none;
+}
+.effort-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 14.5px;
+}
+.effort-title { color: var(--text-3); }
+.effort-level { color: var(--text); }
+.effort-head .spacer { flex: 1; }
+.effort-help {
+  display: inline-flex;
+  color: var(--text-3);
+  cursor: help;
+}
+.effort-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.effort-slider {
+  outline: none;
+  border-radius: 9px;
+  cursor: pointer;
+  touch-action: none;
+}
+.effort-slider.disabled { cursor: default; opacity: 0.6; }
+.effort-slider:focus-visible .effort-thumb { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 2px var(--focus-ring); }
+.effort-track {
+  position: relative;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+.effort-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--border-strong);
+  transition: width 0.12s ease;
+}
+.effort-stop {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.effort-stop.rec {
+  width: 3px;
+  height: 14px;
+  margin: -7px 0 0 -1.5px;
+  border-radius: 2px;
+  background: var(--text-3);
+}
+.effort-thumb {
+  position: absolute;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  transition: left 0.12s ease;
+}
+.effort-marks {
+  position: relative;
+  height: 24px;
+}
+.effort-rec {
+  position: absolute;
+  top: 6px;
+  transform: translateX(-50%);
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+:root[data-theme='dark'] .effort-thumb,
+:root[data-theme='glass'] .effort-thumb {
+  background: #e9e7e1;
+}
+:root[data-theme='glass'] .effort-pop {
+  background: rgba(20, 22, 33, 0.82);
+  backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+:root[data-theme='glass'] .effort-track { background: rgba(255, 255, 255, 0.07); }
+:root[data-theme='glass'] .effort-fill { background: rgba(255, 255, 255, 0.16); }

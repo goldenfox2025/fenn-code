@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { turnUsage } from '../src/main/backends/acp/AcpBackend'
 import { turnUsageOf } from '../src/main/core/ChatService'
-import { addTurn, formatCost, formatTokens, sumTotals } from '../src/shared/usage'
+import { addTurn, formatCost, formatTokens, sumTotals, estimateTokens } from '../src/shared/usage'
 import { makeCore, until } from './helpers'
 
 const idle = (store: any, id: string, n: number) =>
@@ -64,16 +64,19 @@ describe('usage in conversations', () => {
     await dispose()
   }, 30000)
 
-  it('counts turns the backend reported nothing for, without inventing numbers', async () => {
+  it('estimates turns the backend reported nothing for, and marks them as estimated', async () => {
     const { core, store, dispose } = await makeCore(undefined, { MOCK_USAGE: 'none' })
     const c = await core.startChat({ text: '你好', backendId: 'mock' })
     await idle(store, c.id, 1)
     const reply = store.messagesOf(c.id).find((m: any) => m.role === 'assistant')!
-    expect(reply.usage).toBeUndefined()
+    expect(reply.usage!.estimated).toBe(true)
+    expect(reply.usage!.output).toBeGreaterThan(0)
+    expect(reply.usage!.input).toBeGreaterThan(0)
     const u = store.conversation(c.id)!.usage!
-    expect(u.turns).toBe(0)
-    expect(u.unreported).toBeGreaterThan(0)
-    expect(u.total).toBe(0)
+    expect(u.turns).toBe(1)
+    expect(u.estimated).toBe(1)
+    expect(u.unreported).toBe(0)
+    expect(u.contextEstimate).toBeGreaterThan(0)
     await dispose()
   }, 30000)
 
@@ -86,4 +89,10 @@ describe('usage in conversations', () => {
     expect(reply.usage!.cost).toBeUndefined()
     await dispose()
   }, 30000)
+
+  it('estimates tokens roughly: one per CJK character, four characters per token otherwise', () => {
+    expect(estimateTokens('')).toBe(0)
+    expect(estimateTokens('你好世界')).toBe(4)
+    expect(estimateTokens('hello world!')).toBe(3)
+  })
 })

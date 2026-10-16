@@ -747,4 +747,13 @@ export const en: Record<string, string> = {
   "{0} · {1} / {2} credits（{3}）": "{0} · {1} / {2} credits ({3})",
   "{0} · {1} credits": "{0} · {1} credits",
   "{0} / {1} credits": "{0} / {1} credits",
+  "约 {0} tokens": "~{0} tokens",
+  "应用估算的数字：agent 没有报告用量": "Estimated by the app: the agent reported no usage",
+  "上下文约 {0}": "Context ~{0}",
+  "agent 没有报告上下文窗口大小": "The agent didn't report its context window size",
+  "其中 {0} 轮 agent 没有报告用量，由应用按文字估算": "{0} turns estimated by the app from the text, as the agent reported no usage",
+  "努力程度": "Effort",
+  "努力程度越高，agent 思考得越多：回答更周到，但更慢，也更耗额度。": "Higher effort means the agent thinks more: more thorough answers, but slower and using more of your quota.",
+  "速度更快": "Faster",
+  "更智能": "Smarter",
 }

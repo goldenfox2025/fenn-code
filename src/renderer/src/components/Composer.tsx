@@ -8,6 +8,8 @@ import { t } from '../i18n'
 import { choiceLabel, optionLabel } from './sessionOptionLabels'
 import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
+import { EffortPicker } from './EffortPicker'
+import { ContextRing } from './Usage'
 
 interface Props {
   conversation?: Conversation
@@ -111,8 +113,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const modeOpt = options.find((o) => o.category === 'mode')
   const modeValue = modeOpt && valueOf(modeOpt)
   const modeNote = modeOpt && modeValue && modeValue !== modeOpt.choices[0]?.value ? choiceLabel(modeOpt.choices.find((c) => c.value === modeValue)?.name ?? modeValue) : ''
-  const effortOpt = options.find((o) => o.category === 'thought_level')
-  const effortNote = effortOpt && choiceLabel(effortOpt.choices.find((c) => c.value === valueOf(effortOpt))?.name ?? '')
+  // Thinking level gets its own slider beside the model, like Claude's effort control.
+  const effortOpt = options.find((o) => o.category === 'thought_level' || (!o.category && /reasoning|effort|thinking/i.test(o.id)))
 
   const accountHint = (id: string): string | undefined => {
     const b = backends.find((x) => x.id === id)
@@ -156,48 +158,16 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     }
   }
 
+  const setOptionValue = (o: SessionOption, value: string) => {
+    if (!conversation && o.category === 'mode') return setPending((p) => ({ ...p, [o.id]: value }))
+    // A thinking level carries over to new chats (the app remembers it); a mode stays with this conversation.
+    void choose(() => (conversation ? api().setOption(conversation.id, o.id, value) : api().setOptionDefault(bid, o.id, value)))
+  }
+
+  // Like Claude's model list: the agent, then its models, then its modes, each with a check mark.
   const pickerItems = (): MenuItem[] => {
     const items: MenuItem[] = []
     const canPick = !!(conversation || onModelChange)
-    if (canPick && models.length) {
-      items.push({ heading: t('模型') })
-      for (const m of models)
-        items.push({
-          label: m.name,
-          sub: m.description,
-          checked: m.id === currentModel?.id,
-          disabled: busy,
-          onClick: () =>
-            void choose(async () => {
-              if (conversation) return api().setModel(conversation.id, m.id)
-              await api().setModelDefault(bid, m.id)
-              onModelChange?.(m.id)
-            })
-        })
-    } else if (canPick && currentBackend && !accountHint(bid)) {
-      if (loadingModels) items.push({ label: t('正在加载模型…'), info: true })
-      else if (catalog.error) items.push({ label: t('无法加载模型列表'), sub: catalog.error, onClick: () => setRetry((n) => n + 1) })
-      else items.push({ heading: t('{0} 没有提供模型选择', currentBackend.name) })
-    }
-    if (canPick)
-      for (const o of options) {
-        items.push({ heading: optionLabel(o) })
-        const now = valueOf(o)
-        for (const c of o.choices) {
-          const label = choiceLabel(c.name)
-          items.push({
-            label,
-            sub: label !== c.name ? c.name : c.description,
-            checked: c.value === now,
-            disabled: busy,
-            onClick: () => {
-              if (!conversation && o.category === 'mode') return setPending((p) => ({ ...p, [o.id]: c.value }))
-              // A thinking level carries over to new chats (the app remembers it); a mode stays with this conversation.
-              void choose(() => (conversation ? api().setOption(conversation.id, o.id, c.value) : api().setOptionDefault(bid, o.id, c.value)))
-            }
-          })
-        }
-      }
     // Only backends that can answer; installing and signing in live in Settings. A chat can change
     // agent while it is idle: the new one gets the conversation so far.
     if (onBackendChange || conversation) {
@@ -216,6 +186,37 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           }
         })
     }
+    if (canPick && models.length) {
+      items.push({ heading: t('模型') })
+      for (const m of models)
+        items.push({
+          label: m.name,
+          sub: m.description,
+          checked: m.id === currentModel?.id,
+          disabled: busy,
+          onClick: () =>
+            void choose(async () => {
+              if (conversation) return api().setModel(conversation.id, m.id)
+              await api().setModelDefault(bid, m.id)
+              onModelChange?.(m.id)
+            })
+        })
+    } else if (canPick && currentBackend && !accountHint(bid)) {
+      items.push({ heading: t('模型') })
+      if (loadingModels) items.push({ label: t('正在加载模型…'), info: true })
+      else if (catalog.error) items.push({ label: t('无法加载模型列表'), sub: catalog.error, onClick: () => setRetry((n) => n + 1) })
+      else items.push({ label: t('{0} 没有提供模型选择', currentBackend.name), info: true })
+    }
+    if (canPick)
+      for (const o of options) {
+        if (o === effortOpt) continue
+        items.push({ heading: optionLabel(o) })
+        const now = valueOf(o)
+        for (const c of o.choices) {
+          const label = choiceLabel(c.name)
+          items.push({ label, sub: label !== c.name ? c.name : c.description, checked: c.value === now, disabled: busy, onClick: () => setOptionValue(o, c.value) })
+        }
+      }
     const manage = () => useApp.getState().set({ settingsOpen: 'backends' })
     items.push({ separator: true })
     items.push({ icon: <SlidersHorizontal size={15} />, label: t('管理 Agent 后端…'), onClick: manage })
@@ -224,8 +225,9 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   // An open picker shows the models as soon as they arrive.
   useEffect(() => updateMenu(pickerItems()), [models.length, loadingModels, catalog.error])
 
-  const note = [modeNote, effortNote].filter(Boolean).join(' · ')
+  const note = modeNote
   const modelButton = (
+    <span className="model-group">
     <button
       className="select-btn model-btn"
       aria-busy={loadingModels || selecting}
@@ -237,8 +239,12 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       {currentModel?.name ?? currentBackend?.name ?? t('选择后端')}
       {note && <span className="mode-note"> · {note}</span>}
       {currentBackend && accountHint(currentBackend.id) && <span className="mode-note warn"> · {accountHint(currentBackend.id)}</span>}
-      <ChevronDown size={14} />
     </button>
+    {effortOpt && (conversation || onModelChange) && (
+      <EffortPicker option={effortOpt} value={valueOf(effortOpt)} disabled={busy} onChange={(v) => setOptionValue(effortOpt, v)} />
+    )}
+    {conversation && <ContextRing usage={conversation.usage} timing={conversation.timing} scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')} />}
+    </span>
   )
   // The working folder: a project's own for its chat and threads, else the conversation's.
   const project = useApp((s) => s.projects.find((p) => p.id === conversation?.projectId))
