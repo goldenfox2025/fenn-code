@@ -2872,7 +2872,8 @@ details.advanced > summary {
 
 .select-btn .mode-note { color: var(--text-3); }
 .account-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; }
-.account-line > * { white-space: nowrap; }
+.account-line > * { white-space: nowrap; line-height: 20px; }
+.account-line { min-height: 22px; }
 .select-btn .mode-note.warn { color: var(--amber); }
 .upgrade-log {
   margin: 8px 0 0;

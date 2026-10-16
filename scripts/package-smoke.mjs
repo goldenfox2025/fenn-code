@@ -240,6 +240,8 @@ try {
     const editing = await field.boundingBox()
     await field.getByRole('button', { name: '保存', exact: true }).click()
     await field.getByRole('button', { name: '修改', exact: true }).waitFor()
+    // The account line refreshes after a save; it must not nudge the field either.
+    await page.waitForTimeout(800)
     assert.deepEqual(await field.boundingBox(), editing, 'Saving backend settings must preserve field geometry')
   }
   assert.deepEqual(await page.evaluate(() => window.ancora.backendAccount('qoder')), {
@@ -296,7 +298,7 @@ try {
   await page.locator('.sidebar .nav-item').filter({ hasText: '打包测试保留' }).click()
   await page.locator('.chat-header .usage-btn').filter({ hasText: 'tokens' }).waitFor()
   await page.locator('.chat-header .usage-btn').click()
-  assert.match(await page.locator('.menu').innerText(), /tokens/)
+  assert.match(await page.locator('.menu').innerText(), /新输入\n[\d,.k]+\n输出/)
   assert(!/未提供/.test(await page.locator('.menu').innerText()))
   await page.keyboard.press('Escape')
   console.log('Other agents retain reported tokens and costs, without an invented account quota')
@@ -313,8 +315,8 @@ try {
     const panel = page.locator('.menu')
     await panel.waitFor()
     assert(!/费用|未提供/.test(await panel.innerText()))
-    assert.match(await panel.innerText(), /每个 token 约/)
-    assert.match(await page.locator('.msg-usage').getAttribute('title'), /每个 token 约/)
+    assert.match(await panel.innerText(), /平均每个 token/)
+    assert.match(await page.locator('.msg-usage').getAttribute('title'), /平均每个 token/)
     assert.equal(await panel.getByRole('meter', { name: '上下文', exact: true }).getAttribute('aria-valuemax'), '200000')
     const layout = await panel.evaluate((el) => {
       const r = el.getBoundingClientRect(), css = getComputedStyle(el)
