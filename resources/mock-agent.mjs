@@ -242,12 +242,15 @@ function configOptions(current, s = {}) {
       category: "thought_level",
       type: "select",
       currentValue: fixedEffort ? 'none' : s.effort ?? "medium",
-      options: fixedEffort ? [{ value: 'none', name: 'none' }] : [
+      // MOCK_EFFORT_REVERSED=1 lists the levels from high to low, as Codex does.
+      options: fixedEffort ? [{ value: 'none', name: 'none' }] : (process.env.MOCK_EFFORT_REVERSED === '1'
+        ? [{ value: "xhigh", name: "Extra High" }, { value: "high", name: "High" }, { value: "medium", name: "Medium" }, { value: "low", name: "Low" }]
+        : [
         ...(process.env.MOCK_DYNAMIC_EFFORT === '1' ? [{ value: 'none', name: 'none' }] : []),
         { value: "low", name: "Low" },
         { value: "medium", name: "Medium" },
         { value: "high", name: "High" },
-      ],
+      ]),
     },
   ];
 }

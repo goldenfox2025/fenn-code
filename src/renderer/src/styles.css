@@ -3204,6 +3204,7 @@ details.advanced > summary {
   touch-action: none;
 }
 .effort-slider.disabled { cursor: default; opacity: 0.6; }
+.effort-slider:focus-visible { outline: none !important; box-shadow: none !important; }
 .effort-track {
   position: relative;
   height: 6px;
@@ -3214,7 +3215,7 @@ details.advanced > summary {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 3px;
-  background: var(--text-4);
+  background: var(--text-3);
   transition: width 0.12s ease;
 }
 .effort-stop {
@@ -3275,7 +3276,7 @@ details.advanced > summary {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 :root[data-theme='glass'] .effort-track { background: rgba(255, 255, 255, 0.12); }
-:root[data-theme='glass'] .effort-fill { background: rgba(255, 255, 255, 0.42); }
+:root[data-theme='glass'] .effort-fill { background: rgba(255, 255, 255, 0.62); }
 
 /* ---------- 玻璃效果 over light: frosted white panels on a soft daylight backdrop ---------- */
 :root[data-theme='glass-light'] {
@@ -3395,7 +3396,7 @@ details.advanced > summary {
   box-shadow: 0 2px 12px rgba(75, 86, 210, 0.3);
 }
 :root[data-theme='glass-light'] .effort-track { background: rgba(22, 26, 44, 0.1); }
-:root[data-theme='glass-light'] .effort-fill { background: rgba(22, 26, 44, 0.32); }
+:root[data-theme='glass-light'] .effort-fill { background: rgba(22, 26, 44, 0.5); }
 :root[data-theme='glass-light'] ::-webkit-scrollbar-thumb {
   background: rgba(22, 26, 44, 0.16);
   background-clip: content-box;

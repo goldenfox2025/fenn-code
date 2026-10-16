@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { HelpCircle } from 'lucide-react'
 import type { SessionOption } from '@shared/contract'
-import { effortLabel } from './sessionOptionLabels'
+import { effortLabel, effortRank, effortStops } from './sessionOptionLabels'
 import { t } from '../i18n'
 
 /**
@@ -11,8 +11,9 @@ import { t } from '../i18n'
  * smartest, the order agents list them in.
  */
 export function recommendedEffort(o: SessionOption): number {
-  const i = o.choices.findIndex((c) => /^(medium|default|auto)$/i.test(c.value))
-  return i >= 0 ? i : Math.floor((o.choices.length - 1) / 2)
+  const stops = effortStops(o.choices)
+  const i = stops.findIndex((c) => effortRank({ value: c.value, name: '' }) === 3)
+  return i >= 0 ? i : Math.floor((stops.length - 1) / 2)
 }
 
 /**
@@ -22,7 +23,8 @@ export function recommendedEffort(o: SessionOption): number {
 export function EffortPicker({ option, value, disabled, onChange }: { option: SessionOption; value?: string; disabled?: boolean; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false)
   const chip = useRef<HTMLButtonElement>(null)
-  const index = Math.max(0, option.choices.findIndex((c) => c.value === value))
+  // Positions are in order from fastest to smartest, not the agent's listing order.
+  const index = Math.max(0, effortStops(option.choices).findIndex((c) => c.value === value))
   const label = effortLabel(option, index)
   return (
     <>
@@ -60,7 +62,8 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
   // Shown at once while the agent applies the change.
   const [at, setAt] = useState(index)
   useEffect(() => setAt(index), [index])
-  const n = option.choices.length
+  const stops = effortStops(option.choices)
+  const n = stops.length
   const rec = recommendedEffort(option)
   const frac = (i: number) => (n > 1 ? i / (n - 1) : 0.5)
   // Stops are evenly spaced from end to end; the thumb, the fill and 推荐 all line up on them.
@@ -92,7 +95,7 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
     const next = Math.max(0, Math.min(n - 1, i))
     if (disabled || next === at) return
     setAt(next)
-    onChange(option.choices[next].value)
+    onChange(stops[next].value)
   }
   const fromPointer = (clientX: number) => {
     const r = track.current!.getBoundingClientRect()
@@ -146,7 +149,7 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
       >
         <div className="effort-track" ref={track}>
           <div className="effort-fill" style={{ width: x(at) }} />
-          {option.choices.map((c, i) => (
+          {stops.map((c, i) => (
             <span key={c.value} className={'effort-stop' + (i < at ? ' under' : '')} style={{ left: x(i) }} title={effortLabel(option, i)} />
           ))}
           <span className="effort-thumb" style={{ left: x(at) }} />

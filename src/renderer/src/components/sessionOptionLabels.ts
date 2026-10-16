@@ -40,12 +40,47 @@ export function choiceLabel(name: string, value?: string): string {
   return zh ? zh + (m?.[2] ? '（默认）' : '') : name // i18n-ignore
 }
 
+/** How much thinking a level means, from its value or name; undefined when it doesn't say. */
+export function effortRank(c: { value: string; name: string }): number | undefined {
+  for (const raw of [c.value, c.name]) {
+    const k = raw.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s*\(default\)$/, '').replace(/\s*(effort|reasoning|thinking)$/, '').trim()
+    const flat = k.replace(/\s+/g, '')
+    if (/^(none|off|no|disabled)$/.test(flat)) return 0
+    if (/^(minimal|min|lowest)$/.test(flat)) return 1
+    if (/^(verylow|xlow)$/.test(flat)) return 1.5
+    if (/^(low|light|fast)$/.test(flat)) return 2
+    if (/^(medium|med|mid|default|normal|balanced|auto|think)$/.test(flat)) return 3
+    if (/^(high|hard|deep|thinkhard)$/.test(flat)) return 4
+    if (/^(veryhigh|extrahigh|xhigh|higher|ultrathink|megathink)$/.test(flat)) return 5
+    if (/^(max|maximum|highest|ultra|xxhigh)$/.test(flat)) return 6
+  }
+  return undefined
+}
+
+/**
+ * The levels from fastest to smartest, whatever order the agent listed them in.
+ * Known levels are sorted by rank; unknown ones keep their place relative to
+ * their neighbours. If too few are recognised to sort, the agent's order is
+ * kept, turned around when the recognised ones run from high to low.
+ */
+export function effortStops<C extends { value: string; name: string }>(choices: C[]): C[] {
+  const ranks = choices.map(effortRank)
+  const known = ranks.filter((r): r is number => r !== undefined)
+  if (known.length === choices.length) return choices.map((c, i) => [c, ranks[i]!] as const).sort((a, b) => a[1] - b[1]).map(([c]) => c)
+  if (known.length >= 2) {
+    const firstKnown = known[0]
+    const lastKnown = known[known.length - 1]
+    if (firstKnown > lastKnown) return [...choices].reverse()
+  }
+  return choices
+}
+
 /**
  * A thinking level's label. Levels the table doesn't know never show raw English
  * in the Chinese UI: they read as 第 n 档 instead.
  */
 export function effortLabel(o: SessionOption, i: number): string {
-  const c = o.choices[i]
+  const c = effortStops(o.choices)[i]
   if (!c) return ''
   const label = choiceLabel(c.name, c.value)
   if (lang !== 'zh' || label !== c.name || /[\u3400-\u9fff]/.test(label)) return label
