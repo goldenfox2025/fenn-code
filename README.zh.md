@@ -35,7 +35,9 @@
 
 内置 Codex、Claude Code、Grok 和 Qoder，装了 Codex 时默认推荐它。设置里能看到每个 agent 是否已安装，以及在 agent 能报告时是否已登录。只有您点了才会检查更新和升级。其他 ACP agent 在 `backends.json` 里加一项即可。
 
-Ancora 从不自行安装 agent。安装和升级按钮会先显示要运行的确切命令，等您确认后才执行；选择模型时也只列出已经可用的 agent。
+Ancora 从不自行安装 agent。安装和升级按钮会先显示要运行的确切命令，等您确认后才执行；选择模型时也只列出已经可用的 agent。打开模型菜单时就会读取 agent 提供的模型，所以第一条消息之前就能选模型和思考强度；空闲的对话也可以换成另一个 agent，新的 agent 会拿到之前的对话内容。
+
+如果命令行程序不在 `PATH` 里（比如是 shell 别名，或装在别的应用里），可以在 设置 → Agent 后端 里填路径：Codex 可以填 CLI 和 `codex-acp` 适配器，Qoder 可以填 CLI，以及运行其 JS 入口用的 Node。用 Qoder 时，用量按钮显示的是账户 Credits，而不是 token。
 
 ![设置：Codex 和 Claude Code 已登录，Grok 已是最新](docs/screenshots/zh/backends.webp)
 
@@ -61,7 +63,7 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 
 ## 快速开始
 
-1. 从 [Releases](../../releases) 下载 `Ancora-0.1.0-win.zip`，解压到任意位置，运行 `Ancora.exe`。程序暂时没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
+1. 从 [Releases](../../releases) 下载安装包 `Ancora-Setup-0.1.1.exe`，或免安装的 `Ancora-0.1.1-win.zip`（解压到任意位置，运行 `Ancora.exe`）。程序没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
 2. 至少安装并登录一个 agent，在终端里做，或者在 设置 → Agent 后端 里点按钮：
 
    | Agent | 安装 | 登录 | 状态 |
@@ -79,7 +81,7 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 | 平台 | 状态 |
 |---|---|
 | Windows 11（x64） | 提供预编译版本，已实测，包括电脑操控。Windows 10 理论上可用，尚未测试。 |
-| macOS | 用 `build.sh` 从源码编译。尚未在真机上验证，欢迎反馈。电脑操控需要「辅助功能」和「录屏与系统录音」权限。 |
+| macOS | 用 `build.sh` 从源码编译。项目没有 Apple 开发者签名，所以不提供预编译版本。尚未在真机上验证，欢迎反馈。电脑操控需要「辅助功能」和「录屏与系统录音」权限。 |
 | Linux | 用 `build.sh` 从源码编译。尚未在桌面真机上验证，欢迎反馈。电脑操控需要 X11 会话和 `xdotool`（不支持 Wayland）。 |
 
 ## 从源码编译

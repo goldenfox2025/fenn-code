@@ -26,7 +26,7 @@ stub('codex', `case "$1 $2" in "login status") echo "Logged in using ChatGPT" >&
 stub('qodercli', `echo '{"logged_in":true,"version":"1.1.72"}'`)
 stub('grok', `echo "grok 1.0.60"`)
 // The adapters only need to exist; nothing here sends a prompt.
-for (const a of ['claude-agent-acp', 'codex-acp']) stub(a, 'sleep 600')
+for (const a of ['claude-agent-acp', 'codex-acp']) stub(a, 'exec sleep 600')
 
 // ---- seeded data ------------------------------------------------------------
 const data = mkdtempSync(join(tmpdir(), 'ancora-demo-'))

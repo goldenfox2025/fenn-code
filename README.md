@@ -35,7 +35,9 @@ With computer use switched on, an agent whose model can read images works in you
 
 Codex, Claude Code, Grok and Qoder are built in, and Codex is the suggested default when it is installed. Settings shows whether each one is installed and, where the agent reports it, signed in. It checks for updates and upgrades only when you ask. Any other ACP agent is one entry in `backends.json`.
 
-Ancora never installs an agent on its own. The install and upgrade buttons show the exact command and wait for you to confirm, and the model picker only lists agents that are ready to use.
+Ancora never installs an agent on its own. The install and upgrade buttons show the exact command and wait for you to confirm, and the model picker only lists agents that are ready to use. It loads an agent's models as soon as you open it, so you can pick a model and thinking level before the first message, and an idle chat can switch to another agent, which receives the conversation so far.
+
+If a CLI isn't on `PATH` (a shell alias, or bundled inside another app), set its path under Settings → Agent backends: Codex takes the CLI and the `codex-acp` adapter, Qoder the CLI and, for its JS entry, Node. With Qoder, the usage button shows your account's credits instead of tokens.
 
 ![Settings: Codex and Claude Code signed in, Grok up to date](docs/screenshots/en/backends.webp)
 
@@ -61,7 +63,7 @@ Also included: attachments, editing and regenerating with version history, token
 
 ## Quick start
 
-1. Download `Ancora-0.1.0-win.zip` from [Releases](../../releases), unzip it anywhere and run `Ancora.exe`. The build is not code-signed yet, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
+1. From [Releases](../../releases), download the installer (`Ancora-Setup-0.1.1.exe`) or the portable `Ancora-0.1.1-win.zip` (unzip it anywhere and run `Ancora.exe`). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
 2. Install and sign in to at least one agent, in a terminal or from Settings → Agent backends:
 
    | Agent | Install | Sign in | Status |
@@ -79,7 +81,7 @@ Also included: attachments, editing and regenerating with version history, token
 | Platform | Status |
 |---|---|
 | Windows 11 (x64) | Prebuilt release. Tested, including computer use. Windows 10 should work but has not been tested. |
-| macOS | Build from source with `build.sh`. Not yet verified on hardware; feedback welcome. Computer use needs the Accessibility and Screen Recording permissions. |
+| macOS | Build from source with `build.sh`. There is no prebuilt download, since the project has no Apple signing identity. Not yet verified on hardware; feedback welcome. Computer use needs the Accessibility and Screen Recording permissions. |
 | Linux | Build from source with `build.sh`. Not yet verified on desktop hardware; feedback welcome. Computer use needs an X11 session and `xdotool` (Wayland isn't supported). |
 
 ## Build from source
