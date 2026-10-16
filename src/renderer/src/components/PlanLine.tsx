@@ -29,7 +29,7 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
             : t('计划')}
         </span>
         {blocker && (
-          <span className="plan-blocker" title={blocker.text}>
+          <span className="plan-blocker" data-tip={blocker.text}>
             <CircleAlert size={13} />
             {t('难点：{0}', blocker.text)}
           </span>

@@ -207,7 +207,7 @@ await check('cancelling a sidebar delete puts focus back on its 「…」 button
 
 await check('Esc closes the project memory form', async () => {
   await page.click('.sidebar .nav-item:has-text("端到端")')
-  await page.click('.tab[title="项目记忆"]')
+  await page.click('.tab[data-tip="项目记忆"]')
   await page.click('.btn:has-text("添加记忆")')
   await page.waitForSelector('textarea.textarea')
   await page.focus('textarea.textarea')
@@ -398,12 +398,12 @@ await check('the chats page groups chats by folder, and selects several to delet
 await check('a project keeps a progress board of milestones and tasks, edited by hand', async () => {
   await page.click('.sidebar .recent-projects .nav-item:has-text("端到端")')
   // Threads are the milestones: the board only appears once something is on it (here, a goal the agent recorded).
-  if (await page.locator('.panel-head .tab[title="进度"]').count()) throw new Error('empty progress board shown')
+  if (await page.locator('.panel-head .tab[data-tip="进度"]').count()) throw new Error('empty progress board shown')
   await page.evaluate(async () => {
     const p = (await window.ancora.snapshot()).projects.find((x) => x.name.includes('端到端'))
     await window.ancora.updateProgress(p.id, { title: '第一版上线' })
   })
-  await page.click('.panel-head .tab[title="进度"]')
+  await page.click('.panel-head .tab[data-tip="进度"]')
   const ms = page.locator('.progress-row.milestone:has-text("第一版上线")')
   await ms.waitFor({ timeout: 3000 })
   await ms.hover()

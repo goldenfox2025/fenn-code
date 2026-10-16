@@ -38,7 +38,7 @@ import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
 import { classifyError, isFriendly, type ErrorKind } from '@shared/errors'
 
-type ToolBlock = Extract<Block, { type: 'tool' }>
+import { APP_TOOL, groupBlocks, type PlanBlock, type StepBlock, type ToolBlock } from '../turn'
 
 export function Transcript({ conversation, compact, header }: { conversation: Conversation; compact?: boolean; header?: React.ReactNode }) {
   const messages = useApp((s) => s.messages[conversation.id])
@@ -197,7 +197,7 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
       {!!m.reactions?.length && (
         <div className="reactions on-user">
           {m.reactions.map((r) => (
-            <span key={r} className="reaction" title={t('Agent 的回应')}>
+            <span key={r} className="reaction" data-tip={t('Agent 的回应')}>
               {r}
             </span>
           ))}
@@ -207,7 +207,7 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
         {m.variant && m.variant.count > 1 && <VersionSwitch m={m} busy={busy} />}
         <CopyButton text={text} />
         {!busy && (
-          <button className="icon-btn sm" title={t('编辑')} onClick={() => setEditing(text)}>
+          <button className="icon-btn sm" data-tip={t('编辑')} onClick={() => setEditing(text)}>
             <Pencil size={14} />
           </button>
         )}
@@ -222,13 +222,13 @@ function VersionSwitch({ m, busy }: { m: Message; busy?: boolean }) {
   const go = (i: number) => void api().switchVariant(m.conversationId, v.group, i)
   return (
     <span className="version-switch">
-      <button className="icon-btn sm" title={t('上一个版本')} disabled={busy || v.index === 0} onClick={() => go(v.index - 1)}>
+      <button className="icon-btn sm" data-tip={t('上一个版本')} disabled={busy || v.index === 0} onClick={() => go(v.index - 1)}>
         <ChevronLeft size={14} />
       </button>
       <span className="small muted">
         {v.index + 1} / {v.count}
       </span>
-      <button className="icon-btn sm" title={t('下一个版本')} disabled={busy || v.index === v.count - 1} onClick={() => go(v.index + 1)}>
+      <button className="icon-btn sm" data-tip={t('下一个版本')} disabled={busy || v.index === v.count - 1} onClick={() => go(v.index + 1)}>
         <ChevronRight size={14} />
       </button>
     </span>
@@ -280,7 +280,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
         </div>
       )}
       {m.editedAt && (
-        <div className="edited-mark small muted" title={new Date(m.editedAt).toLocaleString()}>
+        <div className="edited-mark small muted" data-tip={new Date(m.editedAt).toLocaleString()}>
           {t('已编辑')}
         </div>
       )}
@@ -301,7 +301,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           <CopyButton text={textOf(m)} />
           <button
             className="icon-btn sm"
-            title={t('添加回应')}
+            data-tip={t('添加回应')}
             onClick={(e) =>
               openMenu(
                 e.currentTarget,
@@ -315,12 +315,12 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
             <SmilePlus size={14} />
           </button>
           {inProjectChat && !busy && !m.blocks.some((b) => b.type === 'thread-card') && (
-            <button className="icon-btn sm" title={t('转为讨论串')} onClick={() => void api().convertToThread(m.conversationId, m.id)}>
+            <button className="icon-btn sm" data-tip={t('转为讨论串')} onClick={() => void api().convertToThread(m.conversationId, m.id)}>
               <Split size={14} />
             </button>
           )}
           {last && !busy && !m.blocks.some((b) => b.type === 'thread-card') && (
-            <button className="icon-btn sm" title={t('重新生成')} onClick={() => api().regenerate(m.conversationId)}>
+            <button className="icon-btn sm" data-tip={t('重新生成')} onClick={() => api().regenerate(m.conversationId)}>
               <RotateCcw size={14} />
             </button>
           )}
@@ -330,42 +330,6 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
       )}
     </div>
   )
-}
-
-/** The app's own coordination tools are plumbing; their effects show up as cards and status instead. */
-const APP_TOOL = /(^|[/_.:\s])(publish_page|ask_decision|start_thread|message_thread|list_threads|read_thread|set_thread_resolved|update_status|set_title|set_resolved|react|correct_message|memory_list|memory_read|memory_write|memory_delete|set_blocker|progress_read|progress_update)\b/
-
-/** Tools whose result is the card itself. */
-const OUTPUT_TOOL = /(^|[/_.:\s])(attach_output|project_file_write)\b/
-
-type PlanBlock = Extract<Block, { type: 'plan' }>
-type StepBlock = ToolBlock | Extract<Block, { type: 'thought' }> | PlanBlock
-
-/**
- * Thinking and tool calls in a row fold into one quiet "steps" line, like
- * Claude. The plan (one block, updated in place) joins the first of those
- * lines; thread cards and handed-over files go last, under the reply text.
- */
-function groupBlocks(blocks: Block[]): (Block | StepBlock[])[] {
-  const out: (Block | StepBlock[])[] = []
-  const plan = blocks.find((b): b is PlanBlock => b.type === 'plan')
-  const cards = blocks.filter((b) => b.type === 'thread-card' || b.type === 'output')
-  for (const b of blocks) {
-    if (b.type === 'thread-card' || b.type === 'output' || b.type === 'plan') continue
-    // A handed-over file shows as its card; only a failed hand-over keeps its tool line.
-    if (b.type === 'tool' && (APP_TOOL.test(b.title) || (OUTPUT_TOOL.test(b.title) && b.status !== 'failed'))) continue
-    const last = out[out.length - 1]
-    if (b.type === 'tool' || b.type === 'thought') {
-      if (Array.isArray(last)) last.push(b)
-      else out.push([b])
-    } else out.push(b)
-  }
-  if (plan) {
-    const first = out.find((g): g is StepBlock[] => Array.isArray(g))
-    if (first) first.unshift(plan)
-    else out.unshift([plan])
-  }
-  return [...out, ...cards]
 }
 
 const Markdown = memo(function Markdown({ text, cursor }: { text: string; cursor?: boolean }) {
@@ -576,9 +540,10 @@ function isListing(tool: ToolBlock): boolean {
 
 /** What the agent is doing right now, for the live line. */
 function liveLabel(steps: StepBlock[]): string {
-  const last = steps[steps.length - 1]
+  const last = [...steps].reverse().find((s) => s.type !== 'text') ?? steps[steps.length - 1]
   if (last.type === 'thought') return t('思考中…')
   if (last.type === 'plan') return last.entries.find((e) => e.status === 'in_progress')?.content ?? t('正在处理…')
+  if (last.type === 'text') return t('正在处理…')
   return toolTitle(last)
 }
 
@@ -601,6 +566,10 @@ function Steps({ steps, live }: { steps: StepBlock[]; live: boolean }) {
           {steps.map((s, i) =>
             s.type === 'plan' ? (
               <Plan key={i} entries={s.entries} />
+            ) : s.type === 'text' ? (
+              <div key={i} className="step-text">
+                <Markdown text={s.text} />
+              </div>
             ) : s.type === 'thought' ? (
               <div key={i} className="step-thought">
                 {s.text}
@@ -666,7 +635,7 @@ function ThreadCard({ threadId }: { threadId: string }) {
       <span className="t">{thread.title}</span>
       {!!thread.messageCount && <span className="small muted">{t('{0} 条回复', thread.messageCount)}</span>}
       {outputs > 0 && (
-        <span className="thread-outputs" title={t('{0} 份成果', outputs)}>
+        <span className="thread-outputs" data-tip={t('{0} 份成果', outputs)}>
           <PackageOpen size={12} />
           {outputs}
         </span>
@@ -704,7 +673,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       className="icon-btn sm"
-      title={t('复制')}
+      data-tip={t('复制')}
       onClick={() => {
         void navigator.clipboard.writeText(text)
         setDone(true)
@@ -850,7 +819,7 @@ function PlacedLine({ path }: { path: string }) {
     if (!r.ok) toast(r.error ?? t('打不开这个文件夹'), 'error')
   }
   return (
-    <div className="placed-line" title={path}>
+    <div className="placed-line" data-tip={path}>
       <FolderOpen size={14} />
       <span>{t('已放在 {0}', name)}</span>
       <button className="link" onClick={open}>

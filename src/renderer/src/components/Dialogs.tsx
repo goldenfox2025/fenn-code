@@ -93,7 +93,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
           <div className="folder-suggest">
             <span className="muted small">{t('可能是：')}</span>
             {likely.map((l) => (
-              <button key={l.path} className="link-chip" title={l.path} onClick={() => setF({ ...f, cwd: l.path })}>
+              <button key={l.path} className="link-chip" data-tip={l.path} onClick={() => setF({ ...f, cwd: l.path })}>
                 <FolderGit2 size={12} /> {l.name}
               </button>
             ))}
@@ -270,7 +270,7 @@ function SettingsModal({ tab: initial, onClose }: { tab: string; onClose: () => 
   return (
     <Overlay onClose={onClose}>
       <div className={'modal wide settings-modal' + (mac ? ' mac' : '')} tabIndex={-1}>
-        <button className={'icon-btn settings-close ' + (mac ? 'left' : 'right')} title={t('关闭')} aria-label={t('关闭')} onClick={onClose}>
+        <button className={'icon-btn settings-close ' + (mac ? 'left' : 'right')} data-tip={t('关闭')} aria-label={t('关闭')} onClick={onClose}>
           <X size={18} />
         </button>
         <nav className="settings-nav">
@@ -349,7 +349,7 @@ function GeneralSettings() {
             <FolderOpen size={15} />
           </button>
           {settings.defaultCwd && (
-            <button className="btn" title={t('不使用文件夹')} onClick={() => void api().updateSettings({ defaultCwd: '' })}>
+            <button className="btn" data-tip={t('不使用文件夹')} onClick={() => void api().updateSettings({ defaultCwd: '' })}>
               <X size={15} />
             </button>
           )}
@@ -370,7 +370,7 @@ function GeneralSettings() {
             <FolderOpen size={15} />
           </button>
           {settings.autoFolderRoot && (
-            <button className="btn" title={t('恢复默认')} onClick={() => void api().updateSettings({ autoFolderRoot: '' })}>
+            <button className="btn" data-tip={t('恢复默认')} onClick={() => void api().updateSettings({ autoFolderRoot: '' })}>
               <X size={15} />
             </button>
           )}
@@ -833,7 +833,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
               <span className={'status-chip ' + (state.signedIn ? 'done' : 'waiting')}>{state.signedIn ? t('已登录') : t('未登录')}</span>
             )
           )}
-          {state?.detail && <span className="muted account-detail" title={state.detail}>{state.detail}</span>}
+          {state?.detail && <span className="muted account-detail" data-tip={state.detail}>{state.detail}</span>}
           {upgrade && !missing && latest === undefined && (
             <button className="text-link" disabled={checking} onClick={() => void checkLatest()}>
               {checking ? t('正在检查…') : t('检查更新')}
@@ -1019,7 +1019,7 @@ function ConnectorSettings({ onFormChange }: { onFormChange: (open: boolean) => 
               {t('编辑')}</button>
             <button
               className={'switch' + (c.enabled ? ' on' : '')}
-              title={c.enabled ? t('已启用') : t('已停用')}
+              data-tip={c.enabled ? t('已启用') : t('已停用')}
               onClick={async () => {
                 await api().saveConnector({ ...c, enabled: !c.enabled })
                 void reload()

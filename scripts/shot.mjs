@@ -155,14 +155,14 @@ const scenarios = {
     await page.keyboard.press('Enter')
     await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
     await page.hover('.msg-user')
-    await page.click('.msg-user .icon-btn[title="编辑"]')
+    await page.click('.msg-user .icon-btn[data-tip="编辑"]')
     await page.fill('.edit-box textarea', '你好呀')
     await page.click('.edit-box .btn.primary')
     await page.waitForSelector('.version-switch', { timeout: 20000 })
     await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
     await wait(500)
     await shot('130-versions-2of2')
-    await page.click('.version-switch .icon-btn[title="上一个版本"]')
+    await page.click('.version-switch .icon-btn[data-tip="上一个版本"]')
     await wait(800)
     await shot('131-versions-1of2')
   },
@@ -177,7 +177,7 @@ const scenarios = {
     await page.click('.sidebar .nav-item:has-text("项目")')
     await page.click('.page :text("竞品调研")')
     await wait(500)
-    await page.click('.panel-head .tab[title="成果"]')
+    await page.click('.panel-head .tab[data-tip="成果"]')
     await wait(400)
     await shot('121-outputs-library')
   },
@@ -298,7 +298,7 @@ const scenarios = {
       return p.id
     })
     await page.click(`.sidebar .nav-item:has-text("发布 Ancora")`)
-    await page.click('.panel-head .tab[title="进度"]')
+    await page.click('.panel-head .tab[data-tip="进度"]')
     await wait(300)
     await shot('90-progress')
     await page.click('.panel-head .tab:has-text("讨论串")')
@@ -519,7 +519,7 @@ const scenarios = {
     await shot('06-attach-sent')
     const users = page.locator('.msg-user')
     await users.last().hover()
-    await users.last().locator('.icon-btn[title="编辑"]').click()
+    await users.last().locator('.icon-btn[data-tip="编辑"]').click()
     await page.fill('.edit-box textarea', '用一句话总结这个文件')
     await shot('07-editing')
     await page.click('.edit-box .btn.primary')
@@ -528,7 +528,7 @@ const scenarios = {
     await shot('08-edited')
   },
   async files() {
-    await page.click('.panel-head .tab[title="项目文件"]')
+    await page.click('.panel-head .tab[data-tip="项目文件"]')
     // A non-ASCII name, as users' files often have.
     await page.setInputFiles('.panel input[type=file]', {
       name: '产品规格.md',

@@ -112,7 +112,7 @@ export function Sidebar() {
         className={'nav-item' + (selected ? ' selected' : '') + (nested ? ' nested' : '')}
         role="button"
         onClick={() => s.navigate({ view: 'chat', conversationId: c.id })}
-        title={c.title}
+        data-tip={c.title}
       >
         <span className={'dot ' + (c.status === 'working' ? 'working' : c.status === 'waiting' ? 'waiting' : c.unread ? 'unread' : '')} />
         <span className="label">{c.title}</span>
@@ -151,17 +151,17 @@ export function Sidebar() {
     <aside className={'sidebar' + (s.sidebarOpen ? '' : ' closed')}>
       <div className="sidebar-top drag">
         {s.platform !== 'darwin' && (
-          <button className="icon-btn" title={t('菜单')} onClick={() => s.set({ settingsOpen: 'general' })}>
+          <button className="icon-btn" data-tip={t('菜单')} onClick={() => s.set({ settingsOpen: 'general' })}>
             <MenuIcon size={17} />
           </button>
         )}
-        <button className="icon-btn" title={t('收起侧栏 (Ctrl+B)')} onClick={() => s.set({ sidebarOpen: false })}>
+        <button className="icon-btn" data-tip={t('收起侧栏 (Ctrl+B)')} onClick={() => s.set({ sidebarOpen: false })}>
           <PanelLeft size={17} />
         </button>
-        <button className="icon-btn" title={t('后退')} disabled={!s.history.length} onClick={s.back}>
+        <button className="icon-btn" data-tip={t('后退')} disabled={!s.history.length} onClick={s.back}>
           <ArrowLeft size={17} />
         </button>
-        <button className="icon-btn" title={t('前进')} disabled={!s.future.length} onClick={s.forward}>
+        <button className="icon-btn" data-tip={t('前进')} disabled={!s.future.length} onClick={s.forward}>
           <ArrowRight size={17} />
         </button>
       </div>
@@ -241,11 +241,11 @@ export function Sidebar() {
             const open = expanded.has(g.key)
             return (
               <div key={g.key} className="folder-group">
-                <div className="section-head folder-head" title={g.folder}>
+                <div className="section-head folder-head" data-tip={g.folder}>
                   <span className="grow">{g.name}</span>
                   <button
                     className="icon-btn sm"
-                    title={g.folder ? t('在 {0} 中新建对话', g.name) : t('新对话')}
+                    data-tip={g.folder ? t('在 {0} 中新建对话', g.name) : t('新对话')}
                     onClick={() => s.navigate({ view: 'home', folder: g.folder })}
                   >
                     <Plus size={14} />
@@ -298,7 +298,7 @@ export function Sidebar() {
           </span>
           <ChevronsUpDown size={14} className="muted" />
         </button>
-        <button className="icon-btn" title={t('设置')} onClick={() => s.set({ settingsOpen: 'general' })}>
+        <button className="icon-btn" data-tip={t('设置')} onClick={() => s.set({ settingsOpen: 'general' })}>
           <Settings size={16} />
         </button>
       </div>

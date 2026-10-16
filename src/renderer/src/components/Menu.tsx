@@ -335,7 +335,7 @@ export function Dropdown<T extends string>({
     <>
       <button
         type="button"
-        title={title}
+        data-tip={title}
         aria-haspopup="menu"
         className={(variant === 'field' ? 'dropdown' : 'select-btn') + (className ? ' ' + className : '')}
         onClick={(e) => {

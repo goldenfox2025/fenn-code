@@ -30,7 +30,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
       <div className="chat-header">
         <EditableTitle conv={conv} />
         {parent && (
-          <button className="pill-btn back-to-parent" title={parent.title} onClick={() => navigate({ view: 'chat', conversationId: parent.id })}>
+          <button className="pill-btn back-to-parent" data-tip={parent.title} onClick={() => navigate({ view: 'chat', conversationId: parent.id })}>
             <CornerUpLeft size={14} />
             {t('回到主对话')}
           </button>
@@ -39,7 +39,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
         <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} />
         <button
           className="icon-btn"
-          title={t('更多对话操作')}
+          data-tip={t('更多对话操作')}
           aria-label={t('更多对话操作')}
           onClick={(e) =>
             openMenu(e.currentTarget, [
@@ -141,7 +141,7 @@ export function EditableTitle({ conv }: { conv: Conversation }) {
   return (
     <button
       className="chat-title"
-      title={t('点击重命名')}
+      data-tip={t('点击重命名')}
       onClick={() => {
         setValue(conv.title)
         setEditing(true)

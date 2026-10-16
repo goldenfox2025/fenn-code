@@ -47,15 +47,15 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
           />
         )}
         <span className="spacer" />
-        <button className="icon-btn" title={showCode ? t('预览') : t('查看代码')} onClick={() => setShowCode(!showCode)}>
+        <button className="icon-btn" data-tip={showCode ? t('预览') : t('查看代码')} onClick={() => setShowCode(!showCode)}>
           {showCode ? <Eye size={15} /> : <Code2 size={15} />}
         </button>
-        <button className="icon-btn" title={t('重新加载')} onClick={() => setReload(reload + 1)}>
+        <button className="icon-btn" data-tip={t('重新加载')} onClick={() => setReload(reload + 1)}>
           <RefreshCw size={15} />
         </button>
         <button
           className="icon-btn"
-          title={t('复制代码')}
+          data-tip={t('复制代码')}
           onClick={async () => {
             const html = await api().artifactSource(id, current)
             if (html) {
@@ -66,10 +66,10 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
         >
           <Copy size={15} />
         </button>
-        <button className="icon-btn" title={t('下载 HTML')} onClick={download}>
+        <button className="icon-btn" data-tip={t('下载 HTML')} onClick={download}>
           <Download size={15} />
         </button>
-        <button className="icon-btn" title={t('关闭')} onClick={close}>
+        <button className="icon-btn" data-tip={t('关闭')} onClick={close}>
           <X size={16} />
         </button>
       </div>

@@ -33,7 +33,7 @@ export function EffortPicker({ option, value, disabled, onChange }: { option: Se
         className={'effort-chip' + (open ? ' open' : '')}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={t('努力程度')}
+        data-tip={t('努力程度')}
         onClick={(e) => {
           e.stopPropagation()
           setOpen((o) => !o)
@@ -121,7 +121,7 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
         <span className="effort-title">{t('努力程度')}</span>
         <span className="effort-level">{name}</span>
         <span className="spacer" />
-        <span className="effort-help" title={t('努力程度越高，agent 思考得越多：回答更周到，但更慢，也更耗额度。')}>
+        <span className="effort-help" data-tip={t('努力程度越高，agent 思考得越多：回答更周到，但更慢，也更耗额度。')}>
           <HelpCircle size={16} />
         </span>
       </div>
@@ -150,7 +150,7 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
         <div className="effort-track" ref={track}>
           <div className="effort-fill" style={{ width: x(at) }} />
           {stops.map((c, i) => (
-            <span key={c.value} className={'effort-stop' + (i < at ? ' under' : '')} style={{ left: x(i) }} title={effortLabel(option, i)} />
+            <span key={c.value} className={'effort-stop' + (i < at ? ' under' : '')} style={{ left: x(i) }} data-tip={effortLabel(option, i)} />
           ))}
           <span className="effort-thumb" style={{ left: x(at) }} />
         </div>

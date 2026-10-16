@@ -82,7 +82,7 @@ export function ProgressPanel({ project }: { project: Project }) {
       <div className={'progress-row' + (milestone ? ' milestone' : ' task') + (x.status === 'done' ? ' is-done' : '')}>
         <button
           className="status-btn"
-          title={t('{0}（点击切换）', STATUS_TEXT[x.status])}
+          data-tip={t('{0}（点击切换）', STATUS_TEXT[x.status])}
           onClick={() => void save({ id: x.id, status: CYCLE[x.status] })}
         >
           <StatusIcon status={x.status} size={milestone ? 17 : 15} />
@@ -95,7 +95,7 @@ export function ProgressPanel({ project }: { project: Project }) {
             <div className="progress-meta">
               {x.due && <span className={'due' + (late ? ' late' : '')}>{t('截止 {0}', x.due)}</span>}
               {links.map((c) => (
-                <button key={c.id} className="link-chip" title={c.title} onClick={() => open(c)}>
+                <button key={c.id} className="link-chip" data-tip={c.title} onClick={() => open(c)}>
                   {c.title}
                 </button>
               ))}
@@ -127,7 +127,7 @@ export function ProgressPanel({ project }: { project: Project }) {
           onChange={(v) => setDraft({ ...draft, status: v as ProgressStatus })}
           options={(['todo', 'doing', 'blocked', 'done'] as ProgressStatus[]).map((st) => ({ value: st, label: STATUS_TEXT[st] }))}
         />
-        <input className="input" type="date" title={t('截止日期（可选）')} value={draft.due ?? ''} onChange={(e) => setDraft({ ...draft, due: e.target.value })} />
+        <input className="input" type="date" data-tip={t('截止日期（可选）')} value={draft.due ?? ''} onChange={(e) => setDraft({ ...draft, due: e.target.value })} />
       </div>
       <input className="input" placeholder={t('备注（可选）')} value={draft.note ?? ''} onChange={(e) => setDraft({ ...draft, note: e.target.value })} />
       <div className="modal-actions">
@@ -175,10 +175,10 @@ export function ProgressPanel({ project }: { project: Project }) {
               <div className="progress-text">
                 <div className="progress-title">{x.title}</div>
               </div>
-              <button className="icon-btn sm" title={t('采纳')} onClick={() => void save({ id: x.id, suggested: false })}>
+              <button className="icon-btn sm" data-tip={t('采纳')} onClick={() => void save({ id: x.id, suggested: false })}>
                 <Check size={15} />
               </button>
-              <button className="icon-btn sm" title={t('忽略')} onClick={() => void api().deleteProgress(project.id, x.id)}>
+              <button className="icon-btn sm" data-tip={t('忽略')} onClick={() => void api().deleteProgress(project.id, x.id)}>
                 <X size={15} />
               </button>
             </div>

@@ -251,7 +251,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const modelButton = (
     <span className="model-group">
       {canSwitch && (
-        <button className="footer-chip backend-chip" aria-haspopup="menu" title={t('Agent 后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
+        <button className="footer-chip backend-chip" aria-haspopup="menu" data-tip={t('Agent 后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
           {currentBackend?.name ?? t('选择后端')}
         </button>
       )}
@@ -260,7 +260,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           className="footer-chip select-btn model-btn"
           aria-haspopup="menu"
           aria-busy={loadingModels || selecting}
-          title={t('模型')}
+          data-tip={t('模型')}
           onClick={(e) => (e.stopPropagation(), open('model', e.currentTarget))}
         >
           {signedOut ? <span className="mode-note warn">{t('未登录')}</span> : (currentModel?.name ?? <span className="muted">{t('模型')}</span>)}
@@ -301,7 +301,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const folderHint = mention && mention !== folderNow && (
     <div className="folder-hint">
       <Folder size={15} />
-      <span className="grow" title={mention}>
+      <span className="grow" data-tip={mention}>
         {t('消息里提到了文件夹「{0}」', baseName(mention))}
         <span className="muted"> · {mention}</span>
       </span>
@@ -317,7 +317,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       </button>
       <button
         className="icon-btn sm"
-        title={t('不用')}
+        data-tip={t('不用')}
         onClick={(e) => {
           e.stopPropagation()
           dismissedFolders.add(mention)
@@ -329,21 +329,21 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     </div>
   )
   const attachButton = (
-    <button className="icon-btn" title={t('添加文件或图片')} onClick={(e) => (e.stopPropagation(), picker.current?.click())}>
+    <button className="icon-btn" data-tip={t('添加文件或图片')} onClick={(e) => (e.stopPropagation(), picker.current?.click())}>
       <Plus size={18} />
     </button>
   )
   const sendButton =
     busy && !canSend ? (
-      <button className="send-btn stop" title={t('停止')} onClick={() => conversation && api().cancel(conversation.id)}>
+      <button className="send-btn stop" data-tip={t('停止')} onClick={() => conversation && api().cancel(conversation.id)}>
         <Square size={12} fill="currentColor" />
       </button>
     ) : variant === 'line' ? (
-      <button className="icon-btn" disabled={!canSend} onClick={submit} title={t('发送 (Enter)')}>
+      <button className="icon-btn" disabled={!canSend} onClick={submit} data-tip={t('发送 (Enter)')}>
         <CornerDownLeft size={17} />
       </button>
     ) : (
-      <button className="send-btn" disabled={!canSend} onClick={submit} title={t('发送 (Enter)')}>
+      <button className="send-btn" disabled={!canSend} onClick={submit} data-tip={t('发送 (Enter)')}>
         <ArrowUp size={18} />
       </button>
     )
@@ -466,7 +466,7 @@ function WorkingTimer({ conversationId }: { conversationId: string }) {
 
 export function AttachmentChip({ a, onRemove }: { a: Attachment; onRemove?: () => void }) {
   return (
-    <div className="attach-chip" title={a.name}>
+    <div className="attach-chip" data-tip={a.name}>
       {a.kind === 'image' && a.data ? (
         <img src={`data:${a.mimeType};base64,${a.data}`} alt={a.name} />
       ) : (
@@ -528,7 +528,7 @@ export function FolderChip({ folder, onChange, hint = '' }: { folder: string; on
     <>
       <button
         className={'select-btn folder-chip' + (folder ? ' on' : '')}
-        title={folder ? t('工作文件夹：{0}', folder) : t('选择工作文件夹，让 agent 能读写其中的文件、运行命令')}
+        data-tip={folder ? t('工作文件夹：{0}', folder) : t('选择工作文件夹，让 agent 能读写其中的文件、运行命令')}
         onClick={async (e) => {
           e.stopPropagation()
           const el = e.currentTarget

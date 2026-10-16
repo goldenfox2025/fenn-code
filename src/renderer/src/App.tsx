@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Minus, Orbit, PanelLeft, Square, X } from 'lucide-react'
 import { Dialogs } from './components/Dialogs'
 import { ConfirmHost } from './components/Modal'
+import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
 import { PagePanel } from './components/PagePanel'
 import { Sidebar } from './components/Sidebar'
@@ -78,6 +79,7 @@ export function App() {
       </main>
       <Dialogs />
       <ConfirmHost />
+      <TooltipLayer />
       {firstRun && <Onboarding />}
       <div className="toasts">
         {toasts.map((t) => (
@@ -111,7 +113,7 @@ function GlassToggle() {
   const on = useApp((s) => !!s.settings.glass)
   const toggle = () => void api().updateSettings({ glass: !on })
   return (
-    <button className={'icon-btn glass-toggle' + (on ? ' on' : '')} title={on ? t('退出玻璃效果') : t('玻璃效果')} aria-pressed={on} onClick={toggle}>
+    <button className={'icon-btn glass-toggle' + (on ? ' on' : '')} data-tip={on ? t('退出玻璃效果') : t('玻璃效果')} aria-pressed={on} onClick={toggle}>
       <Orbit size={16} />
     </button>
   )

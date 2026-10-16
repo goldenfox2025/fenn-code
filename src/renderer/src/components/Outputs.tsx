@@ -23,7 +23,7 @@ export function OutputCard({ o }: { o: Output }) {
   const where = isLink ? o.url?.replace(/^https?:\/\//, '').split('/')[0] : o.path
   return (
     <div className="output-card">
-      <button className="output-main" onClick={open} title={isLink ? o.url : o.path}>
+      <button className="output-main" onClick={open} data-tip={isLink ? o.url : o.path}>
         <span className="page-card-icon">{isLink ? <Link2 size={18} /> : <FileText size={18} />}</span>
         <span className="page-card-text">
           <span className="t">{o.title}</span>
@@ -33,11 +33,11 @@ export function OutputCard({ o }: { o: Output }) {
         </span>
       </button>
       {isLink ? (
-        <button className="icon-btn sm" title={t('在浏览器中打开')} onClick={open}>
+        <button className="icon-btn sm" data-tip={t('在浏览器中打开')} onClick={open}>
           <ExternalLink size={15} />
         </button>
       ) : (
-        <button className="icon-btn sm" title={t('在文件夹中显示')} onClick={() => o.path && void openFile(o.path, true)}>
+        <button className="icon-btn sm" data-tip={t('在文件夹中显示')} onClick={() => o.path && void openFile(o.path, true)}>
           <FolderOpen size={15} />
         </button>
       )}

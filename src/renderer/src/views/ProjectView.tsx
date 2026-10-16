@@ -73,7 +73,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
           <button className={'pill-btn' + (panelOpen && !threadId ? ' active' : '')} onClick={() => go({})}>
             <ListChecks size={15} />
             {t('概览')}</button>
-          <button className="icon-btn" title={t('项目设置')} onClick={() => set({ settingsOpen: `project:${project.id}` })}>
+          <button className="icon-btn" data-tip={t('项目设置')} onClick={() => set({ settingsOpen: `project:${project.id}` })}>
             <Settings size={16} />
           </button>
           <button
@@ -142,7 +142,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
         </aside>
       )}
       {!panelOpen && (
-        <button className="icon-btn" style={{ position: 'absolute', right: 12, top: 52 }} title={t('打开讨论串')} onClick={() => setPanelOpen(true)}>
+        <button className="icon-btn" style={{ position: 'absolute', right: 12, top: 52 }} data-tip={t('打开讨论串')} onClick={() => setPanelOpen(true)}>
           <MessagesSquare size={17} />
         </button>
       )}
@@ -218,20 +218,20 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
           {t('讨论串')}</button>
         {/* Threads are the milestones; the separate board stays only for projects that already use it. */}
         {(!!project.progress?.length || tab === 'progress') && (
-          <button className={'tab' + (tab === 'progress' ? ' active' : '')} title={t('进度')} onClick={() => setTab('progress')}>
+          <button className={'tab' + (tab === 'progress' ? ' active' : '')} data-tip={t('进度')} onClick={() => setTab('progress')}>
             <Milestone size={15} />
           </button>
         )}
-        <button className={'tab' + (tab === 'outputs' ? ' active' : '')} title={t('成果')} onClick={() => setTab('outputs')}>
+        <button className={'tab' + (tab === 'outputs' ? ' active' : '')} data-tip={t('成果')} onClick={() => setTab('outputs')}>
           <PackageOpen size={15} />
         </button>
-        <button className={'tab' + (tab === 'memory' ? ' active' : '')} title={t('项目记忆')} onClick={() => setTab('memory')}>
+        <button className={'tab' + (tab === 'memory' ? ' active' : '')} data-tip={t('项目记忆')} onClick={() => setTab('memory')}>
           <NotebookText size={15} />
         </button>
-        <button className={'tab' + (tab === 'files' ? ' active' : '')} title={t('项目文件')} onClick={() => setTab('files')}>
+        <button className={'tab' + (tab === 'files' ? ' active' : '')} data-tip={t('项目文件')} onClick={() => setTab('files')}>
           <Paperclip size={15} />
         </button>
-        <button className={'tab' + (tab === 'routines' ? ' active' : '')} title={t('定时任务')} onClick={() => setTab('routines')}>
+        <button className={'tab' + (tab === 'routines' ? ' active' : '')} data-tip={t('定时任务')} onClick={() => setTab('routines')}>
           <Clock size={15} />
         </button>
         <span className="spacer" />
@@ -372,7 +372,7 @@ function FilesPanel({ projectId }: { projectId: string }) {
             <span className="small muted">{humanSize(f.size)}</span>
             <button
               className="icon-btn sm"
-              title={t('移除')}
+              data-tip={t('移除')}
               onClick={async () => {
                 if (!(await confirmDialog(t('从项目中移除「{0}」？', f.name), { ok: t('移除') }))) return
                 await api().deleteProjectFile(projectId, f.name)
@@ -515,7 +515,7 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
   return (
     <div className="thread-view" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="panel-head">
-        <button className="icon-btn" onClick={onBack} title={t('返回讨论串列表')}>
+        <button className="icon-btn" onClick={onBack} data-tip={t('返回讨论串列表')}>
           <ArrowLeft size={16} />
         </button>
         <EditableTitle conv={th} />
@@ -640,7 +640,7 @@ function ThreadRow({ th, onOpen }: { th: Conversation; onOpen: (id: string) => v
         <span className="sub">{st === 'working' && step ? step : st === 'error' ? t('出错') : th.lastPreview ?? ''}</span>
       </span>
       {progress && st === 'working' && (
-        <span className="progress" title={t('{0}/{1} 步', progress.done, progress.total)}>
+        <span className="progress" data-tip={t('{0}/{1} 步', progress.done, progress.total)}>
           <Ring value={progress.done / progress.total} />
           {progress.done}/{progress.total}
         </span>

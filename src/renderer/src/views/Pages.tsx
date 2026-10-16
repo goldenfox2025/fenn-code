@@ -176,7 +176,7 @@ export function ChatsPage() {
         )}
         {groupByFolder(list).map((g) => (
           <section key={g.key} className="chat-group">
-            <div className="chat-group-head" title={g.folder}>
+            <div className="chat-group-head" data-tip={g.folder}>
               {g.folder ? <Folder size={14} /> : <MessageCircle size={14} />}
               <span>{g.name}</span>
               {g.folder && <span className="small muted chat-group-path">{g.folder}</span>}
@@ -205,7 +205,7 @@ export function ChatsPage() {
               </div>
               <span className="small muted">{relTime(c.updatedAt)}</span>
             </button>
-            {!selecting && <button className="icon-btn" title={t('删除对话')} aria-label={t('删除对话「{0}」', c.title)} onClick={() => void removeOne(c)}>
+            {!selecting && <button className="icon-btn" data-tip={t('删除对话')} aria-label={t('删除对话「{0}」', c.title)} onClick={() => void removeOne(c)}>
               <Trash2 size={16} />
             </button>}
             </div>
@@ -343,19 +343,19 @@ export function RoutinesPage() {
               <button className="btn" onClick={() => navigate({ view: 'chat', conversationId: r.lastRunConversationId! })}>
                 {t('查看结果')}</button>
             )}
-            <button className="icon-btn" title={t('立即运行')} onClick={() => api().runRoutineNow(r.id)}>
+            <button className="icon-btn" data-tip={t('立即运行')} onClick={() => api().runRoutineNow(r.id)}>
               <Play size={15} />
             </button>
             <button
               className="icon-btn"
-              title={r.enabled ? t('暂停') : t('启用')}
+              data-tip={r.enabled ? t('暂停') : t('启用')}
               onClick={() => api().saveRoutine({ ...r, enabled: !r.enabled })}
             >
               {r.enabled ? <Pause size={15} /> : <Play size={15} style={{ color: 'var(--green)' }} />}
             </button>
             <button
               className="icon-btn"
-              title={t('删除')}
+              data-tip={t('删除')}
               onClick={async () => (await confirmDialog(t('删除定时任务「{0}」？', r.name))) && api().deleteRoutine(r.id)}
             >
               <Trash2 size={15} />

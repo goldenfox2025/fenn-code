@@ -48,7 +48,7 @@ export function MessageUsageLabel({ m }: { m: Message }) {
   if (!line) return null
   const title = [...detailLines(m.usage), m.usage.cost ? t('费用 {0}', formatCost(m.usage.cost)) : '', m.timing ? timingLine(m.timing) : '']
   return (
-    <span className="msg-usage" title={title.filter(Boolean).join('\n')}>
+    <span className="msg-usage" data-tip={title.filter(Boolean).join('\n')}>
       {line}
     </span>
   )
@@ -200,7 +200,7 @@ function TokensButton({ usage, scope, timing, className, align, children }: {
   const label = usage.turns ? usageLine({ total: usage.total, cost: usage.cost }) : t('用量：agent 不提供')
   return (
     <>
-      <button className={className} title={t('用量')} onClick={(e) => openMenu(e.currentTarget, usageMenu(usage, scope, timing))}>
+      <button className={className} data-tip={t('用量')} onClick={(e) => openMenu(e.currentTarget, usageMenu(usage, scope, timing))}>
         {children ?? (
           <>
             <Gauge size={14} />
@@ -247,7 +247,7 @@ function CreditsButton({ backendId, className, activity }: { backendId: string; 
     <>
       <button
         className={className}
-        title={t('{0} 账户额度', name)}
+        data-tip={t('{0} 账户额度', name)}
         onClick={(e) => openMenu(e.currentTarget, creditsMenu(quota, name, loading))}
       >
         <Gauge size={14} />
@@ -281,7 +281,7 @@ export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; sco
     <>
       <button
         className={'context-ring' + (share >= 0.9 ? ' full' : share >= 0.75 ? ' high' : '')}
-        title={title}
+        data-tip={title}
         aria-label={title}
         onClick={(e) => {
           e.stopPropagation()
