@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
 import { Composer, ProjectPicker } from '../components/Composer'
 import type { Attachment } from '@shared/model'
@@ -18,6 +18,10 @@ export function HomeView({ projectId: initialProject }: { projectId?: string }) 
   const navigate = useApp((s) => s.navigate)
   const [backendId, setBackendId] = useState(settings.defaultBackendId)
   const [modelId, setModelId] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    setBackendId(settings.defaultBackendId)
+    setModelId(undefined)
+  }, [settings.defaultBackendId])
   const [projectId, setProjectId] = useState<string | undefined>(initialProject)
   const [seed, setSeed] = useState(0)
   // undefined: follow the project's folder or the default one.

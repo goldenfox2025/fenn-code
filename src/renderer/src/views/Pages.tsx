@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Check, CheckSquare, ChevronDown, Clock, FolderKanban, MessageCircle, Pause, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { useMenu } from '../components/Menu'
 import { searchable, type Conversation, type Project, type Routine, type Schedule, type SearchHit } from '@shared/model'
-import { api, useApp } from '../store'
+import { api, toast, useApp } from '../store'
 import { relTime } from '../util'
 import { locale, t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
@@ -123,6 +123,11 @@ export function ChatsPage() {
     for (const c of chosen) await api().deleteConversation(c.id)
     stop()
   }
+  const removeOne = async (c: Conversation) => {
+    if (!(await confirmDialog(t('删除「{0}」？此操作无法撤销。', c.title)))) return
+    try { await api().deleteConversation(c.id) }
+    catch (error) { toast(String(error), 'error') }
+  }
   const moveChosen = (el: HTMLElement) =>
     openMenu(el, [
       { label: t('不属于任何项目'), onClick: () => void Promise.all(chosen.map((c) => api().updateConversation(c.id, { projectId: undefined }))).then(stop) },
@@ -189,9 +194,10 @@ export function ChatsPage() {
           const p = projects.find((x) => x.id === c.projectId)
           const on = picked.has(c.id)
           return (
+            <div className={'list-row chat-row' + (on ? ' picked' : '')} key={c.id}>
             <button
               key={c.id}
-              className={'list-row' + (on ? ' picked' : '')}
+              className="chat-row-open"
               role={selecting ? 'checkbox' : undefined}
               aria-checked={selecting ? on : undefined}
               onClick={() => (selecting ? toggle(c.id) : navigate({ view: 'chat', conversationId: c.id }))}
@@ -215,6 +221,10 @@ export function ChatsPage() {
               )}
               <span className="small muted">{relTime(c.updatedAt)}</span>
             </button>
+            {!selecting && <button className="icon-btn" title={t('删除对话')} aria-label={t('删除对话「{0}」', c.title)} onClick={() => void removeOne(c)}>
+              <Trash2 size={16} />
+            </button>}
+            </div>
           )
         })}
       </div>

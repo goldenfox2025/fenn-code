@@ -1,0 +1,455 @@
+// Exercise the shipped app outside the checkout so local node_modules cannot
+// hide missing production dependencies. No account, model request or install.
+import { _electron as electron } from 'playwright-core'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import assert from 'node:assert/strict'
+
+const release = resolve('release')
+const candidates = process.platform === 'darwin'
+  ? ['mac-universal/Ancora.app', `mac-${process.arch}/Ancora.app`, 'mac/Ancora.app']
+  : process.platform === 'win32' ? ['win-unpacked'] : ['linux-unpacked']
+const source = candidates.map((p) => join(release, p)).find(existsSync)
+assert(source, 'Build an unpacked app with npm run dist first')
+const temp = mkdtempSync(join(tmpdir(), 'ancora-package-smoke-'))
+const staged = join(temp, process.platform === 'darwin' ? 'Ancora.app' : 'app')
+const shots = join(release, 'package-smoke')
+mkdirSync(shots, { recursive: true })
+cpSync(source, staged, { recursive: true, verbatimSymlinks: true })
+const executablePath = process.platform === 'darwin'
+  ? join(staged, 'Contents/MacOS/Ancora')
+  : join(staged, process.platform === 'win32' ? 'Ancora.exe' : 'ancora-desktop')
+const packagedResources = process.platform === 'darwin' ? join(staged, 'Contents/Resources') : join(staged, 'resources')
+assert(!existsSync(join(packagedResources, 'mock-agent.mjs')), 'Release must not ship the demo agent script')
+// Fixtures live outside the installed application, declared only in isolated test data.
+const agentFixture = join(temp, 'fixture-agent.mjs')
+cpSync(resolve('resources/mock-agent.mjs'), agentFixture)
+const data = join(temp, 'data')
+const catalogGate = join(temp, 'catalog-ready')
+mkdirSync(data)
+writeFileSync(join(data, 'state.json'), JSON.stringify({ version: 1,
+  projects: [], conversations: [], routines: [], backendSettings: {},
+  settings: { defaultBackendId: 'mock', onboarded: true, language: 'zh', theme: 'glass' } }))
+writeFileSync(join(data, 'backends.json'), JSON.stringify([{
+  id: 'mock', name: '演示 Agent', command: process.execPath, args: [agentFixture]
+}, {
+  id: 'plain-metrics', name: 'Metrics test agent', command: process.execPath, args: [agentFixture],
+  env: { MOCK_SIMPLE_STREAM: '1', MOCK_USAGE: 'no-cost' }
+}, {
+  id: 'cold-catalog', name: 'Cold catalog', command: process.execPath, args: [agentFixture],
+  env: { MOCK_CATALOG_GATE: catalogGate }
+}, {
+  id: 'missing-smoke', name: 'Unavailable smoke agent', command: join(temp, 'does-not-exist')
+}, {
+  id: 'package-smoke', name: 'Package smoke agent', command: process.execPath,
+  upgrade: {
+    // Never executed: the test opens this confirmation and cancels it.
+    run: { command: 'ancora-test-do-not-run', args: ['install', '-g', '@qoder-ai/qodercli@latest', 'a-long-command-argument-'.repeat(12)] },
+    latest: { command: process.execPath, args: ['--version'] }
+  }
+}]))
+const env = { ...process.env, ANCORA_DEMO_AGENT: '1', ANCORA_DATA_DIR: data, NODE_PATH: '', MOCK_DYNAMIC_EFFORT: '1' }
+delete env.ELECTRON_RUN_AS_NODE
+delete env.NODE_OPTIONS
+let app
+let page
+async function waitState(predicate, arg) {
+  const deadline = Date.now() + 30000
+  do {
+    if (await page.evaluate(predicate, arg)) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  } while (Date.now() < deadline)
+  throw new Error('Timed out waiting for app state')
+}
+try {
+  // Even the former development switch must not enable a built-in demo in a release.
+  app = await electron.launch({ executablePath, cwd: temp,
+    args: [`--user-data-dir=${join(temp, 'production-profile')}`, ...(process.platform === 'linux' ? ['--no-sandbox'] : [])],
+    env: { ...env, ANCORA_DATA_DIR: join(temp, 'production-data') }, timeout: 45_000 })
+  page = await app.firstWindow({ timeout: 30_000 })
+  await page.waitForSelector('.sidebar', { timeout: 30_000 })
+  const production = await page.evaluate(() => window.ancora.snapshot())
+  assert(!production.backends.some((b) => b.id === 'mock'), 'Release must not offer a demo backend')
+  assert.notEqual(production.settings.defaultBackendId, 'mock')
+  await app.close()
+  app = undefined
+  console.log('Production build has no demo backend or bundled demo script')
+  app = await electron.launch({ executablePath, cwd: temp,
+    args: [`--user-data-dir=${join(temp, 'profile')}`, ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], env,
+    timeout: 45_000 })
+  page = await app.firstWindow({ timeout: 30_000 })
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.waitForSelector('.sidebar', { timeout: 30_000 })
+  const info = await app.evaluate(({ app }) => ({ packaged: app.isPackaged, version: app.getVersion() }))
+  assert(info.packaged, 'Must test the shipped app, not the development entry point')
+  console.log('Packaged startup passed:', info)
+  console.log('Native window and display:', await app.evaluate(({ BrowserWindow, screen }) => ({
+    bounds: BrowserWindow.getAllWindows()[0].getBounds(), workArea: screen.getPrimaryDisplay().workArea
+  })))
+
+  // One picker holds models, the thinking level and the agent, as in Claude's composer.
+  const picker = () => page.locator('.composer .model-btn')
+  const openPicker = () => picker().click()
+  const choose = async (name) => {
+    await openPicker()
+    await page.getByRole('menuitemradio', { name }).click()
+    await page.locator('.menu').waitFor({ state: 'detached' })
+  }
+  const NONE = /^不启用推理/
+  const LOW = /^低/
+
+  // Pick a model before sending any message; no chat or generated usage exists.
+  await choose(/^Mock Smart/)
+  assert.equal(await page.evaluate(async () => (await window.ancora.snapshot()).conversations.length), 0)
+  await picker().filter({ hasText: 'Mock Smart' }).waitFor()
+  await waitState(async () => (await window.ancora.snapshot()).settings.backendModelDefaults?.mock === 'mock-smart')
+  await choose(NONE)
+  await waitState(async () => (await window.ancora.snapshot()).settings.backendOptionDefaults?.mock?.effort === 'none')
+  console.log('Model selection before the first message passed')
+
+  // The picker keeps a gap from its button and fits the viewport, including
+  // when a narrow composer moves its controls onto a second row.
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await openPicker()
+  for (const [width, height] of [[1200, 800], [860, 560]]) {
+    await page.setViewportSize({ width, height })
+    await page.waitForFunction(() => {
+      const menu = document.querySelector('.menu')?.getBoundingClientRect()
+      const button = document.querySelector('.composer .model-btn')?.getBoundingClientRect()
+      return menu && button && (menu.top >= button.bottom + 5 || menu.bottom <= button.top - 5) && menu.top >= 7 && menu.bottom <= innerHeight - 7 && menu.left >= 7 && menu.right <= innerWidth - 7
+    })
+    await page.screenshot({ path: join(shots, `model-menu-${width}.png`) })
+  }
+  await page.keyboard.press('Escape')
+  console.log('Model menu gap, viewport fit and live resize passed')
+
+  const configFile = join(data, 'backends.json')
+  const declared = JSON.parse(readFileSync(configFile, 'utf8'))
+  declared.push({ id: 'hot-reloaded', name: 'Hot-reloaded agent', command: process.execPath })
+  writeFileSync(configFile, JSON.stringify(declared))
+  await waitState(async () => (await window.ancora.snapshot()).backends.some((b) => b.id === 'hot-reloaded'))
+  console.log('External backend configuration hot reload passed')
+
+  await page.locator('.user-btn').click()
+  await page.locator('.settings-nav').getByText('Agent 后端', { exact: true }).click()
+  const card = page.locator('.settings-body .card').filter({ hasText: 'Package smoke agent' })
+  await card.getByRole('button', { name: '检查更新', exact: true }).click()
+  await card.getByRole('button', { name: '升级', exact: true }).waitFor()
+  for (const [theme, width, height] of [['glass', 1200, 800], ['glass', 860, 560], ['light', 860, 560], ['dark', 860, 560]]) {
+    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await page.setViewportSize({ width, height })
+    await card.getByRole('button', { name: '升级', exact: true }).click()
+    const modal = page.locator('.modal.confirm')
+    await modal.waitFor()
+    const layout = await modal.evaluate((el) => {
+      const box = (q) => { const r = el.querySelector(q).getBoundingClientRect(); return { top: r.top, bottom: r.bottom } }
+      const r = el.getBoundingClientRect()
+      return { title: box('h2'), text: box('.confirm-text'), code: box('.confirm-code'), actions: box('.modal-actions'),
+        left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+        clientWidth: el.clientWidth, scrollWidth: el.scrollWidth,
+        width: innerWidth, height: innerHeight, cancelFocused: document.activeElement === el.querySelector('.confirm-cancel') }
+    })
+    assert(layout.title.bottom <= layout.text.top + 1, JSON.stringify(layout))
+    assert(layout.text.bottom <= layout.code.top + 1, JSON.stringify(layout))
+    assert(layout.code.bottom <= layout.actions.top + 1, JSON.stringify(layout))
+    assert(layout.left >= 0 && layout.right <= layout.width && layout.top >= 0 && layout.bottom <= layout.height, JSON.stringify(layout))
+    assert(layout.scrollWidth <= layout.clientWidth, JSON.stringify(layout))
+    assert(layout.cancelFocused, 'Cancel must be initially focused')
+    await page.screenshot({ path: join(shots, `upgrade-${theme}-${width}.png`) })
+    await page.keyboard.press('Escape')
+    await modal.waitFor({ state: 'detached' })
+    assert.equal(await page.locator('.modal.wide').count(), 1, 'Cancel only closes the confirmation, preserving Settings')
+  }
+  console.log('Upgrade dialog layout, themes, long commands and Escape passed')
+  await page.keyboard.press('Escape')
+
+  // The Chats page, reached from the sidebar, can delete one row directly.
+  const chats = await page.evaluate(async () => {
+    const result = []
+    for (const title of ['打包测试待删除', '打包测试保留']) {
+      const chat = await window.ancora.startChat({ backendId: 'mock', text: '你好' })
+      await window.ancora.updateConversation(chat.id, { title })
+      result.push(chat.id)
+    }
+    return result
+  })
+  await waitState(async (ids) => (await window.ancora.snapshot()).conversations.filter((c) => ids.includes(c.id)).every((c) => c.status === 'idle'), chats)
+  await page.locator('.sidebar').getByRole('button', { name: '对话', exact: true }).click()
+  await page.evaluate(() => window.ancora.updateSettings({ theme: 'light' }))
+  const remove = page.getByRole('button', { name: '删除对话「打包测试待删除」', exact: true })
+  await remove.click()
+  await page.locator('.confirm-cancel').click()
+  assert.equal(await remove.count(), 1)
+  await page.screenshot({ path: join(shots, 'chats-delete-entry.png') })
+  await remove.click()
+  await page.locator('.modal.confirm .danger-solid').click()
+  await remove.waitFor({ state: 'detached' })
+  assert(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.some((c) => c.id === id), chats[1]))
+  console.log('Chats-page single deletion and cancellation passed')
+
+  // Configure the built-in Qoder card through the UI. This JS fixture uses the
+  // external test agent, never a real Qoder account or model service.
+  const qoderDir = join(temp, 'qoder path with spaces')
+  mkdirSync(qoderDir)
+  const qoderEntry = join(qoderDir, 'qoder entry.mjs')
+  writeFileSync(qoderEntry, `
+    if (process.argv[2] === 'status') {
+      console.log(JSON.stringify({ logged_in: true, version: 'packaged-fixture' }))
+    } else if (process.argv[2] === '--acp') {
+      await import(${JSON.stringify(pathToFileURL(agentFixture).href)})
+    } else if (process.argv[2] === '--print') {
+      if (process.env.QODER_AGENT_SDK_ENTRYPOINT !== 'ancora-usage') process.exit(8)
+      const { createInterface } = await import('node:readline')
+      createInterface({ input: process.stdin }).on('line', (line) => {
+        const request = JSON.parse(line)
+        if (request.type !== 'control_request') process.exit(9)
+        const response = request.request.subtype === 'get_usage_info'
+          ? { usage: { userQuota: { used: 12.5, total: 100, remaining: 87.5, unit: 'credits' } }, session: { total_credits: 999 } } : {}
+        console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: request.request_id, response } }))
+      })
+    } else process.exit(2)
+  `)
+  await page.locator('.user-btn').click()
+  await page.locator('.settings-nav').getByText('Agent 后端', { exact: true }).click()
+  const qoderCard = page.locator('.settings-body .card').filter({ has: page.locator('.title').getByText('Qoder', { exact: true }) })
+  for (const [label, value] of [['Node 路径（用于 Qoder JS 入口）', process.execPath], ['Qoder CLI 路径', qoderEntry]]) {
+    const field = qoderCard.locator('.field').filter({ has: page.locator('label').getByText(label, { exact: true }) })
+    await field.locator('input').fill(value)
+    await field.getByRole('button', { name: '保存', exact: true }).scrollIntoViewIfNeeded()
+    const editing = await field.boundingBox()
+    await field.getByRole('button', { name: '保存', exact: true }).click()
+    await field.getByRole('button', { name: '修改', exact: true }).waitFor()
+    assert.deepEqual(await field.boundingBox(), editing, 'Saving backend settings must preserve field geometry')
+  }
+  assert.deepEqual(await page.evaluate(() => window.ancora.backendAccount('qoder')), {
+    installed: true, signedIn: true, version: 'packaged-fixture', detail: 'qodercli packaged-fixture'
+  })
+  await page.screenshot({ path: join(shots, 'qoder-path-settings.png') })
+  await page.keyboard.press('Escape')
+  const qoderChat = await page.evaluate(async () => (await window.ancora.startChat({ backendId: 'qoder', text: 'hello configured Qoder' })).id)
+  await waitState(async (id) => {
+    const messages = await window.ancora.messages(id)
+    return (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle' && messages.some((m) => m.role === 'assistant' && m.state === 'done')
+  }, qoderChat)
+  assert.equal(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id).backendId, qoderChat), 'qoder')
+  console.log('Qoder path settings, account check and packaged ACP reply passed')
+
+  await page.evaluate((id) => window.ancora.updateConversation(id, { title: 'Qoder Credits smoke' }), qoderChat)
+  await page.locator('.sidebar .nav-item').filter({ hasText: 'Qoder Credits smoke' }).click()
+  await page.locator('.chat-header .usage-btn').filter({ hasText: '12.5 / 100 credits' }).waitFor()
+  assert.equal(await page.locator('.msg-usage').count(), 0, 'Qoder does not present token counts as billing')
+  const geometry = () => page.evaluate(() => ({
+    window: [scrollX, scrollY],
+    content: [...document.querySelectorAll('.chat-header, .center > .scroll, .center > .composer')].map((el) => {
+      const r = el.getBoundingClientRect()
+      return [r.x, r.y, r.width, r.height, el.scrollTop]
+    })
+  }))
+  for (const theme of ['light', 'dark', 'glass']) {
+    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    for (const selector of ['.chat-header .usage-btn', '.chat-header button[aria-label="更多对话操作"]']) {
+      await page.locator('.center > .scroll').evaluate((el) => {
+        el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - 24)
+        el.dispatchEvent(new Event('scroll'))
+      })
+      const before = await geometry()
+      await page.locator(selector).click()
+      const surface = '.menu'
+      await page.locator(surface).waitFor()
+      assert.deepEqual(await geometry(), before, 'Opening the menu must not move the transcript or composer')
+      await page.keyboard.press('End')
+      await page.keyboard.press('Home')
+      assert.deepEqual(await geometry(), before, 'Menu navigation must only scroll the menu')
+      if (selector.includes('usage-btn')) {
+        assert.match(await page.locator(surface).innerText(), /12\.5\s*\/ 100 credits/)
+        assert.equal(await page.getByRole('meter', { name: '套餐', exact: true }).getAttribute('aria-valuenow'), '12.5')
+        assert.match(await page.locator(surface).innerText(), /13%/)
+        assert(!/999|tokens/.test(await page.locator(surface).innerText()))
+        await page.screenshot({ path: join(shots, `qoder-credits-${theme}.png`) })
+      }
+      await page.keyboard.press('Escape')
+    }
+  }
+  console.log('Qoder account Credits and stable usage/more popovers passed in three themes')
+
+  await page.locator('.sidebar .nav-item').filter({ hasText: '打包测试保留' }).click()
+  await page.locator('.chat-header .usage-btn').filter({ hasText: 'tokens' }).waitFor()
+  await page.locator('.chat-header .usage-btn').click()
+  assert.match(await page.locator('.menu').innerText(), /tokens/)
+  assert(!/未提供/.test(await page.locator('.menu').innerText()))
+  await page.keyboard.press('Escape')
+  console.log('Other agents retain reported tokens and costs, without an invented account quota')
+
+  const metricsChat = await page.evaluate(async () => (await window.ancora.startChat({ backendId: 'plain-metrics', text: 'stream timing' })).id)
+  await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle', metricsChat)
+  await page.evaluate((id) => window.ancora.updateConversation(id, { title: 'Observed timing smoke' }), metricsChat)
+  await page.locator('.sidebar .nav-item').filter({ hasText: 'Observed timing smoke' }).click()
+  for (const theme of ['light', 'dark', 'glass']) {
+    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    const trigger = page.locator('.chat-header .usage-btn')
+    const before = await geometry()
+    await trigger.click()
+    const panel = page.locator('.menu')
+    await panel.waitFor()
+    assert(!/费用|未提供/.test(await panel.innerText()))
+    assert.match(await panel.innerText(), /每个 token 约/)
+    assert.match(await page.locator('.msg-usage').getAttribute('title'), /每个 token 约/)
+    assert.equal(await panel.getByRole('meter', { name: '上下文', exact: true }).getAttribute('aria-valuemax'), '200000')
+    const layout = await panel.evaluate((el) => {
+      const r = el.getBoundingClientRect(), css = getComputedStyle(el)
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: innerHeight, width: innerWidth,
+        outline: css.outlineStyle, overflow: el.scrollWidth > el.clientWidth }
+    })
+    assert(layout.outline === 'none' && !layout.overflow, JSON.stringify(layout))
+    assert(layout.top >= 0 && layout.bottom <= layout.height && layout.left >= 0 && layout.right <= layout.width, JSON.stringify(layout))
+    assert.deepEqual(await geometry(), before)
+    await page.screenshot({ path: join(shots, `usage-panel-${theme}.png`) })
+    await panel.screenshot({ path: join(shots, `usage-panel-${theme}-detail.png`) })
+    await page.keyboard.press('Escape')
+    assert(await trigger.evaluate((el) => document.activeElement === el))
+  }
+  console.log('Usage menu, hidden missing costs, context meter, observed timing and keyboard focus passed')
+
+  // Each agent remembers its own model and thinking level.
+  const checked = async (name) => {
+    await openPicker()
+    const value = await page.getByRole('menuitemradio', { name }).getAttribute('aria-checked')
+    await page.keyboard.press('Escape')
+    return value
+  }
+  await page.locator('.sidebar').getByRole('button', { name: '新建', exact: true }).click()
+  await picker().filter({ hasText: 'Mock Smart' }).waitFor()
+  assert.equal(await checked(NONE), 'true')
+  await choose(/^Qoder/)
+  await choose(/^Mock Smart/)
+  await waitState(async () => (await window.ancora.snapshot()).settings.backendModelDefaults?.qoder === 'mock-smart')
+  await openPicker()
+  assert.equal(await page.getByRole('menuitemradio', { name: NONE }).count(), 0, 'Qoder does not expose none')
+  await page.getByRole('menuitemradio', { name: LOW }).click()
+  await waitState(async () => (await window.ancora.snapshot()).settings.backendOptionDefaults?.qoder?.effort === 'low')
+  await choose(/^演示 Agent/)
+  assert.equal(await checked(NONE), 'true')
+  await choose(/^Qoder/)
+  assert.equal(await checked(LOW), 'true')
+  console.log('Per-agent model and reasoning restoration passed')
+
+  // An idle chat can change agent; the new agent's models load without sending anything.
+  await page.locator('.sidebar .nav-item').filter({ hasText: 'Qoder Credits smoke' }).click()
+  const beforeCold = await page.evaluate((id) => window.ancora.messages(id), qoderChat)
+  await choose(/^Cold catalog/)
+  await openPicker()
+  await page.locator('.menu').getByText('正在加载模型…', { exact: true }).waitFor()
+  assert.equal(await page.locator('.menu').getByText(/发送第一条消息/).count(), 0)
+  writeFileSync(catalogGate, 'ready')
+  await page.getByRole('menuitemradio', { name: /^Mock Smart/ }).waitFor()
+  await page.waitForFunction(() => {
+    const r = document.querySelector('.menu')?.getBoundingClientRect()
+    return r && r.top >= 7 && r.bottom <= innerHeight - 7
+  })
+  await page.getByRole('menuitemradio', { name: /^Mock Smart/ }).click()
+  await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.modelId === 'mock-smart', qoderChat)
+  await choose(LOW)
+  await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.optionValues?.effort === 'low', qoderChat)
+  assert.deepEqual(await page.evaluate((id) => window.ancora.messages(id), qoderChat), beforeCold)
+  assert.equal(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.sessionRef, qoderChat), undefined)
+  for (const theme of ['light', 'dark', 'glass']) {
+    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await openPicker()
+    assert.equal(await page.getByRole('menuitemradio', { name: LOW }).getAttribute('aria-checked'), 'true')
+    await page.keyboard.press('ArrowDown')
+    assert.match(await page.locator('.menu-item.active').getAttribute('role'), /^menuitem/)
+    await page.screenshot({ path: join(shots, `model-picker-${theme}.png`) })
+    await page.keyboard.press('Escape')
+  }
+  console.log('Agent switch, model discovery before a message and keyboard navigation preserve the history')
+
+  // Project and routine choices use the same availability policy as the composer.
+  await page.locator('.sidebar').getByRole('button', { name: '项目', exact: true }).first().click()
+  for (const [theme, width, height] of [['light', 1200, 800], ['dark', 860, 560], ['glass', 860, 560]]) {
+    await page.evaluate((theme) => window.ancora.updateSettings({ theme }), theme)
+    await page.setViewportSize({ width, height })
+    await page.getByRole('button', { name: '新建项目', exact: true }).click()
+    const modal = page.locator('.modal').filter({ has: page.getByRole('heading', { name: '新建项目', exact: true }) })
+    const field = (label) => modal.locator('.field').filter({ has: page.locator('label').getByText(label, { exact: true }) })
+    const instructions = field('项目指令').locator('textarea')
+    const initial = await instructions.boundingBox()
+    await instructions.fill('项目指令 Project instructions\n保持一致的位置和间距。')
+    const filled = await instructions.boundingBox()
+    assert.deepEqual(filled, initial, 'Typing must not resize or move the instructions field')
+    const metrics = await modal.evaluate((el) => {
+      const area = el.querySelector('textarea')
+      const css = getComputedStyle(area)
+      const row = el.querySelector('.field-row')
+      const folder = row.querySelector('input').getBoundingClientRect()
+      const browse = row.querySelector('button').getBoundingClientRect()
+      const r = el.getBoundingClientRect()
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: innerWidth, height: innerHeight,
+        overflow: el.scrollWidth > el.clientWidth, paddingTop: parseFloat(css.paddingTop), paddingBottom: parseFloat(css.paddingBottom),
+        lineHeight: parseFloat(css.lineHeight), folderTop: folder.top, browseTop: browse.top, folderHeight: folder.height, browseHeight: browse.height }
+    })
+    assert(metrics.paddingTop >= 8 && metrics.paddingBottom >= 8 && metrics.lineHeight >= 20, JSON.stringify(metrics))
+    assert.equal(metrics.folderTop, metrics.browseTop)
+    assert.equal(metrics.folderHeight, metrics.browseHeight)
+    assert(!metrics.overflow && metrics.left >= 0 && metrics.right <= metrics.width && metrics.top >= 0 && metrics.bottom <= metrics.height, JSON.stringify(metrics))
+    await field('Agent 后端').locator('.dropdown').click()
+    assert.equal(await page.getByRole('menuitemradio', { name: /Unavailable smoke agent/ }).count(), 0)
+    await page.getByRole('menuitemradio', { name: /^Qoder(?:\s|$)/ }).waitFor()
+    await page.screenshot({ path: join(shots, `project-form-${theme}.png`) })
+    await page.keyboard.press('Escape')
+    await modal.getByRole('button', { name: '取消', exact: true }).click()
+  }
+  await page.locator('.sidebar').getByRole('button', { name: '定时任务', exact: true }).click()
+  await page.getByRole('button', { name: '新建定时任务', exact: true }).click()
+  const routine = page.locator('.modal').filter({ has: page.getByRole('heading', { name: '新建定时任务', exact: true }) })
+  await routine.locator('.field').filter({ has: page.locator('label').getByText('Agent 后端', { exact: true }) }).locator('.dropdown').click()
+  assert.equal(await page.getByRole('menuitemradio', { name: /Unavailable smoke agent/ }).count(), 0)
+  await page.getByRole('menuitemradio', { name: /^Qoder(?:\s|$)/ }).waitFor()
+  await page.keyboard.press('Escape')
+  await routine.getByRole('button', { name: '取消', exact: true }).click()
+  console.log('Available-only project/routine pickers and stable form alignment passed across themes and window sizes')
+
+  if (process.platform === 'darwin') {
+    const bounds = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds())
+    for (let round = 0; round < 2; round++) {
+      for (const value of [true, false]) {
+        await app.evaluate(async ({ BrowserWindow }, value) => {
+          const win = BrowserWindow.getAllWindows()[0]
+          if (win.isFullScreen() === value) return
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('Fullscreen transition timed out')), 15_000)
+            win.once(value ? 'enter-full-screen' : 'leave-full-screen', () => { clearTimeout(timer); resolve() })
+            win.setFullScreen(value)
+          })
+        }, value)
+      }
+    }
+    // Cocoa may emit leave-full-screen before the last restored-frame update.
+    const restored = await app.evaluate(async ({ BrowserWindow }, expected) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      const matches = () => Math.abs(win.getBounds().width - expected.width) <= 1 && Math.abs(win.getBounds().height - expected.height) <= 1
+      const deadline = Date.now() + 5000
+      while (!matches() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
+      return { fullscreen: win.isFullScreen(), resizable: win.isResizable(), bounds: win.getBounds(), normalBounds: win.getNormalBounds() }
+    }, bounds)
+    console.log('macOS fullscreen restoration:', { before: bounds, after: restored })
+    assert(!restored.fullscreen && restored.resizable)
+    assert(Math.abs(bounds.width - restored.bounds.width) <= 1 && Math.abs(bounds.height - restored.bounds.height) <= 1, JSON.stringify({ before: bounds, after: restored }))
+    console.log('macOS native fullscreen enter/exit and restored size passed twice')
+  }
+  assert.deepEqual(errors, [], 'Renderer errors')
+  console.log('All packaged-app smoke checks passed')
+} catch (error) {
+  if (page) {
+    await page.screenshot({ path: join(shots, 'failure.png') }).catch(() => {})
+    console.error(await page.locator('body').innerText().catch(() => 'No renderer body'))
+  }
+  throw error
+} finally {
+  if (app) await app.close()
+  // Only remove the isolated directory created by this script.
+  assert.equal(dirname(resolve(temp)), resolve(tmpdir()))
+  rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+}

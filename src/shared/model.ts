@@ -2,8 +2,8 @@
  * App domain model: projects, conversations, messages, routines.
  * Shared by main (source of truth) and renderer (view). Backend-agnostic.
  */
-import type { MessageUsage, UsageTotals } from './usage'
-import type { AccountStatus, BackendSummary, ModelInfo, PermissionDecision, PermissionRequest, SessionOption, ToolStatus } from './contract'
+import type { GenerationTiming, MessageUsage, UsageTotals } from './usage'
+import type { AccountStatus, BackendSummary, CreditQuota, ModelInfo, PermissionDecision, PermissionRequest, SessionOption, ToolStatus } from './contract'
 
 export interface Attachment {
   name: string
@@ -80,6 +80,7 @@ export interface Message {
   editedAt?: number
   /** Replies: the tokens (and cost) the backend reported for this turn; absent when it reported none. */
   usage?: MessageUsage
+  timing?: GenerationTiming
 }
 
 export type ConversationKind = 'chat' | 'project' | 'thread'
@@ -126,6 +127,8 @@ export interface Conversation {
   messageCount?: number
   /** Tokens and cost the backend reported, added up over every turn (hidden ones included). */
   usage?: UsageTotals
+  /** Latest visible reply, separate from cumulative usage. Old replies are not backfilled. */
+  timing?: GenerationTiming
   /**
    * Project conversations: a running summary of the facts said so far
    * (people, preferences, decisions, open items), written by the backend
@@ -271,6 +274,12 @@ export function withBlocker(c: Pick<Conversation, 'blockers'>, text: string, now
   return list.slice(-12)
 }
 
+export interface BackendModelCatalog {
+  models: ModelInfo[]
+  current?: string
+  options?: SessionOption[]
+}
+
 export interface AppSettings {
   defaultBackendId: string
   /** Secrets that couldn't be carried over from an old app name and have to be entered again. */
@@ -294,9 +303,15 @@ export interface AppSettings {
    * Models each backend offered last time, with the one a new session starts on,
    * so a new chat can show and pick a model before its first message.
    */
-  backendModels?: Record<string, { models: ModelInfo[]; current?: string; options?: SessionOption[] }>
+  backendModels?: Record<string, BackendModelCatalog>
+  /** The model the user last chose for each backend, independent of its advertised default. */
+  backendModelDefaults?: Record<string, string>
+  /** User-pinned agents retain their explicit order in the searchable picker. */
+  favoriteBackendIds?: string[]
   /** Option choices (by backend, then option id) that new conversations start with. */
   backendOptionDefaults?: Record<string, Record<string, string>>
+  /** Model-specific choices override the backend fallback when switching back. */
+  backendModelOptionDefaults?: Record<string, Record<string, Record<string, string>>>
   /** Working folders the user chose, newest first. */
   recentFolders?: string[]
 }
@@ -416,9 +431,13 @@ export interface AncoraApi {
   /** Sets a session option (e.g. the mode) for one conversation. */
   setOption(conversationId: string, optionId: string, value: string): Promise<void>
   /** Sets what new conversations on a backend start with. */
-  setOptionDefault(backendId: string, optionId: string, value: string): Promise<void>
+  setOptionDefault(backendId: string, optionId: string, value: string, modelId?: string): Promise<void>
+  setModelDefault(backendId: string, modelId: string): Promise<void>
   /** Whether the user is signed in to a backend, if it can tell. */
   backendAccount(backendId: string): Promise<AccountStatus>
+  backendCredits(backendId: string, refresh?: boolean): Promise<CreditQuota | undefined>
+  /** Reads the agent's session metadata without sending a prompt or creating a chat. */
+  backendModels(backendId: string, modelId?: string): Promise<BackendModelCatalog>
   backendLatestVersion(backendId: string): Promise<string | undefined>
   /** Per backend: can its model look at images (and so control the computer)? undefined until it has started. */
   backendImages(): Promise<Record<string, boolean | undefined>>
@@ -426,7 +445,7 @@ export interface AncoraApi {
   openOutput(path: string, reveal?: boolean): Promise<{ ok: boolean; error?: string }>
   /** Runs the backend's upgrade command; output arrives as 'backend-upgrade' events. */
   upgradeBackend(backendId: string): Promise<{ ok: boolean; output: string; account: AccountStatus; /** Installed, but the program still isn't on PATH. */ notFound?: boolean }>
-  updateConversation(id: string, patch: Partial<Pick<Conversation, 'title' | 'pinned' | 'resolved' | 'projectId' | 'unread' | 'cwd'>>): Promise<void>
+  updateConversation(id: string, patch: Partial<Pick<Conversation, 'title' | 'pinned' | 'resolved' | 'projectId' | 'unread' | 'cwd' | 'backendId'>>): Promise<void>
   deleteConversation(id: string): Promise<void>
   react(messageId: string, conversationId: string, emoji: string): Promise<void>
 
@@ -460,7 +479,7 @@ export interface AncoraApi {
   checkForUpdates(): Promise<UpdateCheck>
   backendAuthMethods(backendId: string): Promise<{ id: string; name: string; description?: string }[]>
   /** Runs the backend's sign-in flow (may open a browser). */
-  backendLogin(backendId: string, methodId: string): Promise<void>
+  backendLogin(backendId: string, methodId: string): Promise<AccountStatus>
   /** Opens a terminal running the backend's sign-in command (e.g. `qodercli login`). */
   backendTerminalLogin(backendId: string): Promise<void>
   listProjectFiles(projectId: string): Promise<{ name: string; size: number; updatedAt: number }[]>

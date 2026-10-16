@@ -5,13 +5,15 @@ import { execSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { declareTestAgent } from './test-agent.mjs'
 
 const out = process.argv[2] ?? 'shots'
 const scenario = process.argv[3] ?? 'basic'
 const dataDir = process.env.ANCORA_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'oc-'))
+declareTestAgent(dataDir)
 const app = await electron.launch({
   ...(process.env.APP_PATH ? { executablePath: process.env.APP_PATH, args: ['--no-sandbox'] } : { args: ['.', '--no-sandbox'] }),
-  env: { ...process.env, ANCORA_DEMO_AGENT: '1', ANCORA_DATA_DIR: dataDir },
+  env: { ...process.env, ANCORA_DATA_DIR: dataDir },
   colorScheme: process.env.THEME ?? 'light'
 })
 const page = await app.firstWindow()

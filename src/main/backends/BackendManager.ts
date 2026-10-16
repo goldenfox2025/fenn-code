@@ -5,6 +5,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   AccountStatus,
+  CreditQuota,
   SessionOption,
   AuthMethod,
   AgentBackend,
@@ -60,12 +61,15 @@ export class BackendManager {
       return {
         id: p.id,
         name: t(p.name),
+        installed: p.isInstalled?.(cfg),
+        optionPolicy: p.optionPolicy,
         description: p.description && t(p.description),
         settings: (p.settings ?? []).map((s) => ({ ...s, label: t(s.label), help: s.help && t(s.help) })),
         configured: Object.fromEntries((p.settings ?? []).map((s) => [s.key, !!cfg[s.key]])),
         signIn: p.signIn,
         terminalLogin: !!p.login,
         account: !!p.account,
+        credits: !!p.credits,
         upgrade: !!p.upgrade,
         upgradeCommands: p.upgrade && [p.upgrade.run, ...(p.upgrade.after ? [p.upgrade.after] : [])].map(commandLine),
         upgradeNote: p.upgrade?.after && t(p.upgrade.after.label, ...(p.upgrade.after.labelArgs ?? [])),
@@ -131,7 +135,8 @@ export class BackendManager {
 
   /** The plugin's terminal sign-in command, if it has one. */
   loginCommand(backendId: string): { command: string; args: string[] } | undefined {
-    const l = this.opts.plugins.find((p) => p.id === backendId)?.login
+    const spec = this.opts.plugins.find((p) => p.id === backendId)?.login
+    const l = typeof spec === 'function' ? spec(this.opts.settings.get(backendId)) : spec
     return l && { command: l.command, args: l.args ?? [] }
   }
 
@@ -177,6 +182,25 @@ export class BackendManager {
 
   async newSession(backendId: string, opts: { cwd?: string; folder?: string; tools?: HostToolServer[] } = {}): Promise<SessionInfo> {
     return this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools })
+  }
+
+  /** No prompt or app tools: discover the models a new session actually offers. */
+  async modelCatalog(backendId: string, modelId?: string): Promise<Omit<SessionInfo, 'sessionId'>> {
+    const backend = this.get(backendId)
+    const { sessionId, ...catalog } = await backend.newSession({ cwd: this.opts.defaultCwd })
+    const off = this.onAgentEvent((bid, sid, event) => {
+      if (bid === backendId && sid === sessionId && event.kind === 'options') catalog.options = event.options
+    })
+    try {
+      if (modelId && modelId !== catalog.currentModelId && catalog.models?.some((m) => m.id === modelId)) {
+        await backend.setModel?.(sessionId, modelId)
+        catalog.currentModelId = modelId
+      }
+      return catalog
+    } finally {
+      off()
+      await backend.closeSession?.(sessionId).catch(() => {})
+    }
   }
 
   async resumeSession(
@@ -231,6 +255,20 @@ export class BackendManager {
           : a
       )
       .catch(() => ({}))
+  }
+
+  private creditReads = new Map<string, { key: string; at: number; value: Promise<CreditQuota | undefined> }>()
+
+  async credits(backendId: string, refresh = false): Promise<CreditQuota | undefined> {
+    const plugin = this.opts.plugins.find((p) => p.id === backendId)
+    if (!plugin?.credits) return undefined
+    const config = this.opts.settings.get(backendId)
+    const key = JSON.stringify([plugin.signature, config])
+    const cached = this.creditReads.get(backendId)
+    if (!refresh && cached?.key === key && Date.now() - cached.at < 15_000) return cached.value
+    const value = plugin.credits(config).catch(() => undefined)
+    this.creditReads.set(backendId, { key, at: Date.now(), value })
+    return value
   }
 
   /** The latest version of the backend's program, if the plugin can tell. */

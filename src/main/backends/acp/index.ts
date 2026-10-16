@@ -28,11 +28,13 @@ export interface AcpPluginOptions {
   launch: (host: BackendHost) => AcpLaunchSpec | Promise<AcpLaunchSpec>
   quirks?: AcpQuirks
   signIn?: boolean
-  login?: { command: string; args?: string[] }
+  login?: BackendPlugin['login']
   signature?: string
   testOnly?: boolean
+  isInstalled?: (config: Record<string, string>) => boolean
   /** How to check the sign-in state without starting a session; gets the user's settings. */
   account?: (config: Record<string, string>) => AccountCheck
+  credits?: BackendPlugin['credits']
   upgrade?: UpgradeSpec
 }
 
@@ -85,9 +87,16 @@ export function acpPlugin(opts: AcpPluginOptions): BackendPlugin {
     description: opts.description,
     settings: opts.settings,
     signIn: opts.signIn,
+    credits: opts.credits,
     login: opts.login,
     signature: opts.signature,
     testOnly: opts.testOnly,
+    optionPolicy: opts.quirks?.hideNoneReasoning ? { hideNoneReasoning: true } : undefined,
+    isInstalled: opts.isInstalled ?? (opts.account ? (config) => {
+      const check = opts.account!(config)
+      const env = { ...process.env, ...Object.fromEntries(Object.entries(check.env ?? {}).filter(([, v]) => v !== undefined)) }
+      return [check.command, ...(check.requires ?? [])].every((command) => !!findOnPath(command, env))
+    } : undefined),
     account: opts.account ? (config) => runAccountCheck(opts.account!(config)) : undefined,
     upgrade: opts.upgrade,
     create: (host: BackendHost) =>

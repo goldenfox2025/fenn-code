@@ -6,6 +6,8 @@ import { confirmDialog, Overlay, useLayer } from './Modal'
 import { api, refreshAccount, toast, useApp, useUsableBackends } from '../store'
 import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
+import type { BackendSummary } from '@shared/contract'
+import { backendAvailable } from '@shared/backendAvailability'
 
 export function Dialogs() {
   const open = useApp((s) => s.settingsOpen)
@@ -23,6 +25,12 @@ export function Dialogs() {
       <div className="modal" tabIndex={-1}>{body}</div>
     </Overlay>
   )
+}
+
+/** A backend in a form's dropdown; one that can't answer right now (kept because it is chosen) says so. */
+function backendOption(b: BackendSummary) {
+  const ok = backendAvailable(b, useApp.getState().accounts[b.id])
+  return { value: b.id, label: ok ? b.name : t('{0}（不可用）', b.name), sub: b.description }
 }
 
 function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => void }) {
@@ -69,7 +77,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
       </div>
       <div className="field">
         <label>{t('工作文件夹')}</label>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="field-row">
           <input className="input" value={f.cwd ?? ''} onChange={(e) => setF({ ...f, cwd: e.target.value })} placeholder={t('agent 可以读写的文件夹（可选）')} />
           <button
             className="btn"
@@ -94,7 +102,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
       </div>
       <div className="field">
         <label>{t('Agent 后端')}</label>
-        <Dropdown value={f.backendId} onChange={(v) => setF({ ...f, backendId: v })} options={usable.map((b) => ({ value: b.id, label: b.name, sub: b.description }))} />
+        <Dropdown value={f.backendId} onChange={(v) => setF({ ...f, backendId: v })} options={usable.length ? usable.map(backendOption) : [{ value: '', label: t('还没有可用的 Agent 后端，请在设置里安装或登录') }]} />
       </div>
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
@@ -229,7 +237,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
         <Dropdown
           value={backendId}
           onChange={setBackendId}
-          options={[{ value: '', label: t('默认') }, ...usableForRoutine.map((b) => ({ value: b.id, label: b.name, sub: b.description }))]}
+          options={[{ value: '', label: t('默认') }, ...usableForRoutine.map(backendOption)]}
         />
       </div>
       <div className="modal-actions">
@@ -329,7 +337,7 @@ function GeneralSettings() {
       </div>
       <div className="field">
         <label>{t('常用文件夹')}</label>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="field-row">
           <input className="input" value={settings.defaultCwd ?? ''} readOnly placeholder={t('未设置')} />
           <button
             className="btn"
@@ -558,13 +566,12 @@ function BackendSettings() {
       )}
       {backends.map((b) => (
         <div key={b.id} className="card" style={{ marginBottom: 12 }}>
-          <div className="row-between">
-            <div>
+          <div className="row-between backend-card-head">
+            <div className="backend-card-info">
               <div className="title">{b.name}</div>
               <div className="small muted">{b.description}</div>
               {(b.account || b.upgrade) && <AccountLine backendId={b.id} name={b.name} upgrade={b.upgrade} configKey={JSON.stringify(b.configured)} />}
             </div>
-            <span className="spacer" />
             {b.signIn && <LoginButton backendId={b.id} />}
             {!b.signIn && b.terminalLogin && <TerminalLoginButton backendId={b.id} />}
             {def === b.id ? (
@@ -626,9 +633,10 @@ export function LoginButton({ backendId, label, onDone }: { backendId: string; l
   const login = async (methodId: string) => {
     setBusy(true)
     try {
-      await api().backendLogin(backendId, methodId)
-      toast(t('登录成功'))
-      onDone?.()
+      const status = await api().backendLogin(backendId, methodId)
+      await refreshAccount(backendId)
+      toast(status.signedIn === true ? t('登录成功') : t('登录流程已结束，请确认账号状态后重试'))
+      if (status.signedIn === true) onDone?.()
     } catch (e) {
       toast(t('登录失败：{0}', e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : e), 'error')
     } finally {
@@ -702,7 +710,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
       if (timer) clearInterval(timer)
       window.removeEventListener('oc-account-watch', watch)
     }
-  }, [backendId, configKey])
+  }, [backendId, configKey, summary])
   const checkLatest = async () => {
     setChecking(true)
     const v = (await api().backendLatestVersion(backendId).catch(() => undefined)) ?? null
@@ -778,7 +786,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
               <span className={'status-chip ' + (state.signedIn ? 'done' : 'waiting')}>{state.signedIn ? t('已登录') : t('未登录')}</span>
             )
           )}
-          {state?.detail && <span className="muted">{state.detail}</span>}
+          {state?.detail && <span className="muted account-detail" title={state.detail}>{state.detail}</span>}
           {upgrade && !missing && latest === undefined && (
             <button className="text-link" disabled={checking} onClick={() => void checkLatest()}>
               {checking ? t('正在检查…') : t('检查更新')}
@@ -871,7 +879,7 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
     <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
       <label>{setting.label}</label>
       {editing ? (
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="field-row">
           <input
             className="input"
             type={setting.secret ? 'password' : 'text'}
@@ -887,7 +895,7 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
             {t('保存')}</button>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="field-row">
           <span className="small muted" style={{ flex: 1 }}>{setting.secret ? t('已设置（••••••）') : t('已设置')}</span>
           <button className="btn" onClick={() => setEditing(true)}>
             {t('修改')}</button>
@@ -1075,7 +1083,7 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
               {t('删除')}</button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="field-row">
           <button className="btn" onClick={onDone}>
             {t('取消')}</button>
           <button className="btn primary" onClick={save}>

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/contract'
+import { backendAvailable } from '@shared/backendAvailability'
 import type { AppEvent, AppSettings, Conversation, Message, AncoraApi, Project, Routine } from '@shared/model'
 
 declare global {
@@ -160,7 +161,9 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
     case 'settings':
       return set({ settings: e.settings })
     case 'backends':
-      return set({ backends: e.backends })
+      accountGeneration++
+      accountChecks.clear()
+      return set({ backends: e.backends, accounts: {} })
     case 'permission':
       return set({ permissions: [...s.permissions, { conversationId: e.conversationId, request: e.request }] })
     case 'permission-resolved':
@@ -185,6 +188,7 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
 }
 
 const accountChecks = new Map<string, Promise<AccountStatus>>()
+let accountGeneration = 0
 
 /** Asks a backend for its install and sign-in state, unless it was checked within maxAgeMs. */
 export function refreshAccount(backendId: string, maxAgeMs = 0): Promise<AccountStatus> {
@@ -192,14 +196,15 @@ export function refreshAccount(backendId: string, maxAgeMs = 0): Promise<Account
   if (known && Date.now() - known.at < maxAgeMs) return Promise.resolve(known)
   let p = accountChecks.get(backendId)
   if (!p) {
+    const generation = accountGeneration
     p = api()
       .backendAccount(backendId)
       .catch(() => ({}) as AccountStatus)
       .then((a) => {
-        useApp.setState((s) => ({ accounts: { ...s.accounts, [backendId]: { ...a, at: Date.now() } } }))
+        if (generation === accountGeneration) useApp.setState((s) => ({ accounts: { ...s.accounts, [backendId]: { ...a, at: Date.now() } } }))
         return a
       })
-      .finally(() => accountChecks.delete(backendId))
+      .finally(() => { if (accountChecks.get(backendId) === p) accountChecks.delete(backendId) })
     accountChecks.set(backendId, p)
   }
   return p
@@ -219,5 +224,5 @@ export function useUsableBackends(keep?: string): BackendSummary[] {
   useEffect(() => {
     for (const b of backends) if (b.account) void refreshAccount(b.id, 60_000)
   }, [backends])
-  return backends.filter((b) => b.id === keep || (accounts[b.id]?.installed !== false && accounts[b.id]?.signedIn !== false))
+  return backends.filter((b) => b.id === keep || backendAvailable(b, accounts[b.id]))
 }

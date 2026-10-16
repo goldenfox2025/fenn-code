@@ -8,6 +8,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { declareTestAgent } from './test-agent.mjs'
 
 const lang = process.argv[2] === 'zh' ? 'zh' : 'en'
 const out = resolve(process.argv[3] ?? `docs/screenshots/${lang}`)
@@ -283,6 +284,7 @@ for (const [cid, list] of Object.entries(messages)) writeFileSync(join(data, 'me
 
 // ---- screenshots --------------------------------------------------------------
 async function launch(extraEnv = {}) {
+  if (extraEnv.ANCORA_DEMO_AGENT === '1') declareTestAgent(data, false)
   const app = await electron.launch({
     args: ['.', '--no-sandbox'],
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GROK_HOME: join(bin, 'grok-home'), ANCORA_DATA_DIR: data, ...extraEnv },

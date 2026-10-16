@@ -5,7 +5,7 @@ import { Composer } from '../components/Composer'
 import { useMenu } from '../components/Menu'
 import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
-import { api, useApp } from '../store'
+import { api, toast, useApp } from '../store'
 import { t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
 import { PlanLine } from '../components/PlanLine'
@@ -18,6 +18,13 @@ export function ChatView({ conversationId }: { conversationId: string }) {
   const [menu, openMenu] = useMenu({ align: 'right' })
   if (!conv) return <div className="empty">{t('对话不存在或已被删除')}</div>
   const project = projects.find((p) => p.id === conv.projectId)
+  const deleteChat = async () => {
+    if (!(await confirmDialog(t('删除「{0}」？', conv.title)))) return
+    try {
+      await api().deleteConversation(conv.id)
+      navigate({ view: 'home' })
+    } catch (error) { toast(String(error), 'error') }
+  }
 
   return (
     <div className="center">
@@ -33,9 +40,11 @@ export function ChatView({ conversationId }: { conversationId: string }) {
         )}
         <EditableTitle conv={conv} />
         <span className="spacer" />
-        <UsageButton usage={conv.usage} scope={t('本对话用量')} />
+        <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} />
         <button
           className="icon-btn"
+          title={t('更多对话操作')}
+          aria-label={t('更多对话操作')}
           onClick={(e) =>
             openMenu(e.currentTarget, [
               {
@@ -61,11 +70,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
                 icon: <Trash2 size={15} />,
                 label: t('删除对话'),
                 danger: true,
-                onClick: async () => {
-                  if (!(await confirmDialog(t('删除「{0}」？', conv.title)))) return
-                  void api().deleteConversation(conv.id)
-                  navigate({ view: 'home' })
-                }
+                onClick: () => void deleteChat()
               }
             ])
           }

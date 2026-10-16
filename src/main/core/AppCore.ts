@@ -24,6 +24,7 @@ import { titleFrom } from './titles'
 import { applyPatch, removeItem } from './progress'
 import { FolderFinder, foldersInText, matchingFolders, rankFolders } from './folders'
 import { localeTag, t, tk } from '../../shared/i18n'
+import type { BackendModelCatalog } from '../../shared/model'
 
 /** An unanswered request to control the computer gives up after this long. */
 const ASK_TIMEOUT_MS = 3 * 60_000
@@ -149,7 +150,8 @@ export class AppCore {
     // until the file is fixed. Only the retired demo agent is gone for good.
     const gone = (id: string) => !this.backends.has(id) && (!this.backendsConfigError || id === 'mock')
     if (gone(this.store.settings.defaultBackendId)) {
-      const next = PREFERRED_BACKENDS.find((id) => this.backends.has(id)) ?? list[0].id
+      const next = list.find((b) => b.installed === true)?.id
+        ?? PREFERRED_BACKENDS.find((id) => this.backends.has(id)) ?? list[0].id
       this.publish({ type: 'settings', settings: this.store.patchSettings({ defaultBackendId: next }) })
     }
     const def = this.store.settings.defaultBackendId
@@ -236,21 +238,73 @@ export class AppCore {
     return this.chat.cancel(conversationId)
   }
 
-  setModel(conversationId: string, modelId: string) {
-    return this.chat.setModel(conversationId, modelId)
+  async setModel(conversationId: string, modelId: string): Promise<void> {
+    const before = this.store.conversation(conversationId)
+    if (before && !this.chat.sessionLoad(conversationId)) {
+      const catalog = await this.backendModels(before.backendId, modelId)
+      if (this.store.conversation(conversationId)?.backendId !== before.backendId) return
+      if (!catalog.models.some((m) => m.id === modelId)) throw new Error(t('无法加载模型：{0}', modelId))
+      this.chat.patchConversation(conversationId, { models: catalog.models, sessionOptions: catalog.options ?? [] })
+    }
+    await this.chat.setModel(conversationId, modelId)
+    const conv = this.store.conversation(conversationId)
+    if (conv) {
+      this.rememberModelDefault(conv.backendId, modelId)
+      if (conv.models) this.chat.rememberModels(conv.backendId, conv.models, modelId, conv.sessionOptions)
+    }
   }
 
   async setOption(conversationId: string, optionId: string, value: string): Promise<void> {
     await this.chat.setOption(conversationId, optionId, value)
+    const conv = this.store.conversation(conversationId)
+    const option = (conv?.sessionOptions ?? this.store.settings.backendModels?.[conv?.backendId ?? '']?.options)?.find((o) => o.id === optionId)
+    if (conv && option && option.category !== 'mode') await this.setOptionDefault(conv.backendId, optionId, value, conv.modelId)
   }
 
-  async setOptionDefault(backendId: string, optionId: string, value: string): Promise<void> {
+  async setModelDefault(backendId: string, modelId: string): Promise<void> {
+    const catalog = await this.backendModels(backendId, modelId)
+    if (!catalog.models.some((m) => m.id === modelId)) throw new Error(t('无法加载模型：{0}', modelId))
+    this.rememberModelDefault(backendId, modelId)
+  }
+
+  private rememberModelDefault(backendId: string, modelId: string): void {
+    const all = this.store.settings.backendModelDefaults ?? {}
+    this.publish({ type: 'settings', settings: this.store.patchSettings({ backendModelDefaults: { ...all, [backendId]: modelId } }) })
+  }
+
+  async setOptionDefault(backendId: string, optionId: string, value: string,
+    modelId = this.store.settings.backendModelDefaults?.[backendId] ?? this.store.settings.backendModels?.[backendId]?.current): Promise<void> {
     const all = this.store.settings.backendOptionDefaults ?? {}
-    this.publish({ type: 'settings', settings: this.store.patchSettings({ backendOptionDefaults: { ...all, [backendId]: { ...all[backendId], [optionId]: value } } }) })
+    const byModel = this.store.settings.backendModelOptionDefaults ?? {}
+    const modelDefaults = modelId ? { ...byModel, [backendId]: { ...byModel[backendId], [modelId]: { ...byModel[backendId]?.[modelId], [optionId]: value } } } : byModel
+    this.publish({ type: 'settings', settings: this.store.patchSettings({
+      backendOptionDefaults: { ...all, [backendId]: { ...all[backendId], [optionId]: value } }, backendModelOptionDefaults: modelDefaults
+    }) })
   }
 
   backendAccount(backendId: string) {
     return this.backends.account(backendId)
+  }
+
+  backendCredits(backendId: string, refresh = false) {
+    return this.backends.credits(backendId, refresh)
+  }
+
+  private modelProbes = new Map<string, Promise<BackendModelCatalog>>()
+
+  backendModels(backendId: string, modelId = this.store.settings.backendModelDefaults?.[backendId]): Promise<BackendModelCatalog> {
+    const cached = this.store.settings.backendModels?.[backendId]
+    if (cached?.models.length && (!modelId || cached.current === modelId || !cached.models.some((m) => m.id === modelId))) return Promise.resolve(cached)
+    const key = `${backendId}\0${modelId ?? ''}`
+    const pending = this.modelProbes.get(key)
+    if (pending) return pending
+    const probe = this.backends.modelCatalog(backendId, modelId).then((info) => {
+      const catalog = { models: info.models ?? [], current: info.currentModelId, options: info.options }
+      this.chat.rememberModels(backendId, catalog.models, catalog.current, catalog.options)
+      return catalog
+    }).finally(() => this.modelProbes.delete(key))
+    this.modelProbes.set(key, probe)
+    return probe
   }
 
   /** Set by the Electron shell: open a file with its default app, or show it in its folder. */
@@ -282,6 +336,22 @@ export class AppCore {
 
   async updateConversation(id: string, patch: Partial<Conversation>): Promise<void> {
     const before = this.store.conversation(id)
+    if (before && patch.backendId !== undefined && patch.backendId !== before.backendId) {
+      const nextBackendId = patch.backendId
+      if (!this.backends.has(patch.backendId)) throw new Error(t('后端「{0}」已经不存在了', patch.backendId))
+      if (before.status === 'working' || before.status === 'waiting') throw new Error(t('请先停止当前回复，再切换后端。'))
+      this.chat.forgetSession(id)
+      patch = { ...patch, sessionRef: undefined, models: undefined, modelId: this.store.settings.backendModelDefaults?.[nextBackendId],
+        sessionOptions: undefined, optionValues: undefined, status: 'idle' }
+      if (before.kind === 'project') {
+        const project = this.store.project(before.projectId)
+        if (project) {
+          const next = { ...project, backendId: nextBackendId }
+          this.store.putProject(next)
+          this.publish({ type: 'project', project: next })
+        }
+      }
+    }
     // A title the user typed is theirs; the app stops improving it.
     if ('title' in patch) patch = { ...patch, titleAuto: false }
     this.chat.patchConversation(id, patch)
@@ -676,10 +746,13 @@ export class AppCore {
     return this.backends.authMethods(backendId)
   }
 
-  async backendLogin(backendId: string, methodId: string): Promise<void> {
+  async backendLogin(backendId: string, methodId: string) {
     await this.backends.authenticate(backendId, methodId)
     // Sessions created before signing in may be unusable; start fresh.
     for (const c of this.store.conversations) if (c.backendId === backendId) this.chat.forgetSession(c.id)
+    const status = await this.backends.account(backendId)
+    if (status.signedIn === false) throw new Error(t('登录尚未完成。请检查登录窗口或终端里的错误。') + (status.detail ? `\n${status.detail}` : ''))
+    return status
   }
 
   /** Opens a visible terminal; set by the app shell (tests stub it). */
@@ -715,7 +788,10 @@ export class AppCore {
   async reloadBackends(): Promise<{ backends: BackendSummary[]; error?: string }> {
     if (this.reloadPlugins) {
       try {
-        await this.backends.setPlugins(this.reloadPlugins())
+        const restarted = await this.backends.setPlugins(this.reloadPlugins())
+        const models = { ...this.store.settings.backendModels }
+        for (const id of Object.keys(models)) if (restarted.includes(id) || !this.backends.has(id)) delete models[id]
+        this.publish({ type: 'settings', settings: this.store.patchSettings({ backendModels: models }) })
         this.backendsConfigError = undefined
       } catch (e) {
         this.backendsConfigError = e instanceof Error ? e.message : String(e)
@@ -767,6 +843,9 @@ export class AppCore {
 
   async setBackendSetting(backendId: string, key: string, value: string): Promise<void> {
     await this.backends.setSetting(backendId, key, value)
+    const models = { ...this.store.settings.backendModels }
+    delete models[backendId]
+    this.publish({ type: 'settings', settings: this.store.patchSettings({ backendModels: models }) })
     for (const c of this.store.conversations) if (c.backendId === backendId) this.chat.forgetSession(c.id)
     this.publish({ type: 'backends', backends: this.backends.list() })
   }

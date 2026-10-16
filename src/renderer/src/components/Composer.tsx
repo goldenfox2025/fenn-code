@@ -4,7 +4,10 @@ import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp } from '../store'
 import { useMenu, type MenuItem } from './Menu'
-import { lang, t } from '../i18n'
+import { t } from '../i18n'
+import { choiceLabel, optionLabel } from './sessionOptionLabels'
+import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
+import { backendAvailable } from '@shared/backendAvailability'
 
 interface Props {
   conversation?: Conversation
@@ -45,7 +48,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   useEffect(() => {
     for (const b of backends) if (b.account) void refreshAccount(b.id, 60_000)
   }, [backends])
-  const [menu, openMenu] = useMenu({ placement: 'above', align: 'right' })
+  const [menu, openMenu, updateMenu] = useMenu({ placement: 'above', align: 'right' })
   const hasPermission = useApp((s) => !!conversation && s.permissions.some((p) => p.conversationId === conversation.id))
   const busy = conversation?.status === 'working' || hasPermission
   const draftKey = conversation ? `draft:${conversation.id}` : 'draft:new'
@@ -76,6 +79,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   }
 
   const submit = () => {
+    if (selecting) return
     const t = text.trim()
     if (!t && !files.length) return
     setText('')
@@ -85,45 +89,97 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     else if (conversation) void api().send(conversation.id, t, files)
   }
 
-  const currentBackend = backends.find((b) => b.id === (conversation?.backendId ?? backendId))
-  // Before a chat's first reply its own model list isn't known yet; use the one its backend offered last time.
-  const remembered = useApp((s) => s.settings.backendModels?.[conversation?.backendId ?? backendId ?? ''])
-  const models = conversation?.models?.length ? conversation.models : (remembered?.models ?? [])
-  const wanted = conversation ? (conversation.modelId ?? remembered?.current) : (modelId ?? remembered?.current)
-  const currentModel = models.find((m) => m.id === wanted) ?? (conversation?.models?.length ? undefined : models[0])
-  const canSend = !!text.trim() || files.length > 0
-  // The session's other choices (mode, thinking level); before a session, the backend's last list and the defaults.
   const bid = conversation?.backendId ?? backendId ?? ''
-  const defaults = useApp((s) => s.settings.backendOptionDefaults?.[bid])
-  const options: SessionOption[] = conversation?.sessionOptions?.length ? conversation.sessionOptions : (remembered?.options ?? [])
+  const currentBackend = backends.find((b) => b.id === bid)
+  // Before a chat's first reply its own model list isn't known yet; use the one its backend offered last time.
+  const settings = useApp((s) => s.settings)
+  const remembered = settings.backendModels?.[bid]
+  const savedModel = settings.backendModelDefaults?.[bid]
+  const models = conversation?.models?.length ? conversation.models : (remembered?.models ?? [])
+  const wanted = (conversation ? conversation.modelId : modelId) ?? savedModel ?? remembered?.current
+  const currentModel = models.find((m) => m.id === wanted) ?? models.find((m) => m.id === remembered?.current) ?? models[0]
+  // The session's other choices (mode, thinking level); before a session, the backend's last list and the defaults.
+  const defaults = sessionOptionDefaults(settings, bid, currentModel?.id)
+  const options = visibleSessionOptions(conversation?.sessionOptions ?? remembered?.options ?? [], currentBackend?.optionPolicy)
   // A mode picked before the first message belongs to that chat only, not to every later one.
   const [pending, setPending] = useState<Record<string, string>>({})
-  useEffect(() => setPending({}), [bid])
-  const valueOf = (o: SessionOption) =>
-    conversation?.sessionOptions?.length ? o.current : (conversation?.optionValues?.[o.id] ?? pending[o.id] ?? (o.category === 'mode' ? undefined : defaults?.[o.id]) ?? o.current)
+  useEffect(() => setPending({}), [bid, conversation?.id])
+  const valueOf = (o: SessionOption) => {
+    const v = conversation?.sessionOptions !== undefined ? o.current : (conversation?.optionValues?.[o.id] ?? pending[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id]) ?? o.current)
+    return o.choices.some((c) => c.value === v) ? v : o.current
+  }
   const modeOpt = options.find((o) => o.category === 'mode')
   const modeValue = modeOpt && valueOf(modeOpt)
   const modeNote = modeOpt && modeValue && modeValue !== modeOpt.choices[0]?.value ? choiceLabel(modeOpt.choices.find((c) => c.value === modeValue)?.name ?? modeValue) : ''
+  const effortOpt = options.find((o) => o.category === 'thought_level')
+  const effortNote = effortOpt && choiceLabel(effortOpt.choices.find((c) => c.value === valueOf(effortOpt))?.name ?? '')
 
   const accountHint = (id: string): string | undefined => {
-    const a = accounts[id]
-    if (a?.installed === false) return t('未安装')
-    if (a?.signedIn === false) return t('未登录')
+    const b = backends.find((x) => x.id === id)
+    if ((accounts[id]?.installed ?? b?.installed) === false) return t('未安装')
+    if (accounts[id]?.signedIn === false) return t('未登录')
     return undefined
   }
+
+  // The models a backend offers, read from a fresh session before the first message (no prompt is sent).
+  const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string }>({ for: '', loading: false })
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    let live = true
+    const known = models.length > 0 && (!wanted || remembered?.current === wanted || !!conversation?.sessionRef)
+    if (!bid || busy || accountHint(bid) || known) return setCatalog({ for: bid, loading: false })
+    setCatalog({ for: bid, loading: true })
+    api()
+      .backendModels(bid, wanted)
+      .then(
+        () => live && setCatalog({ for: bid, loading: false }),
+        (e) => live && setCatalog({ for: bid, loading: false, error: e instanceof Error ? e.message : String(e) })
+      )
+    return () => {
+      live = false
+    }
+  }, [bid, wanted, conversation?.id, conversation?.sessionRef?.sessionId, busy, currentBackend?.installed, accounts[bid]?.signedIn, retry])
+  const loadingModels = catalog.loading || catalog.for !== bid
+
+  // One choice at a time; the message waits until it has been applied.
+  const [selecting, setSelecting] = useState(false)
+  const canSend = !selecting && (!!text.trim() || files.length > 0)
+  const choose = async (op: () => Promise<unknown>) => {
+    if (selecting) return
+    setSelecting(true)
+    try {
+      await op()
+    } catch (e) {
+      toast(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')
+    } finally {
+      setSelecting(false)
+    }
+  }
+
   const pickerItems = (): MenuItem[] => {
     const items: MenuItem[] = []
-    if (models.length && (conversation || onModelChange)) {
+    const canPick = !!(conversation || onModelChange)
+    if (canPick && models.length) {
       items.push({ heading: t('模型') })
       for (const m of models)
         items.push({
           label: m.name,
           sub: m.description,
           checked: m.id === currentModel?.id,
-          onClick: () => (conversation ? api().setModel(conversation.id, m.id) : onModelChange?.(m.id))
+          disabled: busy,
+          onClick: () =>
+            void choose(async () => {
+              if (conversation) return api().setModel(conversation.id, m.id)
+              await api().setModelDefault(bid, m.id)
+              onModelChange?.(m.id)
+            })
         })
+    } else if (canPick && currentBackend && !accountHint(bid)) {
+      if (loadingModels) items.push({ label: t('正在加载模型…'), info: true })
+      else if (catalog.error) items.push({ label: t('无法加载模型列表'), sub: catalog.error, onClick: () => setRetry((n) => n + 1) })
+      else items.push({ heading: t('{0} 没有提供模型选择', currentBackend.name) })
     }
-    if (conversation || onModelChange)
+    if (canPick)
       for (const o of options) {
         items.push({ heading: optionLabel(o) })
         const now = valueOf(o)
@@ -133,46 +189,53 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             label,
             sub: label !== c.name ? c.name : c.description,
             checked: c.value === now,
+            disabled: busy,
             onClick: () => {
-              if (!conversation) {
-                if (o.category === 'mode') return setPending((p) => ({ ...p, [o.id]: c.value }))
-                return void api().setOptionDefault(bid, o.id, c.value)
-              }
-              void api().setOption(conversation.id, o.id, c.value)
-              // A thinking level carries over to new chats; a mode stays with this conversation.
-              if (o.category !== 'mode') void api().setOptionDefault(bid, o.id, c.value)
+              if (!conversation && o.category === 'mode') return setPending((p) => ({ ...p, [o.id]: c.value }))
+              // A thinking level carries over to new chats (the app remembers it); a mode stays with this conversation.
+              void choose(() => (conversation ? api().setOption(conversation.id, o.id, c.value) : api().setOptionDefault(bid, o.id, c.value)))
             }
           })
         }
       }
-    if (!conversation && onBackendChange) {
-      // Only backends that can answer; installing and signing in live in Settings.
-      const usable = backends.filter((b) => !accountHint(b.id))
+    // Only backends that can answer; installing and signing in live in Settings. A chat can change
+    // agent while it is idle: the new one gets the conversation so far.
+    if (onBackendChange || conversation) {
+      const usable = backends.filter((b) => b.id === bid || backendAvailable(b, accounts[b.id]))
       items.push({ heading: usable.length ? t('Agent 后端') : t('还没有可用的 Agent 后端，请在设置里安装或登录') })
-      for (const b of usable) items.push({ label: b.name, sub: b.description, checked: b.id === backendId, onClick: () => onBackendChange(b.id) })
+      for (const b of usable)
+        items.push({
+          label: b.name,
+          sub: b.description,
+          checked: b.id === bid,
+          disabled: busy,
+          onClick: () => {
+            if (b.id === bid) return
+            if (conversation) void choose(() => api().updateConversation(conversation.id, { backendId: b.id }))
+            else onBackendChange?.(b.id)
+          }
+        })
     }
-    if (conversation && !models.length)
-      items.push({
-        heading: conversation.sessionRef
-          ? t('{0} 没有提供模型选择', currentBackend?.name ?? '')
-          : t('{0}：发送第一条消息后可选择模型', currentBackend?.name ?? '')
-      })
     const manage = () => useApp.getState().set({ settingsOpen: 'backends' })
     items.push({ separator: true })
     items.push({ icon: <SlidersHorizontal size={15} />, label: t('管理 Agent 后端…'), onClick: manage })
     return items
   }
+  // An open picker shows the models as soon as they arrive.
+  useEffect(() => updateMenu(pickerItems()), [models.length, loadingModels, catalog.error])
 
+  const note = [modeNote, effortNote].filter(Boolean).join(' · ')
   const modelButton = (
     <button
-      className="select-btn"
+      className="select-btn model-btn"
+      aria-busy={loadingModels || selecting}
       onClick={(e) => {
         e.stopPropagation()
         openMenu(e.currentTarget, pickerItems())
       }}
     >
       {currentModel?.name ?? currentBackend?.name ?? t('选择后端')}
-      {modeNote && <span className="mode-note"> · {modeNote}</span>}
+      {note && <span className="mode-note"> · {note}</span>}
       {currentBackend && accountHint(currentBackend.id) && <span className="mode-note warn"> · {accountHint(currentBackend.id)}</span>}
       <ChevronDown size={14} />
     </button>
@@ -428,34 +491,6 @@ export function ProjectPicker({ projectId, onChange }: { projectId?: string; onC
   )
 }
 
-function optionLabel(o: SessionOption): string {
-  if (o.category === 'mode') return t('权限模式')
-  if (o.category === 'thought_level') return t('思考强度')
-  return o.name
-}
-
-/** Common English names agents give their modes and levels, in Chinese when the UI is. */
-const CHOICE_ZH: Record<string, string> = {
-  default: '每次询问', // i18n-ignore
-  'accept edits': '自动接受编辑', // i18n-ignore
-  auto: '自动判断', // i18n-ignore
-  "don't ask": '不询问，直接拒绝', // i18n-ignore
-  'bypass permissions': '全部允许', // i18n-ignore
-  plan: '只做计划', // i18n-ignore
-  'plan mode': '只做计划', // i18n-ignore
-  minimal: '最低', // i18n-ignore
-  low: '低', // i18n-ignore
-  medium: '中', // i18n-ignore
-  high: '高', // i18n-ignore
-  max: '最高', // i18n-ignore
-  xhigh: '很高' // i18n-ignore
-}
-function choiceLabel(name: string): string {
-  if (lang !== 'zh') return name
-  const m = name.match(/^(.*?)(\s*\(default\))?$/i)
-  const zh = CHOICE_ZH[(m?.[1] ?? name).trim().toLowerCase()]
-  return zh ? zh + (m?.[2] ? '（默认）' : '') : name // i18n-ignore
-}
 
 /** Folders the user said no to in this session. */
 const dismissedFolders = new Set<string>()

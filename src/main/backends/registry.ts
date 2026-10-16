@@ -13,8 +13,13 @@ import type { BackendPlugin } from '../../shared/contract'
 import { acpPlugin } from './acp'
 import { t, tk } from '../../shared/i18n'
 import { demoAgentEnabled } from '../demo'
+import { findOnPath } from './install'
+import { readQoderCredits } from './qoderCredits'
 
 const builtins = import.meta.glob<{ default: BackendPlugin }>('./plugins/*.ts', { eager: true })
+// Vite removes this branch and the test plugin from production builds.
+const testPlugins = import.meta.env.DEV
+  ? import.meta.glob<{ default: BackendPlugin }>('./testing/*.ts', { eager: true }) : {}
 
 export interface DeclaredAcpBackend {
   id: string
@@ -55,7 +60,7 @@ export class BackendsConfigError extends Error {}
 export function loadPlugins(userConfigFile?: string): BackendPlugin[] {
   const plugins = new Map<string, BackendPlugin>()
   const rank = (id: string) => (PREFERRED_BACKENDS.indexOf(id) + 1 || PREFERRED_BACKENDS.length + 1)
-  const ordered = Object.values(builtins).map((m) => m.default).sort((a, b) => rank(a.id) - rank(b.id))
+  const ordered = Object.values({ ...builtins, ...testPlugins }).map((m) => m.default).sort((a, b) => rank(a.id) - rank(b.id))
   for (const p of ordered) if (!p.testOnly || demoAgentEnabled()) plugins.set(p.id, p)
   for (const decl of readDeclared(userConfigFile)) {
     const settings = (decl.settings ?? []).map((x) => ({ ...x, label: x.label ?? x.key }))
@@ -69,8 +74,14 @@ export function loadPlugins(userConfigFile?: string): BackendPlugin[] {
         signIn: decl.signIn,
         login: decl.login,
         upgrade: decl.upgrade,
+        quirks: decl.id === 'qoder' ? { hideNoneReasoning: true } : undefined,
+        credits: decl.id === 'qoder' ? (config) => readQoderCredits({ ...decl.env, ...config,
+          ...(decl.args?.length === 2 && /\.[cm]?js$/i.test(decl.args[0]) && decl.args[1] === '--acp'
+            ? { QODER_NODE_PATH: decl.command, QODER_CLI_PATH: decl.args[0] }
+            : { QODER_CLI_PATH: decl.command }) }) : undefined,
         // Same declaration → same signature, so a reload leaves that agent running.
         signature: JSON.stringify(decl),
+        isInstalled: () => !!findOnPath(decl.command),
         launch: ({ config }) => ({
           command: decl.command,
           args: decl.args ?? [],

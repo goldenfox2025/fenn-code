@@ -165,7 +165,7 @@ export class FolderFinder {
       }
       if (depth > 0 && entries.some((e) => e.name === '.git')) {
         const s = await stat(dir).catch(() => undefined)
-        found.set(dir, { path: dir, name: basename(dir), mtime: s?.mtimeMs ?? 0 })
+        found.set(process.platform === 'win32' ? dir.toLowerCase() : dir, { path: dir, name: basename(dir), mtime: s?.mtimeMs ?? 0 })
         continue // A repository's own subfolders are not separate projects.
       }
       if (depth >= maxDepth) continue

@@ -20,7 +20,7 @@ import {
 } from "electron";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, watch, writeFileSync } from "node:fs";
 import { API_METHODS } from "../shared/ipc";
 
 // Filled in at build time (electron.vite.config.ts).
@@ -365,6 +365,17 @@ core = new AppCore(store, backends, publish, process.platform, tools, {
   backendsConfigError: backendsError,
 });
 core.reloadPlugins = () => (plugins = loadPlugins(backendsFile));
+// Watch the directory so atomic editor saves (rename + replace) also take effect.
+let configReloadTimer: NodeJS.Timeout | undefined;
+let configReload = Promise.resolve();
+const configWatcher = watch(configDir, (_event, filename) => {
+  if (filename && filename.toString() !== 'backends.json') return;
+  clearTimeout(configReloadTimer);
+  configReloadTimer = setTimeout(() => {
+    configReload = configReload.then(async () => { await core.reloadBackends(); }).catch((error) => console.warn('Reloading backends', error));
+  }, 400);
+});
+configWatcher.unref();
 core.openTerminal = openTerminal;
 core.shellOpen = async (path, reveal) => {
   if (reveal) {
@@ -443,11 +454,14 @@ function applyWindowMaterial(theme: string | undefined): void {
 
 function createWindow(): void {
   const isMac = process.platform === "darwin";
+  const area = screen.getPrimaryDisplay().workAreaSize;
+  const width = Math.min(1440, area.width);
+  const height = Math.min(900, area.height);
   win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 860,
-    minHeight: 560,
+    width,
+    height,
+    minWidth: Math.min(860, width),
+    minHeight: Math.min(560, height),
     show: false,
     title: "Ancora",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#262624" : "#faf9f5",
@@ -580,6 +594,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  clearTimeout(configReloadTimer);
+  configWatcher.close();
   store.flush();
   tools.stop();
   core.scheduler.stop();

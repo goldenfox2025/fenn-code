@@ -16,11 +16,6 @@ export function Onboarding() {
   const [name, setName] = useState(settings.userName)
   const accounts = useApp((s) => s.accounts)
   const [backendId, setBackendId] = useState(settings.defaultBackendId || backends[0]?.id)
-  const picked = useRef(false)
-  const pick = (id: string) => {
-    picked.current = true
-    setBackendId(id)
-  }
   const [project, setProject] = useState({ name: '', description: '' })
   const nameRef = useRef<HTMLInputElement>(null)
 
@@ -49,16 +44,10 @@ export function Onboarding() {
     }
   }, [])
 
-  // Suggest the first agent that is actually installed (Codex when it is), until the user picks one.
+  // The core has already chosen an installed default. Status checks only update
+  // the badges; a slow/unknown account response must never replace the user's choice.
   useEffect(() => {
-    let live = true
-    Promise.all(backends.map((b) => refreshAccount(b.id, 60_000).then((a) => [b.id, a.installed !== false] as const))).then((found) => {
-      const first = found.find(([, ok]) => ok)?.[0]
-      if (live && first && !picked.current) setBackendId(first)
-    })
-    return () => {
-      live = false
-    }
+    for (const b of backends) void refreshAccount(b.id, 60_000)
   }, [backends.map((b) => b.id).join()])
 
   const finish = async (projectToCreate?: { name: string; description: string }) => {
@@ -117,7 +106,7 @@ export function Onboarding() {
             <p className="muted">{t('Ancora 本身不含模型，回答来自您选择的 agent。以后可以在 设置 → Agent 后端 里更换。')}</p>
             <div className="choice-list">
               {backends.map((b) => (
-                <button key={b.id} className={'choice' + (b.id === backendId ? ' on' : '')} onClick={() => pick(b.id)}>
+                <button key={b.id} className={'choice' + (b.id === backendId ? ' on' : '')} onClick={() => setBackendId(b.id)}>
                   <span className="radio">{b.id === backendId && <Check size={12} />}</span>
                   <span style={{ flex: 1, textAlign: 'left' }}>
                     <span className="title">

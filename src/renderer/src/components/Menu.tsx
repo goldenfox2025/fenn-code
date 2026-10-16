@@ -58,7 +58,7 @@ export function Menu({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const anchor = liveAnchor(opener) ?? opener
-  const [pos, setPos] = useState<{ left: number; top: number; minWidth?: number }>({ left: -9999, top: -9999 })
+  const [pos, setPos] = useState<{ left: number; top: number; minWidth?: number; maxHeight?: number }>({ left: -9999, top: -9999 })
   const [active, setActive] = useState(() => {
     const sel = items.findIndex((it) => it.checked && actionable(it))
     return sel >= 0 ? sel : items.findIndex(actionable)
@@ -66,26 +66,51 @@ export function Menu({
   const hasChecks = items.some((it) => it.checked !== undefined)
 
   useLayoutEffect(() => {
-    const live = liveAnchor(opener)
-    let r = live?.getBoundingClientRect()
-    // A detached element measures as 0×0 at the window corner; never place a menu there.
-    if (!r || (!r.width && !r.height)) r = openRect
-    if (!r) return onClose()
-    const m = ref.current!.getBoundingClientRect()
-    const width = Math.max(m.width, matchWidth ? r.width : 0)
-    let left = align === 'right' ? r.right - width : r.left
-    let top = placement === 'above' ? r.top - m.height - 6 : r.bottom + 6
-    left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
-    // Flip to the other side when it doesn't fit, then clamp inside the window.
-    if (placement === 'below' && top + m.height > window.innerHeight - 8) top = r.top - m.height - 6
-    if (placement === 'above' && top < 8) top = r.bottom + 6
-    top = Math.max(8, Math.min(top, window.innerHeight - m.height - 8))
-    setPos({ left, top, minWidth: matchWidth ? r.width : undefined })
-    ref.current!.focus()
-  }, [opener, openRect, align, placement, matchWidth])
+    const place = () => {
+      const live = liveAnchor(opener)
+      let r = live?.getBoundingClientRect()
+      // A detached element measures as 0×0 at the window corner; never place a menu there.
+      if (!r || (!r.width && !r.height)) r = openRect
+      if (!r) return onClose()
+      const element = ref.current!
+      // Measure natural dimensions without the old viewport's position or
+      // height limit. Restore the DOM styles before React applies the new ones.
+      const previousLeft = element.style.left
+      const previousMaxHeight = element.style.maxHeight
+      element.style.left = '0px'
+      element.style.maxHeight = ''
+      const m = element.getBoundingClientRect()
+      element.style.left = previousLeft
+      element.style.maxHeight = previousMaxHeight
+      const width = Math.max(m.width, matchWidth ? r.width : 0)
+      let left = align === 'right' ? r.right - width : r.left
+      const gap = 8
+      const room = { above: Math.max(0, r.top - gap - 8), below: Math.max(0, window.innerHeight - r.bottom - gap - 8) }
+      const other = placement === 'above' ? 'below' : 'above'
+      // Preserve the preferred side when it can show a useful slice of a long
+      // menu. Shrink and scroll it instead of clamping it across its opener.
+      const side = room[placement] < Math.min(m.height, 160) && room[other] > room[placement] ? other : placement
+      const maxHeight = Math.min(m.height, room[side])
+      const top = side === 'above' ? r.top - maxHeight - gap : r.bottom + gap
+      left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
+      setPos({ left, top, maxHeight, minWidth: matchWidth ? r.width : undefined })
+    }
+    place()
+    ref.current!.focus({ preventScroll: true })
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+    // A menu whose items change while open (models arriving) is placed again.
+  }, [opener, openRect, align, placement, matchWidth, items.length])
 
   useEffect(() => {
-    ref.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' })
+    const menu = ref.current
+    const item = menu?.querySelector<HTMLElement>(`[data-index="${active}"]`)
+    if (!menu || !item) return
+    // scrollIntoView can scroll the document and ancestors as well as the menu.
+    const top = item.offsetTop
+    const bottom = top + item.offsetHeight
+    if (top < menu.scrollTop) menu.scrollTop = top
+    else if (bottom > menu.scrollTop + menu.clientHeight) menu.scrollTop = bottom - menu.clientHeight
   }, [active])
 
   useEffect(() => {
@@ -179,7 +204,9 @@ export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 
   return [
     node,
     (anchor: HTMLElement, items: MenuItem[]) =>
-      setState((s) => (s?.anchor === anchor ? null : { anchor, rect: anchor.getBoundingClientRect(), items }))
+      setState((s) => (s?.anchor === anchor ? null : { anchor, rect: anchor.getBoundingClientRect(), items })),
+    /** Replaces the items of the open menu (e.g. when its numbers arrive); does nothing when closed. */
+    (items: MenuItem[]) => setState((s) => s && { ...s, items })
   ] as const
 }
 

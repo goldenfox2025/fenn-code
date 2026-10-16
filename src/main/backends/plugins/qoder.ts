@@ -1,11 +1,12 @@
 import { acpPlugin, type AccountCheck } from '../acp'
 import { tk } from '../../../shared/i18n'
+import { qoderCommand } from '../qoderCommand'
+import { readQoderCredits } from '../qoderCredits'
 
 /** `qodercli status -o json` prints {"logged_in": true|false, "version": "…"}. */
 export function qoderAccount(config: Record<string, string>): AccountCheck {
   return {
-    command: 'qodercli',
-    args: ['status', '-o', 'json'],
+    ...qoderCommand(config, ['status', '-o', 'json']),
     env: { QODER_PERSONAL_ACCESS_TOKEN: config.QODER_PERSONAL_ACCESS_TOKEN || undefined },
     parse: (out) => {
       const j = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)) as Record<string, unknown>
@@ -30,12 +31,16 @@ export function qoderAccount(config: Record<string, string>): AccountCheck {
  * `qodercli login` (opened in a terminal from settings) or with a personal
  * access token passed as QODER_PERSONAL_ACCESS_TOKEN.
  */
-export default acpPlugin({
+const plugin = acpPlugin({
   id: 'qoder',
   name: 'Qoder',
   description: tk('Qoder 命令行（qodercli）'),
-  login: { command: 'qodercli', args: ['login'] },
+  login: (config) => qoderCommand(config, ['login']),
   settings: [
+    { key: 'QODER_CLI_PATH', label: tk('Qoder CLI 路径'), placeholder: 'qodercli',
+      help: tk('留空自动查找；也可填写 qodercli 可执行文件或 qodercli.js 入口的绝对路径。') },
+    { key: 'QODER_NODE_PATH', label: tk('Node 路径（用于 Qoder JS 入口）'), placeholder: 'node',
+      help: tk('使用 JS 入口时可指定 Node 可执行文件；留空优先使用 Qoder 启动器同目录的 Node，再从 PATH 查找。') },
     {
       key: 'QODER_PERSONAL_ACCESS_TOKEN',
       label: 'Access Token',
@@ -51,11 +56,13 @@ export default acpPlugin({
     latest: { command: 'npm', args: ['view', '@qoder-ai/qodercli', 'version'] }
   },
   quirks: {
+    hideNoneReasoning: true,
     missingHint: tk('请在 设置 → Agent 后端 → Qoder 里点「安装」，或在终端运行 npm install -g @qoder-ai/qodercli，然后重试；如果还是找不到，请完全退出 Ancora 再打开。')
   },
   launch: ({ config }) => ({
-    command: 'qodercli',
-    args: ['--acp'],
+    ...qoderCommand(config, ['--acp']),
     env: { QODER_PERSONAL_ACCESS_TOKEN: config.QODER_PERSONAL_ACCESS_TOKEN || undefined }
   })
 })
+
+export default { ...plugin, credits: readQoderCredits }

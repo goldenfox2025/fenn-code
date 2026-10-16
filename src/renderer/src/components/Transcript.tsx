@@ -57,7 +57,7 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
   useLayoutEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  })
+  }, [messages, conversation.id, compact])
 
   const visible = (messages ?? []).filter((m) => !m.hidden)
   let lastDay = ''
@@ -746,6 +746,8 @@ function Stopped({ m, last }: { m: Message; last?: boolean }) {
 /** Plain-language wording for each recognised failure; the agent's own text stays under 「详情」. */
 function errorSentence(kind: ErrorKind, name: string, how: string): string {
   switch (kind) {
+    case 'filesystem':
+      return t('{0} 无法读写本地文件。请查看详情中的路径，并检查文件权限或系统访问限制。', name)
     case 'refresh':
       return t('{0} 的登录需要刷新。', name) + how + t('如果刚登录过，稍等一分钟再重试。')
     case 'auth':

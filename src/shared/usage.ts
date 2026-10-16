@@ -4,6 +4,15 @@
  */
 import type { Cost, TurnUsage } from './contract'
 
+/** Monotonic timings observed at the client; never presented as server/GPU latency. */
+export interface GenerationTiming {
+  firstResponseMs: number
+  /** Only for uninterrupted streams with reported output counts. */
+  tpotMs?: number
+  streamMs?: number
+  outputTokens?: number
+}
+
 /** One reply's usage: the tokens the backend reported, and what the turn cost if it said. */
 export interface MessageUsage extends TurnUsage {
   cost?: Cost

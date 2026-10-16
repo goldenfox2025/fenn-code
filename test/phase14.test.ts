@@ -60,16 +60,17 @@ describe('Qoder', () => {
   it('is built in, with a terminal login and a token passed as QODER_PERSONAL_ACCESS_TOKEN', () => {
     const b = manager().list().find((x) => x.id === 'qoder')!
     expect(b.terminalLogin).toBe(true)
-    expect(b.settings.map((s) => s.key)).toEqual(['QODER_PERSONAL_ACCESS_TOKEN'])
-    expect(b.settings[0].secret).toBe(true)
+    expect(b.settings.map((s) => s.key)).toEqual(['QODER_CLI_PATH', 'QODER_NODE_PATH', 'QODER_PERSONAL_ACCESS_TOKEN'])
+    expect(b.settings.find((s) => s.key === 'QODER_PERSONAL_ACCESS_TOKEN')?.secret).toBe(true)
   })
 
   it('opens qodercli login through the app shell and forgets stale sessions', async () => {
     const { core, dispose } = await makeCore()
     const opened: string[][] = []
     core.openTerminal = async (c, a) => void opened.push([c, ...a])
+    await core.setBackendSetting('qoder', 'QODER_CLI_PATH', 'qoder-login-fixture')
     await core.backendTerminalLogin('qoder')
-    expect(opened).toEqual([['qodercli', 'login']])
+    expect(opened).toEqual([['qoder-login-fixture', 'login']])
     await expect(core.backendTerminalLogin('mock')).rejects.toThrow(/没有登录命令/)
     await dispose()
   })

@@ -4,6 +4,7 @@
 // permission when the prompt mentions "写" or "write". Used for demos and tests.
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
+import { existsSync, writeFileSync } from 'node:fs';
 
 // MOCK_STDIO_MCP=1 makes the mock accept only stdio MCP servers, like some real agents.
 const STDIO_ONLY = process.env.MOCK_STDIO_MCP === "1";
@@ -36,6 +37,11 @@ const models = [
 
 const handlers = {
   initialize: async () => {
+    while (process.env.MOCK_CATALOG_GATE && !existsSync(process.env.MOCK_CATALOG_GATE)) await sleep(20);
+    if (process.env.MOCK_CATALOG_FAIL_ONCE && !existsSync(process.env.MOCK_CATALOG_FAIL_ONCE)) {
+      writeFileSync(process.env.MOCK_CATALOG_FAIL_ONCE, 'failed');
+      throw new Error('Catalog temporarily unavailable');
+    }
     // MOCK_SLOW_START=<ms> simulates a slow first launch (e.g. npx downloading the agent).
     await sleep(Number(process.env.MOCK_SLOW_START) || 0);
     return {
@@ -66,6 +72,11 @@ const handlers = {
     return {};
   },
   "session/new": ({ cwd, mcpServers }) => {
+    if (process.env.MOCK_SESSION_FILE_ERROR === '1')
+      throw Object.assign(new Error('Failed to read authentication state'), {
+        code: -32603,
+        data: { error: "EPERM: operation not permitted, open '/Users/test/.qoder/.auth/machine_id'" }
+      });
     if (!signedIn)
       throw Object.assign(new Error("Authentication required"), {
         code: -32000,
@@ -157,7 +168,9 @@ const handlers = {
     }
     try {
       // "你看到了什么" echoes the whole prompt, so tests can check what a session was given.
-      if (text === "你看到了什么")
+      if (process.env.MOCK_SIMPLE_STREAM === '1')
+        await stream(sessionId, "A plain streamed reply for timing checks.", abort);
+      else if (text === "你看到了什么")
         notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: raw } });
       else if (raw.includes("<<classify>>")) await classify(sessionId, raw, abort);
       else if (raw.includes("<<summarize>>")) await summarize(sessionId, raw, abort);
@@ -186,7 +199,8 @@ const handlers = {
     if (mode === "none") return { stopReason: abort.aborted ? "cancelled" : "end_turn" };
     s.cost = (s.cost ?? 0) + (input + output) * 0.00001;
     s.context = (s.context ?? 0) + input + output;
-    notify(sessionId, { sessionUpdate: "usage_update", used: s.context, size: 200000, cost: { amount: s.cost, currency: "USD" } });
+    notify(sessionId, { sessionUpdate: "usage_update", used: s.context, size: 200000,
+      ...(mode === 'no-cost' ? {} : { cost: { amount: s.cost, currency: "USD" } }) });
     return {
       stopReason: abort.aborted ? "cancelled" : "end_turn",
       usage: { inputTokens: input, outputTokens: output, totalTokens: input + output, cachedReadTokens: 0 },
@@ -199,6 +213,8 @@ const handlers = {
 };
 
 function configOptions(current, s = {}) {
+  // Regression fixture: one model has no configurable reasoning, another does.
+  const fixedEffort = process.env.MOCK_DYNAMIC_EFFORT === '1' && current === 'mock-fast';
   return [
     {
       id: "model",
@@ -225,8 +241,9 @@ function configOptions(current, s = {}) {
       name: "Reasoning Effort",
       category: "thought_level",
       type: "select",
-      currentValue: s.effort ?? "medium",
-      options: [
+      currentValue: fixedEffort ? 'none' : s.effort ?? "medium",
+      options: fixedEffort ? [{ value: 'none', name: 'none' }] : [
+        ...(process.env.MOCK_DYNAMIC_EFFORT === '1' ? [{ value: 'none', name: 'none' }] : []),
         { value: "low", name: "Low" },
         { value: "medium", name: "Medium" },
         { value: "high", name: "High" },
@@ -736,7 +753,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
   } catch (e) {
     send({
       id: msg.id,
-      error: { code: e?.code ?? -32603, message: e?.message ?? String(e) },
+      error: { code: e?.code ?? -32603, message: e?.message ?? String(e), ...(e?.data ? { data: e.data } : {}) },
     });
   }
 });

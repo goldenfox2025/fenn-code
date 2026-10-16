@@ -1,7 +1,7 @@
 {
   "name": "ancora-desktop",
   "productName": "Ancora",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Ancora: an unofficial, Claude-style desktop app for ACP agents (chats, projects, threads, scheduled tasks). Not affiliated with Anthropic.",
   "keywords": [
     "acp",
@@ -22,12 +22,14 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "test:e2e": "electron-vite build && node scripts/e2e.mjs",
+    "test:package": "node scripts/package-smoke.mjs",
     "dist": "electron-vite build && electron-builder",
     "postinstall": "install-electron"
   },
   "license": "MIT",
   "dependencies": {
-    "@agentclientprotocol/sdk": "^1.8.0"
+    "@agentclientprotocol/sdk": "^1.8.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

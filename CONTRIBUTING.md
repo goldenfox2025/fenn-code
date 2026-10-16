@@ -17,9 +17,14 @@ npm run dev
 npm run typecheck
 npm test
 npm run build && xvfb-run -a node scripts/e2e.mjs   # UI checks (Linux; on macOS/Windows drop xvfb-run)
+npm run dist -- --publish never
+npm run test:package  # Linux: xvfb-run -a npm run test:package
 ```
 
 * Tests use the built-in demo ACP agent (`resources/mock-agent.mjs`); no account or API key is needed.
+* The packaged-app check copies the app outside the checkout and uses isolated data. It checks startup,
+  model discovery, backend configuration reload, confirmation layouts and single-chat deletion.
+  On macOS it also checks native fullscreen round trips. It sends no real model requests and installs no agents.
 * The UI is written in Chinese with English translations. When you add or change a UI string, add its translation with
   `node scripts/i18n-add.mjs '{"中文":"English"}'`; `test/i18n.test.ts` fails on untranslated strings.
 * Keep backend-specific code inside `src/main/backends/`. The rest of the app talks to agents only through

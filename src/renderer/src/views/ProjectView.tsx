@@ -39,7 +39,7 @@ import { duration, relTime, STATUS_LABEL, threadState } from '../util'
 import { EditableTitle } from './ChatView'
 import { locale, t } from '../i18n'
 import { confirmDialog, EscLayer } from '../components/Modal'
-import { UsageButton, usageLine, usageMenu } from '../components/Usage'
+import { UsageButton, usageLine } from '../components/Usage'
 import { sumTotals } from '@shared/usage'
 import { boardCount, nextMilestone, ProgressPanel } from '../components/ProgressPanel'
 
@@ -209,9 +209,8 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
   const board = boardCount(project.progress)
   const next = nextMilestone(project.progress)
   const suggestions = (project.progress ?? []).filter((m) => m.suggested).length
-  const usage = useApp(useShallow((s) => s.conversations.filter((c) => c.projectId === project.id).map((c) => c.usage)))
+  const usage = useApp(useShallow((s) => s.conversations.filter((c) => c.projectId === project.id && !s.backends.find((b) => b.id === c.backendId)?.credits).map((c) => c.usage)))
   const totals = sumTotals(usage)
-  const [usageMenuEl, openUsageMenu] = useMenu({ align: 'left' })
 
   return (
     <>
@@ -280,13 +279,12 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
                 </button>
               )}
               {totals.turns + totals.unreported > 0 && (
-                <button className="progress-summary usage-summary" onClick={(e) => openUsageMenu(e.currentTarget, usageMenu(totals, t('项目用量（所有对话和讨论串）')))}>
+                <UsageButton usage={totals} scope={t('项目用量（所有对话和讨论串）')} className="progress-summary usage-summary" align="left">
                   <Gauge size={14} />
                   <span className="grow">{t('项目用量')}</span>
-                  <span className="muted">{totals.turns ? usageLine({ total: totals.total, cost: totals.cost }) : t('后端未提供')}</span>
-                </button>
+                  <span className="muted">{totals.turns ? usageLine({ total: totals.total || !totals.cost ? totals.total : undefined, cost: totals.cost }) : t('用量')}</span>
+                </UsageButton>
               )}
-              {usageMenuEl}
             </div>
             <div className="thread-list">
               <ThreadGroup title={t('等待您处理')} empty={t('决策、审阅和权限请求。')} items={waiting} onOpen={onOpen} />
@@ -540,7 +538,7 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
           {th.resolved ? t('已解决') : STATUS_LABEL[st]}
         </span>
         <span className="spacer" />
-        <UsageButton usage={th.usage} scope={t('本讨论串用量')} />
+        <UsageButton usage={th.usage} timing={th.timing} backendId={th.backendId} scope={t('本讨论串用量')} />
         <button className="icon-btn" onClick={() => setWide(!wide)}>
           {wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </button>

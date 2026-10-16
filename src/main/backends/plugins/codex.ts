@@ -2,11 +2,11 @@ import { acpPlugin, type AccountCheck } from '../acp'
 import { t, tk } from '../../../shared/i18n'
 
 /** `codex login status` says "Logged in using ChatGPT" (exit 0) or "Not logged in" (exit 1). */
-export function codexAccount(): AccountCheck {
+export function codexAccount(config: Record<string, string> = {}): AccountCheck {
   return {
-    command: 'codex',
+    command: config.CODEX_CLI_PATH?.trim() || 'codex',
     args: ['login', 'status'],
-    requires: ['codex-acp'],
+    requires: [config.CODEX_ACP_PATH?.trim() || 'codex-acp'],
     stderr: true,
     parse: (out) => {
       const line = out.split(/\r?\n/).find((l) => /logged in/i.test(l))?.trim() ?? ''
@@ -25,8 +25,14 @@ export default acpPlugin({
   id: 'codex',
   name: 'Codex',
   description: tk('OpenAI 的 Codex 命令行，经 ACP 适配器接入'),
-  login: { command: 'codex', args: ['login'] },
-  account: () => codexAccount(),
+  settings: [
+    { key: 'CODEX_CLI_PATH', label: tk('Codex CLI 路径'), placeholder: 'codex',
+      help: tk('可填写实际可执行文件的绝对路径。桌面应用无法执行 shell 别名；留空则从 PATH 查找。') },
+    { key: 'CODEX_ACP_PATH', label: tk('Codex ACP 适配器路径'), placeholder: 'codex-acp',
+      help: tk('填写 codex-acp 可执行文件的路径；留空则从 PATH 查找。') }
+  ],
+  login: (config) => ({ command: config.CODEX_CLI_PATH?.trim() || 'codex', args: ['login'] }),
+  account: (config) => codexAccount(config),
   upgrade: {
     run: { command: 'npm', args: ['install', '-g', '@openai/codex@latest', '@agentclientprotocol/codex-acp@latest'] },
     latest: { command: 'npm', args: ['view', '@openai/codex', 'version'] }
@@ -35,5 +41,8 @@ export default acpPlugin({
     authHint: tk('请在 设置 → Agent 后端 → Codex 里点「登录」（会在终端里运行 codex login），登录后重试。'),
     missingHint: tk('请在 设置 → Agent 后端 → Codex 里点「安装」，或在终端运行 npm install -g @openai/codex @agentclientprotocol/codex-acp，然后重试。')
   },
-  launch: () => ({ command: 'codex-acp', args: [] })
+  launch: ({ config }) => ({
+    command: config.CODEX_ACP_PATH?.trim() || 'codex-acp', args: [],
+    env: { CODEX_PATH: config.CODEX_CLI_PATH?.trim() || undefined }
+  })
 })

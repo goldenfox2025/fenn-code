@@ -39,7 +39,7 @@ describe('backend contract over ACP', () => {
     const res = await mgr.prompt('mock', s.sessionId, [{ type: 'text', text: '帮我写个笔记' }])
     expect(res.stopReason).toBe('end_turn')
     const kinds = new Set(events.flatMap((e) => (e.type === 'agent' ? [e.event.kind] : [e.type])))
-    expect(kinds).toEqual(new Set(['thought.delta', 'plan', 'tool.start', 'tool.update', 'message.delta', 'permission', 'backend-log', 'usage']))
+    expect(kinds).toEqual(new Set(['thought.delta', 'plan', 'tool.start', 'tool.update', 'message.delta', 'permission', 'backend-log', 'usage', 'options']))
     const text = events.map((e) => (e.type === 'agent' && e.event.kind === 'message.delta' ? e.event.text : '')).join('')
     expect(text).toContain('已获得许可')
     expect(text).toContain('mock-smart')

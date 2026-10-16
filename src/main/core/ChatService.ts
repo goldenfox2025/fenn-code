@@ -13,6 +13,8 @@ import { addTurn, emptyTotals, type MessageUsage } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import { t } from '../../shared/i18n'
+import { TurnMeter } from './TurnMeter'
+import { sessionOptionDefaults } from '../../shared/sessionOptions'
 
 export interface SendOptions {
   attachments?: Attachment[]
@@ -67,6 +69,7 @@ export class ChatService {
   private live = new Map<string, Live>() // conversationId → session
   private bySession = new Map<string, string>() // `${backend}:${session}` → conversationId
   private current = new Map<string, Message>() // conversationId → streaming reply
+  private meters = new Map<string, TurnMeter>()
   private queues = new Map<string, QueuedTurn[]>()
   private running = new Set<string>()
   private unattendedTurns = new Set<string>()
@@ -92,7 +95,8 @@ export class ChatService {
 
   createConversation(init: Partial<Conversation> & Pick<Conversation, 'kind' | 'title' | 'backendId'>): Conversation {
     const now = Date.now()
-    const conv: Conversation = { id: randomUUID(), createdAt: now, updatedAt: now, status: 'idle', ...init }
+    const conv: Conversation = { id: randomUUID(), createdAt: now, updatedAt: now, status: 'idle', ...init,
+      modelId: init.modelId ?? this.store.settings.backendModelDefaults?.[init.backendId] }
     this.saveConversation(conv)
     return conv
   }
@@ -232,6 +236,7 @@ export class ChatService {
       live.turns++
       live.chars += promptText.length
       costAtStart = live.cost
+      this.meters.set(conversationId, new TurnMeter(performance.now()))
       result = await this.backends.prompt(live.backendId, live.sessionId, parts)
     } catch (err) {
       result = { stopReason: 'error', error: err instanceof Error ? err.message : String(err) }
@@ -243,6 +248,9 @@ export class ChatService {
     if (result.error) reply.error = result.error
     const usage = turnUsageOf(result, costAtStart, live?.cost)
     if (usage) reply.usage = usage
+    reply.timing = this.meters.get(conversationId)?.finish(result.usage, result.stopReason,
+      !this.backends.list().find((b) => b.id === conv!.backendId)?.credits)
+    this.meters.delete(conversationId)
     this.updateMessage(reply)
     // A turn that failed before the agent answered says nothing about what the backend reports.
     if (usage || (live && result.stopReason !== 'error')) {
@@ -257,7 +265,8 @@ export class ChatService {
     const preview = plainPreview(textOf(reply))
     const after = this.patchConversation(conversationId, {
       status: result.stopReason === 'error' ? 'error' : 'idle',
-      ...(opts.hiddenReply ? {} : { updatedAt: Date.now(), lastPreview: preview || this.store.conversation(conversationId)?.lastPreview, unread: true })
+      ...(opts.hiddenReply ? {} : { updatedAt: Date.now(), lastPreview: preview || this.store.conversation(conversationId)?.lastPreview, unread: true,
+        ...(!opts.housekeeping ? { timing: reply.timing } : {}) })
     })
     // The conversation may have been deleted while the reply ran.
     if (after && !opts.hiddenReply) this.hooks.afterTurn?.(after, reply, result)
@@ -306,32 +315,39 @@ export class ChatService {
     const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0 }
     this.live.set(conv.id, live)
     this.bySession.set(`${conv.backendId}:${info.sessionId}`, conv.id)
-    if (fresh && info.models?.length) this.rememberModels(conv.backendId, info.models, info.currentModelId, info.options)
+    // A new session's offered options replace the previous session's capabilities.
+    this.patchConversation(conv.id, { sessionOptions: info.options ?? [] })
     let modelId = info.currentModelId
     if (conv.modelId && conv.modelId !== info.currentModelId && info.models?.some((m) => m.id === conv.modelId)) {
-      await this.backends.setModel(conv.backendId, info.sessionId, conv.modelId).catch(() => {})
+      try { await this.backends.setModel(conv.backendId, info.sessionId, conv.modelId) }
+      catch (error) { this.forgetSession(conv.id); throw error }
       modelId = conv.modelId
     }
     // The conversation's own choices win; a new conversation starts with the backend's defaults.
-    let options = info.options
+    let options = this.store.conversation(conv.id)?.sessionOptions ?? info.options
     // A mode is never a default for new chats (an earlier version could save one); other choices are.
-    const defaults = this.store.settings.backendOptionDefaults?.[conv.backendId] ?? {}
-    for (const o of info.options ?? []) {
+    const defaults = sessionOptionDefaults(this.store.settings, conv.backendId, modelId ?? conv.modelId)
+    for (const o of options ?? []) {
       const v = conv.optionValues?.[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id])
       if (!v || v === o.current || !o.choices.some((c) => c.value === v)) continue
-      options = (await this.backends.setOption(conv.backendId, info.sessionId, o.id, v).catch(() => undefined)) ?? options?.map((x) => (x.id === o.id ? { ...x, current: v } : x))
+      try {
+        options = (await this.backends.setOption(conv.backendId, info.sessionId, o.id, v)) ?? options?.map((x) => (x.id === o.id ? { ...x, current: v } : x))
+      } catch (error) { this.forgetSession(conv.id); throw error }
     }
     this.patchConversation(conv.id, {
       models: info.models ?? conv.models,
       modelId: modelId ?? conv.modelId,
-      sessionOptions: options ?? conv.sessionOptions,
+      sessionOptions: options ?? [],
       sessionRef: live
     })
+    // A mode belongs to this conversation; new chats start in the agent's own mode.
+    const offered = options?.map((o) => (o.category === 'mode' ? { ...o, current: info.options?.find((x) => x.id === o.id)?.current ?? o.current } : o))
+    if (info.models?.length) this.rememberModels(conv.backendId, info.models, modelId, offered)
     return { live, fresh }
   }
 
   /** Keeps the backend's model list (and its default) for new chats; publishes only when it changed. */
-  private rememberModels(backendId: string, models: ModelInfo[], current?: string, options?: SessionOption[]): void {
+  rememberModels(backendId: string, models: ModelInfo[], current?: string, options?: SessionOption[]): void {
     const all = this.store.settings.backendModels ?? {}
     const next = { models: models.map((m) => ({ ...m })), current, ...(options?.length ? { options } : {}) }
     if (JSON.stringify(all[backendId]) === JSON.stringify(next)) return
@@ -350,6 +366,19 @@ export class ChatService {
     const live = this.live.get(conversationId)
     if (live) await this.backends.setModel(live.backendId, live.sessionId, modelId)
     this.patchConversation(conversationId, { modelId })
+    const conv = this.store.conversation(conversationId)
+    if (conv) {
+      const defaults = sessionOptionDefaults(this.store.settings, conv.backendId, modelId)
+      for (const option of conv.sessionOptions ?? []) {
+        const value = defaults[option.id] ?? conv.optionValues?.[option.id]
+        if (option.category !== 'mode' && value && option.choices.some((c) => c.value === value)) {
+          if (value !== option.current) await this.setOption(conversationId, option.id, value)
+          else if (conv.optionValues?.[option.id] !== value) this.patchConversation(conversationId, {
+            optionValues: { ...this.store.conversation(conversationId)?.optionValues, [option.id]: value }
+          })
+        }
+      }
+    }
   }
 
   async setOption(conversationId: string, optionId: string, value: string): Promise<void> {
@@ -407,6 +436,7 @@ export class ChatService {
   routePermission(backendId: string, request: PermissionRequest): void {
     const conversationId = this.bySession.get(`${backendId}:${request.sessionId}`)
     if (conversationId) {
+      this.meters.get(conversationId)?.interrupt()
       this.pendingPermissions.set(request.requestId, conversationId)
       this.patchConversation(conversationId, { status: 'waiting' })
     }
@@ -430,6 +460,7 @@ export class ChatService {
     timeoutMs?: number
   ): Promise<string | null> {
     const requestId = 'host-' + randomUUID()
+    this.meters.get(conversationId)?.interrupt()
     return new Promise((resolve) => {
       this.hostWaiters.set(requestId, resolve)
       if (timeoutMs) setTimeout(() => this.hostWaiters.has(requestId) && this.respondPermission(requestId, null), timeoutMs)
@@ -472,6 +503,7 @@ export class ChatService {
     }
     const reply = this.current.get(conversationId)
     if (!reply) return
+    this.meters.get(conversationId)?.observe(event)
     // The agent's own task plan (ACP `plan`) is the conversation's live plan too.
     if (event.kind === 'plan' && event.entries.length) {
       const conv = this.store.conversation(conversationId)

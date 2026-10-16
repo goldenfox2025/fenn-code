@@ -5,11 +5,12 @@ import { _electron as electron } from 'playwright-core'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { declareTestAgent } from './test-agent.mjs'
 
 const shots = process.argv[2]
 const app = await electron.launch({
   args: ['.', '--no-sandbox'],
-  env: { ...process.env, ANCORA_DEMO_AGENT: '1', ANCORA_DATA_DIR: mkdtempSync(join(tmpdir(), 'oc-e2e-')) }
+  env: { ...process.env, ANCORA_DATA_DIR: declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-e2e-'))) }
 })
 const page = await app.firstWindow()
 await page.setViewportSize({ width: 1400, height: 900 })
@@ -466,15 +467,15 @@ await check('a mode picked on the new-chat page applies to that chat only', asyn
   if (!(await page.locator('.msg-assistant').last().innerText()).includes('bypassPermissions')) throw new Error('the chat did not get the mode')
   await page.click('.sidebar .nav-item:has-text("新建")')
   await page.waitForTimeout(300)
-  if (await page.locator('.composer-row .mode-note').count()) throw new Error('the mode stuck to the next new chat')
+  if (await page.locator('.composer-row .mode-note:has-text("全部允许")').count()) throw new Error('the mode stuck to the next new chat')
 })
 
 await app.close()
 
 // First launch: whatever the user types goes into the guide, never into the chat behind it.
 {
-  const dir = mkdtempSync(join(tmpdir(), 'oc-e2e-first-'))
-  const launch = () => electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, ANCORA_DEMO_AGENT: '1', ANCORA_DATA_DIR: dir } })
+  const dir = declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-e2e-first-')))
+  const launch = () => electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, ANCORA_DATA_DIR: dir } })
   let a = await launch()
   let p = await a.firstWindow()
   await p.evaluate(() => localStorage.setItem('oc-lang', 'zh'))
@@ -523,7 +524,8 @@ await app.close()
     { id: 'u1', conversationId: 'cut', role: 'user', blocks: [{ type: 'text', text: '你好' }], createdAt: now },
     { id: 'a1', conversationId: 'cut', role: 'assistant', blocks: [{ type: 'text', text: '春眠不觉晓' }], createdAt: now, state: 'streaming' }
   ]))
-  const app2 = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, ANCORA_DEMO_AGENT: '1', ANCORA_DATA_DIR: dir } })
+  declareTestAgent(dir)
+  const app2 = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, ANCORA_DATA_DIR: dir } })
   const p2 = await app2.firstWindow()
   await p2.evaluate(() => localStorage.setItem('oc-lang', 'zh'))
   await p2.reload()

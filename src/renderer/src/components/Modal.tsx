@@ -169,7 +169,7 @@ export function ConfirmHost() {
   }
   return (
     <Overlay onClose={() => finish(false)} initialFocus={req.input ? '.modal.confirm input' : '.confirm-cancel'}>
-      <div className={'modal confirm' + (req.code ? ' wide' : '')} tabIndex={-1}>
+      <div className={'modal confirm' + (req.code ? ' has-code' : '')} tabIndex={-1}>
         {req.title && <h2>{req.title}</h2>}
         {req.message && <p className="confirm-text">{req.message}</p>}
         {req.code && <pre className="confirm-code">{req.code}</pre>}

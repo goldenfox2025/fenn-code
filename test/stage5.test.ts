@@ -82,10 +82,12 @@ describe('backends that are gone', () => {
     store.putProject({ ...store.project(p.id)!, backendId: 'removed-demo' })
     store.patchSettings({ defaultBackendId: 'removed-demo' })
     core.repairBackends()
-    expect(store.settings.defaultBackendId).toBe('codex')
-    expect(store.conversation(c.id)!.backendId).toBe('codex')
+    // The first installed agent, or Codex when none is (this depends on the machine running the test).
+    const next = core.backends.list().find((b) => b.installed === true)?.id ?? 'codex'
+    expect(store.settings.defaultBackendId).toBe(next)
+    expect(store.conversation(c.id)!.backendId).toBe(next)
     expect(store.conversation(c.id)!.sessionRef).toBeUndefined()
-    expect(store.project(p.id)!.backendId).toBe('codex')
+    expect(store.project(p.id)!.backendId).toBe(next)
     // The history stays.
     expect(store.messagesOf(c.id).length).toBeGreaterThan(1)
     await dispose()
@@ -105,7 +107,7 @@ describe('backends that are gone', () => {
     // Once the file reads fine, a backend that is really gone is repaired as before.
     core.backendsConfigError = undefined
     core.repairBackends()
-    expect(store.conversation(c.id)!.backendId).toBe('codex')
+    expect(store.conversation(c.id)!.backendId).toBe(core.backends.list().find((b) => b.installed === true)?.id ?? 'codex')
     await dispose()
   }, 30000)
 })
@@ -123,7 +125,8 @@ describe('sign-in state', () => {
 
   it('knows the Qoder status format', () => {
     const { parse, args } = qoderAccount({})
-    expect(args).toEqual(['status', '-o', 'json'])
+    // Run through Node with the package's JS entry when qodercli is an npm shim on this machine.
+    expect(args?.slice(-3)).toEqual(['status', '-o', 'json'])
     expect(parse('{"logged_in": false, "version": "1.1.70", "allow_byok": 0}')).toEqual({ installed: true, version: '1.1.70', signedIn: false, detail: 'qodercli 1.1.70' })
     // 1.1.72 and later: username/email, and why sign-in failed.
     expect(parse('{"logged_in": true, "version": "1.1.72", "username": "alex", "email": "alex@example.com", "plan": "pro"}').detail).toBe('alex@example.com · qodercli 1.1.72')

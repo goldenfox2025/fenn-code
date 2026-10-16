@@ -32,6 +32,12 @@ export interface Cost {
   currency: string
 }
 
+/** An account quota snapshot, never a per-message cost or a context window. */
+export interface CreditQuota {
+  buckets: { name: string; used?: number; total?: number; remaining?: number; unit: string }[]
+  at: number
+}
+
 /** Tokens one turn used, exactly as the backend reported them. Fields it left out stay unset. */
 export interface TurnUsage {
   input?: number
@@ -223,7 +229,7 @@ export interface BackendPlugin {
   /** The agent can sign in from the app (ACP authenticate), so settings show a 「登录」 button. */
   signIn?: boolean
   /** A command that signs in from a terminal (e.g. `qodercli login`); settings show a 「登录」 button that opens it. */
-  login?: { command: string; args?: string[] }
+  login?: { command: string; args?: string[] } | ((config: Record<string, string>) => { command: string; args?: string[] })
   /**
    * What the plugin was built from. When a reload produces a plugin with the
    * same id and signature, the running instance is kept instead of restarted.
@@ -231,8 +237,13 @@ export interface BackendPlugin {
   signature?: string
   /** Only for automated tests: left out of the app unless the demo agent is switched on. */
   testOnly?: boolean
+  optionPolicy?: import('./sessionOptions').SessionOptionPolicy
+  /** Checks local program availability without starting an agent or a sign-in command. */
+  isInstalled?(config: Record<string, string>): boolean
   /** Checks the sign-in state without starting a session (e.g. by running a status command). */
   account?(config: Record<string, string>): Promise<AccountStatus>
+  /** Read-only account Credits lookup; it must not send an agent prompt. */
+  credits?(config: Record<string, string>): Promise<CreditQuota | undefined>
   /** How to upgrade the backend's program; settings show 「升级」 only when this is set. */
   upgrade?: UpgradeSpec
   create(host: BackendHost): AgentBackend
@@ -245,6 +256,8 @@ export interface BackendPlugin {
 export interface BackendSummary {
   id: string
   name: string
+  installed?: boolean
+  optionPolicy?: import('./sessionOptions').SessionOptionPolicy
   description?: string
   settings: PluginSetting[]
   /** Which settings currently have a value (values themselves never leave main). */
@@ -254,6 +267,7 @@ export interface BackendSummary {
   terminalLogin?: boolean
   /** Can report whether the user is signed in (see BackendPlugin.account). */
   account?: boolean
+  credits?: boolean
   /** Can be upgraded from the app (see BackendPlugin.upgrade). */
   upgrade?: boolean
   /** The commands installing or upgrading runs, one per line, as shown before asking. */

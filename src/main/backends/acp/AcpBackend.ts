@@ -12,6 +12,8 @@ import { join } from 'node:path'
 import { Workspaces } from '../workspace'
 import { t } from '../../../shared/i18n'
 import { classifyError } from '../../../shared/errors'
+import { visibleSessionOptions } from '../../../shared/sessionOptions'
+import { findOnPath } from '../install'
 
 /** How long to wait before retrying a turn that failed because the sign-in was being renewed. */
 const REFRESH_RETRY_MS = 3000
@@ -41,6 +43,8 @@ export interface AcpLaunchSpec {
 
 /** Per-agent quirks a plugin can declare without touching the generic adapter. */
 export interface AcpQuirks {
+  /** Hide the provider's non-actionable "none" reasoning choice. */
+  hideNoneReasoning?: boolean
   /** Translate a vendor extension notification (`_vendor/...`) into a contract event. */
   translateExt?(method: string, params: Record<string, unknown>): { sessionId: string; event: AgentEvent } | null
   /** Shown when the agent says authentication is required. */
@@ -119,6 +123,8 @@ export class AcpBackend implements AgentBackend {
     const spec = await this.resolveSpec()
     const env: NodeJS.ProcessEnv = { ...process.env }
     for (const [k, v] of Object.entries(spec.env ?? {})) if (v) env[k] = v
+
+    if (!findOnPath(spec.command, env)) throw new Error(this.missing(spec.command))
 
     const { command, args, shell } = windowsSafe(spec.command, spec.args)
     const proc = spawn(command, args, {
@@ -270,6 +276,8 @@ export class AcpBackend implements AgentBackend {
 
   async closeSession(sessionId: string): Promise<void> {
     this.workspaces.close(sessionId)
+    this.modelSelectors.delete(sessionId)
+    this.sessionOptions.delete(sessionId)
     if (!this.caps?.sessionCapabilities?.close) return
     await this.conn?.closeSession({ sessionId }).catch(() => {})
   }
@@ -308,7 +316,7 @@ export class AcpBackend implements AgentBackend {
       res = await this.conn!.newSession({ cwd, mcpServers })
     } catch (err) {
       const msg = errorText(err)
-      if (/auth/i.test(msg)) {
+      if (classifyError(msg) === 'auth' || classifyError(msg) === 'refresh') {
         const login = this.auth.length ? t('可以在 设置 → Agent 后端 里点「登录」。') : ''
         throw new Error(`${t('{0} 需要登录。', this.name)}${this.quirks.authHint ? t(this.quirks.authHint) : login}`.trim())
       }
@@ -374,13 +382,19 @@ export class AcpBackend implements AgentBackend {
   async setModel(sessionId: string, modelId: string): Promise<void> {
     const sel = this.modelSelectors.get(sessionId)
     if (sel?.configId) {
-      await this.conn!.setSessionConfigOption({ sessionId, configId: sel.configId, value: modelId })
+      const res = await this.conn!.setSessionConfigOption({ sessionId, configId: sel.configId, value: modelId })
+      if (res?.configOptions) {
+        this.captureModels(sessionId, res.configOptions, undefined)
+        this.captureOptions(sessionId, res.configOptions, undefined)
+        this.emitOptions(sessionId)
+      }
     } else {
       // Older/unstable ACP agents expose a dedicated method instead of a config option.
       await (this.conn as unknown as { connection: { sendRequest(m: string, p: unknown): Promise<unknown> } })
         .connection.sendRequest('session/set_model', { sessionId, modelId })
     }
-    if (sel) sel.current = modelId
+    const current = this.modelSelectors.get(sessionId)
+    if (current) current.current = modelId
   }
 
   async setOption(sessionId: string, optionId: string, value: string): Promise<SessionOption[] | undefined> {
@@ -407,8 +421,7 @@ export class AcpBackend implements AgentBackend {
   }
 
   private emitOptions(sessionId: string): void {
-    const options = this.optionsOf(sessionId)
-    if (options) this.host.emit(sessionId, { kind: 'options', options })
+    this.host.emit(sessionId, { kind: 'options', options: this.optionsOf(sessionId) ?? [] })
   }
 
   /**
@@ -416,8 +429,9 @@ export class AcpBackend implements AgentBackend {
    * session modes when it has no config options. Unknown shapes are skipped.
    */
   private captureOptions(sessionId: string, configOptions: unknown, modes: unknown): void {
+    this.sessionOptions.delete(sessionId)
     if (Array.isArray(configOptions)) {
-      const list = (configOptions as { id: string; name?: string; category?: string; type: string; currentValue?: unknown; options?: unknown[] }[])
+      const list = visibleSessionOptions((configOptions as { id: string; name?: string; category?: string; type: string; currentValue?: unknown; options?: unknown[] }[])
         .filter((o) => o && o.type === 'select' && o.category !== 'model' && typeof o.id === 'string')
         .map((o) => ({
           id: o.id,
@@ -428,8 +442,7 @@ export class AcpBackend implements AgentBackend {
             .flatMap((c: any) => (Array.isArray(c?.options) ? c.options : [c]))
             .filter((c: any) => c && typeof c.value === 'string')
             .map((c: any) => ({ value: c.value, name: c.name ?? c.value, description: c.description ?? undefined }))
-        }))
-        .filter((o) => o.choices.length > 1)
+        })), this.quirks)
       // Agents that list only the model here may still offer session modes below.
       if (list.length) {
         this.sessionOptions.set(sessionId, list)
@@ -605,7 +618,6 @@ function stringify(v: unknown): string | undefined {
 }
 
 function errorText(err: unknown): string {
-  if (err instanceof Error) return err.message
   if (err && typeof err === 'object' && 'message' in err) {
     const e = err as { message: string; data?: unknown }
     return e.data ? `${e.message}: ${stringify(e.data)}` : e.message

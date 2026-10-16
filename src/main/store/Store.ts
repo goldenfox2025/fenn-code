@@ -18,7 +18,8 @@ interface StateFile {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  defaultBackendId: demoAgentEnabled() ? 'mock' : 'codex',
+  // The core resolves an unset default against installed agents before the first snapshot.
+  defaultBackendId: demoAgentEnabled() ? 'mock' : '',
   theme: 'system',
   // A login name (root, j.doe) is not what people want to be called; ask in settings instead.
   userName: '',

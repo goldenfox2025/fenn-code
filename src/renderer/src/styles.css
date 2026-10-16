@@ -1182,6 +1182,24 @@ select {
   font-size: 12px;
   color: var(--text-3);
 }
+.menu-meter {
+  display: block;
+  height: 4px;
+  margin: 6px 0 2px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.menu-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.menu-meter-sub {
+  display: block;
+  min-width: 220px;
+}
 .menu-item.danger {
   color: var(--red);
 }
@@ -1625,6 +1643,9 @@ button.card:hover {
   outline: none;
 }
 .textarea {
+  display: block;
+  height: auto;
+  padding: 8px 11px;
   resize: vertical;
   min-height: 80px;
   line-height: 1.5;
@@ -3047,9 +3068,60 @@ details.advanced > summary {
   max-height: 260px;
   overflow: auto;
 }
-.modal.confirm.wide {
+.modal.confirm.has-code {
   width: min(560px, calc(100vw - 32px));
 }
 .choice .rec {
   margin-left: 8px;
+}
+.backend-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.backend-card-head > .btn,
+.backend-card-head > .status-chip {
+  flex: none;
+}
+.account-line .account-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Chats page: a row opens the chat; its delete button shows on hover, as in Claude. */
+.list-row.chat-row {
+  padding: 0 10px 0 0;
+}
+.chat-row-open {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 12px;
+  text-align: left;
+}
+.chat-row > .icon-btn {
+  opacity: 0;
+}
+.chat-row:hover > .icon-btn,
+.chat-row > .icon-btn:focus-visible {
+  opacity: 1;
+}
+/* An input with a button beside it; both keep the same height. */
+.field-row {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  gap: 8px;
+}
+.field-row > .btn {
+  flex: none;
+  height: auto;
+  min-height: 38px;
+}
+/* A menu takes focus to drive its keyboard navigation; the highlighted item shows where it is, not a ring. */
+.menu:focus-visible,
+:root[data-theme='glass'] .menu:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-pop);
 }

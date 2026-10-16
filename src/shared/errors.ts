@@ -4,9 +4,11 @@
  * The UI turns the kind into a plain Chinese sentence and keeps the original
  * under 「详情」.
  */
-export type ErrorKind = 'refresh' | 'auth' | 'forbidden' | 'quota' | 'rate' | 'network' | 'timeout' | 'server'
+export type ErrorKind = 'filesystem' | 'refresh' | 'auth' | 'forbidden' | 'quota' | 'rate' | 'network' | 'timeout' | 'server'
 
 const RULES: [ErrorKind, RegExp][] = [
+  // Local .auth/session paths can contain "auth" even when credentials are valid.
+  ['filesystem', /\b(EPERM|EACCES|EROFS|operation not permitted|read-only file system)\b/i],
   // Another process of the same CLI was renewing the sign-in at that moment; retrying usually works.
   ['refresh', /failed to refresh (?:the )?oauth token|another \S+(?: \S+)? process is refreshing/i],
   ['quota', /\b(quota|insufficient[_ ](?:balance|credits?|funds)|billing|credit balance|out of credits|payment required|\b402\b)/i],

@@ -3,7 +3,7 @@ import { acpPlugin } from '../acp'
 import { tk } from '../../../shared/i18n'
 
 /** A local ACP agent with canned behaviour, for automated tests and screenshots only. */
-export default acpPlugin({
+export default /* @__PURE__ */ acpPlugin({
   id: 'mock',
   testOnly: true,
   name: tk('演示 Agent'),
