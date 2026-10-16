@@ -104,7 +104,7 @@ try {
   }
   const effortStops = async () => {
     await page.locator('.composer .effort-chip').click()
-    const titles = await page.locator('.effort-pop .effort-stop').evaluateAll((els) => els.map((e) => e.getAttribute('title')))
+    const titles = await page.locator('.effort-pop .effort-stop').evaluateAll((els) => els.map((e) => e.getAttribute('data-tip')))
     return titles
   }
   const chooseEffort = async (name) => {
@@ -316,7 +316,7 @@ try {
     await panel.waitFor()
     assert(!/费用|未提供/.test(await panel.innerText()))
     assert.match(await panel.innerText(), /平均每个 token/)
-    assert.match(await page.locator('.msg-usage').getAttribute('title'), /平均每个 token/)
+    assert.match(await page.locator('.msg-usage').getAttribute('data-tip'), /平均每个 token/)
     assert.equal(await panel.getByRole('meter', { name: '上下文', exact: true }).getAttribute('aria-valuemax'), '200000')
     const layout = await panel.evaluate((el) => {
       const r = el.getBoundingClientRect(), css = getComputedStyle(el)
