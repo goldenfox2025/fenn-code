@@ -24,7 +24,7 @@ import { initials } from '../util'
 import { useMenu } from './Menu'
 import { t } from '../i18n'
 import { confirmDialog, promptDialog } from './Modal'
-import { groupByFolder } from '../folderGroups'
+import { groupByFolder, isNested } from '../folderGroups'
 
 export function Sidebar() {
   const s = useApp()
@@ -105,10 +105,11 @@ export function Sidebar() {
   // every render, remounting each row and detaching the 「…」 button a menu is anchored to.
   const chatRow = (c: Conversation) => {
     const selected = route.view === 'chat' && route.conversationId === c.id
+    const nested = !q && isNested(c, chats)
     return (
       <div
         key={c.id}
-        className={'nav-item' + (selected ? ' selected' : '')}
+        className={'nav-item' + (selected ? ' selected' : '') + (nested ? ' nested' : '')}
         role="button"
         onClick={() => s.navigate({ view: 'chat', conversationId: c.id })}
         title={c.title}

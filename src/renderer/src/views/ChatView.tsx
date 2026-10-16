@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Download, FolderKanban, MoreHorizontal, Pin, PinOff, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, MoreHorizontal, Pin, PinOff, Trash2 } from 'lucide-react'
 import type { Conversation } from '@shared/model'
 import { Composer } from '../components/Composer'
 import { useMenu } from '../components/Menu'
@@ -13,11 +13,10 @@ import { UsageButton } from '../components/Usage'
 
 export function ChatView({ conversationId }: { conversationId: string }) {
   const conv = useApp((s) => s.conversations.find((c) => c.id === conversationId))
-  const projects = useApp((s) => s.projects)
+  const parent = useApp((s) => s.conversations.find((c) => c.id === conv?.parentId))
   const navigate = useApp((s) => s.navigate)
   const [menu, openMenu] = useMenu({ align: 'right' })
   if (!conv) return <div className="empty">{t('对话不存在或已被删除')}</div>
-  const project = projects.find((p) => p.id === conv.projectId)
   const deleteChat = async () => {
     if (!(await confirmDialog(t('删除「{0}」？', conv.title)))) return
     try {
@@ -29,15 +28,6 @@ export function ChatView({ conversationId }: { conversationId: string }) {
   return (
     <div className="center">
       <div className="chat-header">
-        {project && (
-          <>
-            <button className="pill-btn" onClick={() => navigate({ view: 'project', projectId: project.id })}>
-              <FolderKanban size={15} />
-              {project.name}
-            </button>
-            <span className="muted">/</span>
-          </>
-        )}
         <EditableTitle conv={conv} />
         <span className="spacer" />
         <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} />
@@ -52,14 +42,6 @@ export function ChatView({ conversationId }: { conversationId: string }) {
                 label: conv.pinned ? t('取消置顶') : t('置顶'),
                 onClick: () => api().updateConversation(conv.id, { pinned: !conv.pinned })
               },
-              { heading: t('移到项目') },
-              { label: t('不属于任何项目'), checked: !conv.projectId, onClick: () => api().updateConversation(conv.id, { projectId: undefined }) },
-              ...projects.filter((p) => !p.archived || p.id === conv.projectId).map((p) => ({
-                icon: <FolderKanban size={15} />,
-                label: p.name,
-                checked: p.id === conv.projectId,
-                onClick: () => api().updateConversation(conv.id, { projectId: p.id })
-              })),
               { separator: true },
               {
                 icon: <Download size={15} />,
@@ -80,9 +62,52 @@ export function ChatView({ conversationId }: { conversationId: string }) {
         {menu}
       </div>
       <PlanLine conv={conv} />
-      <Transcript conversation={conv} />
+      <Transcript conversation={conv} header={conv.handoff && <Handoff conv={conv} parent={parent} />} />
       <PermissionPrompts conversationId={conv.id} />
       <Composer conversation={conv} autoFocus />
+    </div>
+  )
+}
+
+/**
+ * A sub-conversation's opening, as in Claude: who started it and from which
+ * chat, then the task it was handed (folded open), with the context behind it.
+ */
+function Handoff({ conv, parent }: { conv: Conversation; parent?: Conversation }) {
+  const navigate = useApp((s) => s.navigate)
+  const [open, setOpen] = useState(true)
+  const [ctxOpen, setCtxOpen] = useState(false)
+  const h = conv.handoff!
+  return (
+    <div className="handoff">
+      <div className="handoff-from">
+        {parent ? (
+          <>
+            {t('由 {0} 启动，来自', h.by)}{' '}
+            <button className="link" onClick={() => navigate({ view: 'chat', conversationId: parent.id })}>
+              {parent.title}
+            </button>
+          </>
+        ) : (
+          t('由 {0} 从另一个对话启动', h.by)
+        )}
+      </div>
+      <div className="handoff-card">
+        <button className="handoff-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {t('任务')}
+          <ChevronDown size={14} className={open ? '' : 'rot'} />
+        </button>
+        {open && <div className="handoff-task">{h.task}</div>}
+        {h.context && (
+          <>
+            <button className="handoff-ctx" aria-expanded={ctxOpen} onClick={() => setCtxOpen(!ctxOpen)}>
+              {t('上下文')}
+              <ChevronRight size={14} className={ctxOpen ? 'rot90' : ''} />
+            </button>
+            {ctxOpen && <div className="handoff-task ctx">{h.context}</div>}
+          </>
+        )}
+      </div>
     </div>
   )
 }

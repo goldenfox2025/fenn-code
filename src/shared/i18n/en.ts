@@ -793,4 +793,7 @@ export const en: Record<string, string> = {
   "收起": "Show less",
   "显示全部（{0}）": "Show all ({0})",
   "还没有对话。对话按工作文件夹分组列在这里；项目里的讨论在项目中。": "No chats yet. Chats are listed here by working folder; project discussions stay in their project.",
+  "由 {0} 启动，来自": "Started by {0} from",
+  "由 {0} 从另一个对话启动": "Started by {0} from another chat",
+  "任务": "Task",
 }

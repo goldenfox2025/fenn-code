@@ -591,6 +591,13 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     await stream(sessionId, "已在上一条回复里更正。", abort);
     return;
   }
+  // 「开子对话 标题」 hands side work to a sub-conversation.
+  const sub = text.match(/开子对话\s*(\S+)/);
+  if (sub) {
+    const r = await callTool(sessionId, s, "start_subconversation", { title: sub[1], task: `把「${sub[1]}」单独处理好，量出改动前后的差别。`, context: "原对话在讨论整体方案。" });
+    await stream(sessionId, typeof r === "string" ? r : "已开启子对话。", abort);
+    return;
+  }
   // 「交付文件 名字」 writes a project file; 「附上 路径」 or 「附上链接 URL」 attaches an output.
   const deliver = text.match(/交付文件\s*(\S+)/);
   if (deliver) {

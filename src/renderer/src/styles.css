@@ -3551,3 +3551,73 @@ details.advanced > summary {
   text-overflow: ellipsis;
   min-width: 0;
 }
+
+/* A sub-conversation, nested under the chat that started it with a └ connector. */
+.nav-item.nested {
+  padding-left: 30px;
+  position: relative;
+}
+.nav-item.nested::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 4px;
+  width: 8px;
+  height: 11px;
+  border-left: 1.5px solid var(--border-strong);
+  border-bottom: 1.5px solid var(--border-strong);
+  border-bottom-left-radius: 4px;
+}
+
+/* A sub-conversation's opening: where it came from and the task it was handed. */
+.handoff {
+  margin: 4px 0 18px;
+}
+.handoff-from {
+  font-size: 14px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.handoff-from .link {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+}
+.handoff-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.handoff-toggle,
+.handoff-ctx {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px 4px;
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+.handoff-ctx {
+  width: 100%;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+}
+.handoff-toggle .rot {
+  transform: rotate(-90deg);
+}
+.handoff-ctx .rot90 {
+  transform: rotate(90deg);
+}
+.handoff-task {
+  padding: 4px 14px 12px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.handoff-task.ctx {
+  color: var(--text-2);
+  padding-top: 0;
+}

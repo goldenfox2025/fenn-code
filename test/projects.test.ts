@@ -189,3 +189,39 @@ describe('pages', () => {
     await dispose()
   }, 30000)
 })
+
+describe('sub-conversations', () => {
+  it('hands side work to a new chat in the same folder that starts at once and never reports back', async () => {
+    const { core, store, dispose } = await makeCore()
+    const parent = await core.startChat({ text: '开子对话 降CPU', backendId: 'mock', cwd: process.cwd() })
+    const child = await until(() => store.conversations.find((c) => c.parentId === parent.id))
+    expect(child).toMatchObject({ kind: 'chat', title: '降CPU', cwd: process.cwd(), backendId: 'mock', handoff: { by: '演示 Agent' } })
+    expect(child.handoff!.task).toContain('降CPU')
+    // The parent's reply carries a card linking to it; the child is working on the brief, which stays hidden.
+    await until(() => store.messagesOf(parent.id).some((m) => m.blocks.some((b) => b.type === 'thread-card' && b.threadId === child.id)))
+    await until(() => store.messagesOf(child.id).some((m) => m.role === 'assistant' && m.state === 'done'))
+    expect(store.messagesOf(child.id).filter((m) => m.role === 'user' && !m.hidden)).toHaveLength(0)
+    const parentMessages = store.messagesOf(parent.id).length
+    // The user talks to the child directly; nothing goes back to the parent.
+    await core.send(child.id, '继续')
+    await until(() => store.messagesOf(child.id).filter((m) => m.role === 'assistant' && m.state === 'done').length >= 2)
+    await new Promise((r) => setTimeout(r, 500))
+    expect(store.messagesOf(parent.id).length).toBe(parentMessages)
+    // No grandchildren.
+    expect(() => core.orchestrator.startSubconversation(store.conversation(child.id)!, 'x', 'y')).toThrow()
+    await dispose()
+  }, 30000)
+
+  it('caps running sub-conversations and refuses them in unattended runs', async () => {
+    const { core, store, dispose } = await makeCore()
+    const parent = core.chat.createConversation({ kind: 'chat', title: 'p', backendId: 'mock' })
+    for (let i = 0; i < 5; i++) {
+      const c = core.orchestrator.startSubconversation(parent, `s${i}`, 'task')
+      core.chat.patchConversation(c.id, { status: 'waiting' })
+    }
+    expect(() => core.orchestrator.startSubconversation(store.conversation(parent.id)!, 's5', 'task')).toThrow(/5/)
+    const routine = core.chat.createConversation({ kind: 'chat', title: 'r', backendId: 'mock', routineId: 'r1' })
+    expect(() => core.orchestrator.startSubconversation(routine, 'x', 'y')).toThrow()
+    await dispose()
+  }, 30000)
+})

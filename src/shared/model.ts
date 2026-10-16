@@ -93,8 +93,12 @@ export interface Conversation {
   projectId?: string
   /** For threads: the project-chat message the thread hangs under. */
   anchorMessageId?: string
-  /** Created by this routine's run; such chats are not auto-assigned to a project. */
+  /** Created by this routine's run. */
   routineId?: string
+  /** A sub-conversation: the chat whose agent started it. The two never talk afterwards. */
+  parentId?: string
+  /** What the parent's agent handed over when it started this sub-conversation. */
+  handoff?: { by: string; task: string; context?: string }
   backendId: string
   modelId?: string
   models?: ModelInfo[]

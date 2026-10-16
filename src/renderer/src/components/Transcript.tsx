@@ -653,7 +653,11 @@ function ThreadCard({ threadId }: { threadId: string }) {
   return (
     <button
       className="thread-card"
-      onClick={() => navigate({ view: 'project', projectId: thread.projectId!, threadId: thread.id })}
+      onClick={() =>
+        thread.kind === 'chat'
+          ? navigate({ view: 'chat', conversationId: thread.id })
+          : navigate({ view: 'project', projectId: thread.projectId!, threadId: thread.id })
+      }
     >
       <MessagesSquare size={15} className="muted" />
       <span className="t">{thread.title}</span>

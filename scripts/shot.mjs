@@ -85,6 +85,23 @@ const scenarios = {
     await wait(800)
     await shot('chats-page')
   },
+  // A sub-conversation the agent handed side work to, nested under its parent.
+  async subchat() {
+    const dir = join(mkdtempSync(join(tmpdir(), 'work-')), 'web-shop')
+    mkdirSync(dir, { recursive: true })
+    await page.evaluate((cwd) => window.ancora.startChat({ text: '网站首页改版', backendId: 'mock', cwd }), dir)
+    await wait(1500)
+    const parent = await page.evaluate((cwd) => window.ancora.startChat({ text: '开子对话 降低图片压缩脚本的CPU占用', backendId: 'mock', cwd }), dir)
+    await wait(3000)
+    await page.click(`.sidebar .nav-item:has-text("开子对话")`)
+    await wait(800)
+    await shot('subchat-parent')
+    await page.click('.thread-card')
+    await wait(1000)
+    await page.click('.handoff-ctx')
+    await wait(300)
+    await shot('subchat-child')
+  },
   // Many agents: the backend menu keeps four and puts the rest under 更多后端.
   async many() {
     await wait(1500)

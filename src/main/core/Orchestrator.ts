@@ -59,7 +59,7 @@ export class Orchestrator {
     private readonly memory: ProjectMemory,
     private readonly files: ProjectFiles,
     private readonly artifacts: Artifacts,
-    private readonly backends?: Pick<BackendManager, 'ask'>
+    private readonly backends?: Pick<BackendManager, 'ask' | 'list'>
   ) {
     chat.hooks = {
       preamble: (conv, isResume) => this.preamble(conv, isResume),
@@ -614,6 +614,43 @@ export class Orchestrator {
     return [...this.baseTools(conv), ...(this.extraTools?.(conv) ?? [])]
   }
 
+  /** Running sub-conversations one chat may have at a time. */
+  static readonly MAX_RUNNING_SUBCHATS = 5
+
+  /**
+   * Hands focused side work to a new conversation in the same folder, on the
+   * same agent. It is a hand-off: afterwards the user talks to the new
+   * conversation directly, and it never reports back here.
+   */
+  startSubconversation(parent: Conversation, title: string, task: string, context?: string): Conversation {
+    if (parent.kind !== 'chat' || parent.parentId) throw new Error('只有普通对话能开子对话，子对话里不能再开')
+    if (parent.routineId || this.chat.isUnattended(parent.id)) throw new Error('定时任务无人值守，不能开子对话')
+    const running = this.store.conversations.filter((c) => c.parentId === parent.id && (c.status === 'working' || c.status === 'waiting')).length
+    if (running >= Orchestrator.MAX_RUNNING_SUBCHATS) throw new Error(`已有 ${running} 个子对话在进行，先等它们完成`)
+    const by = this.backends?.list().find((b) => b.id === parent.backendId)?.name ?? parent.backendId
+    const child = this.chat.createConversation({
+      kind: 'chat',
+      title: title.trim().slice(0, 60) || titleFrom(task),
+      parentId: parent.id,
+      handoff: { by, task, context: context?.trim() || undefined },
+      backendId: parent.backendId,
+      modelId: parent.modelId,
+      cwd: parent.cwd
+    })
+    const anchor = this.chat.currentReply(parent.id) ?? this.lastMessage(parent.id)
+    if (anchor) {
+      anchor.blocks.push({ type: 'thread-card', threadId: child.id })
+      this.chat.updateMessage(anchor)
+    }
+    const brief = [
+      `这是从另一个对话交接过来的任务，现在由你在这个新对话里负责。直接开始做；之后用户会在这里直接和你沟通，不需要向原来的对话汇报。`,
+      `任务：\n${task}`,
+      context?.trim() ? `上下文：\n${context.trim()}` : ''
+    ].filter(Boolean).join('\n\n')
+    void this.chat.send(child.id, brief, { hidden: true })
+    return child
+  }
+
   private baseTools(conv: Conversation): ToolDef[] {
     const conversationId = conv.id
     const project = this.store.project(conv.projectId)
@@ -662,6 +699,28 @@ export class Orchestrator {
         }
       }
     )
+    if (conv.kind === 'chat' && !conv.parentId && !conv.routineId && !this.chat.isUnattended(conversationId))
+      common.push({
+        name: 'start_subconversation',
+        description:
+          '对话推进到需要专门处理的一块旁支工作时（例如一个独立的排查、重构或调研），把它交给一个新的子对话：同一个文件夹、同一个 agent，并立刻开始做。这是交接：之后用户直接到子对话里和它沟通，子对话不会向这里汇报，你也不能再给它发消息。task 要写清楚目标、限制和怎样算完成；context 放子对话需要知道的背景（它看不到这里的对话）。子对话里不能再开子对话。',
+        inputSchema: obj(
+          {
+            title: { type: 'string', description: '子对话的标题，几个字' },
+            task: { type: 'string', description: '交给子对话的任务：目标、限制、完成标准' },
+            context: { type: 'string', description: '可选：子对话需要的背景（它看不到这里的对话）' }
+          },
+          ['title', 'task']
+        ),
+        aliases: { task: ['brief', 'instructions', 'prompt'], title: ['name'] },
+        example: { title: '降低图片压缩脚本的 CPU 占用', task: '在 resize.py 里把主循环的轮询从 0.2 秒改成按需，量出改动前后的 CPU，不要重启服务。' },
+        run: ({ title, task, context }) => {
+          const now = this.store.conversation(conversationId)
+          if (!now) throw new Error('对话已不存在')
+          const child = this.startSubconversation(now, typeof title === 'string' ? title : '', str(task, 'task'), typeof context === 'string' ? context : undefined)
+          return `已开启子对话「${child.title}」，它已经开始工作。用户会直接在那里和它沟通。`
+        }
+      })
     common.push({
       name: 'ask_decision',
       description:
