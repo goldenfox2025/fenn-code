@@ -64,19 +64,31 @@ describe('progress board in a project', () => {
     await dispose()
   }, 30000)
 
-  it('suggests a done item for a finished thread the agent never recorded', async () => {
+  it('treats a resolved thread as the milestone, without a second progress item', async () => {
     const { core, store, dispose } = await makeCore()
     const p = await core.createProject({ name: 'x', backendId: 'mock' })
     await core.chat.send(p.conversationId, '帮我整理文档，完成后解决')
-    const t = await until(() => store.conversations.find((c) => c.kind === 'thread' && c.resolved))
-    const item = await until(() => store.project(p.id)?.progress?.[0])
-    expect(item).toMatchObject({ title: t.title, status: 'done', suggested: true, links: [t.id], by: 'app' })
-    // Ignoring it removes it, and it is not offered again.
-    await core.deleteProgress(p.id, item.id)
-    await core.send(t.id, '再补充一点，完成后解决')
-    await until(() => store.conversation(t.id)?.resolved)
+    await until(() => store.conversations.find((c) => c.kind === 'thread' && c.resolved))
     await new Promise((r) => setTimeout(r, 300))
-    expect(store.project(p.id)!.progress).toEqual([])
+    expect(store.project(p.id)!.progress ?? []).toEqual([])
+    await dispose()
+  }, 30000)
+
+  it('sends a same-titled goal to the existing thread instead of opening a twin', async () => {
+    const { core, store, dispose } = await makeCore()
+    const p = await core.createProject({ name: 'z', backendId: 'mock' })
+    const tools = (core.orchestrator as any).toolsFor(p.conversationId) as { name: string; run: (a: any, c: any) => any }[]
+    const start = tools.find((x) => x.name === 'start_thread')!
+    const first = await start.run({ title: '瓷砖调研', instructions: '调研瓷砖' }, { conversationId: p.conversationId })
+    const again = await start.run({ title: '瓷砖 调研', instructions: '再调研一次' }, { conversationId: p.conversationId })
+    expect(again.existing_thread_id).toBe(first.thread_id)
+    expect(store.conversations.filter((c) => c.kind === 'thread' && c.projectId === p.id)).toHaveLength(1)
+    // A resolved one is offered back; a genuinely new goal can still open a thread.
+    await core.updateConversation(first.thread_id, { resolved: true })
+    expect((await start.run({ title: '瓷砖调研', instructions: '新一轮' }, { conversationId: p.conversationId })).existing_thread_id).toBe(first.thread_id)
+    const forced = await start.run({ title: '瓷砖调研', instructions: '新一轮', new_anyway: true }, { conversationId: p.conversationId })
+    expect(forced.thread_id).not.toBe(first.thread_id)
+    await core.orchestrator.idle()
     await dispose()
   }, 30000)
 

@@ -384,10 +384,13 @@ await check('the chats page selects several chats to move or delete at once', as
 
 await check('a project keeps a progress board of milestones and tasks, edited by hand', async () => {
   await page.click('.sidebar .recent-projects .nav-item:has-text("端到端")')
+  // Threads are the milestones: the board only appears once something is on it (here, a goal the agent recorded).
+  if (await page.locator('.panel-head .tab[title="进度"]').count()) throw new Error('empty progress board shown')
+  await page.evaluate(async () => {
+    const p = (await window.ancora.snapshot()).projects.find((x) => x.name.includes('端到端'))
+    await window.ancora.updateProgress(p.id, { title: '第一版上线' })
+  })
   await page.click('.panel-head .tab[title="进度"]')
-  await page.click('.progress-board .btn:has-text("添加里程碑")')
-  await page.fill('.progress-form input >> nth=0', '第一版上线')
-  await page.keyboard.press('Enter')
   const ms = page.locator('.progress-row.milestone:has-text("第一版上线")')
   await ms.waitFor({ timeout: 3000 })
   await ms.hover()

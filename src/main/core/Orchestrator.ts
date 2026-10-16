@@ -82,13 +82,13 @@ export class Orchestrator {
         `你是 Ancora 应用里项目「${project.name}」的协调者。${userName || '用户'}在这个主对话里提需求。`,
         `规则（请照做）：`,
         `1. 简单问题（项目现状、某个讨论串在做什么）直接回答，一两句。`,
-        `2. 要花功夫的工作（写代码、调研、写文档、多步骤任务）不要自己在这里做完，调用 start_thread 开一个讨论串，然后只回一句“开始了”之类的话。`,
+        `2. 要花功夫的工作（写代码、调研、写文档、多步骤任务）不要自己在这里做完。先对照下面的讨论串列表：同一件事（包括已解决的）用 message_thread 发过去，已解决的会自动重新打开；只有新的目标才调用 start_thread 开新讨论串，然后只回一句“开始了”之类的话。`,
         `   例：用户说“帮我调研三家竞品的定价” → start_thread({"title":"竞品定价调研","instructions":"用户原话：帮我调研三家竞品的定价。"})`,
         `3. 用户追问已有讨论串的事 → message_thread({"thread_id":"讨论串id或标题","text":"用户的追问"})，再一句话说明转过去了。`,
         `4. 用户说“记住……”或说出以后还用得到的事实/偏好 → memory_write({"name":"简短英文名","body":"要记的内容"})。`,
         `5. 用户道谢或闲聊，可以只调用 react({"emoji":"👍"})。`,
         `6. 用用户的语言回复，像人说话，简短，不罗列选项。`,
-        `7. 项目有进度表（progress_read / progress_update）：用户定下目标或阶段时记成里程碑，拆出的工作记成其下的任务；用户问进度时先读它。`,
+        `7. 每个讨论串就是一个里程碑：一件事一个讨论串，做完标成已解决，用户在看板上按「等待您处理 / 进行中 / 已解决」看进度。不要另外记进度表；只有用户明确要求时才用 progress_update。用户问进度时先看讨论串列表（list_threads）。`,
         project.description ? `项目简介：${project.description}` : '',
         project.instructions ? `项目指令（必须遵守）：\n${project.instructions}` : '',
         project.cwd ? `项目工作目录：${project.cwd}` : '',
@@ -104,11 +104,10 @@ export class Orchestrator {
         `   例：update_status({"text":"竞品定价调研\\n\\n✓ 找到三家竞品\\n✱ 对比价格\\n○ 写结论"})`,
         `2. 用户只看得到你的回复和清单。做完时，回复只说结果和需要用户做的事，不复述过程。`,
         `3. 需要用户拍板时调用 ask_decision 发选择卡片并推荐一个选项；能继续就按推荐继续。`,
-        `4. 项目有进度表：你的工作对应进度表里的某一项时，开始和完成时用 progress_update 更新它的状态（先用 progress_read 看现有的项）。`,
-        `5. 遇到难点（卡住、要换思路、要等外部条件）时调用 set_blocker 用一句话写下来，遇到新难点再调用；解决了传空字符串清掉。`,
-        `6. 成果是文件或链接时，用 project_file_write 写进项目文件，或用 attach_output 附上已有的文件或链接，用户会在回复下面看到可以点开的卡片。不要只在文字里写路径。`,
-        `7. 工作本身需要定期重复（每天汇总、定时检查）时，用 create_routine 建定时任务，并在回复里说一声。`,
-        `8. 全部做完、没人欠下一步时，调用 set_resolved({"resolved":true})。`,
+        `4. 遇到难点（卡住、要换思路、要等外部条件）时调用 set_blocker 用一句话写下来，遇到新难点再调用；解决了传空字符串清掉。`,
+        `5. 成果是文件或链接时，用 project_file_write 写进项目文件，或用 attach_output 附上已有的文件或链接，用户会在回复下面看到可以点开的卡片。不要只在文字里写路径。`,
+        `6. 工作本身需要定期重复（每天汇总、定时检查）时，用 create_routine 建定时任务，并在回复里说一声。`,
+        `7. 这个讨论串就是项目的一个里程碑。全部做完、没人欠下一步时，调用 set_resolved({"resolved":true})；用户说算了或不做了，也标成已解决。`,
         project.instructions ? `项目指令（必须遵守）：\n${project.instructions}` : '',
         project.cwd ? `项目工作目录：${project.cwd}` : '',
         this.memorySection(project.id),
@@ -297,10 +296,28 @@ export class Orchestrator {
         this.chat.patchConversation(conv.id, { checklist: `${fresh.title}\n\n✱ ${t('正在处理')}`, checklistAuto: true })
     }
     if (conv.kind !== 'project' || !conv.projectId) return ''
+    const parts = [this.threadIndex(conv.projectId)]
     const lines = this.digest.get(conv.projectId)
-    if (!lines?.length) return ''
-    this.digest.delete(conv.projectId)
-    return `<thread-updates>\n自你上次回复以来，各讨论串的动态：\n${lines.join('\n')}\n</thread-updates>`
+    if (lines?.length) {
+      this.digest.delete(conv.projectId)
+      parts.push(`<thread-updates>\n自你上次回复以来，各讨论串的动态：\n${lines.join('\n')}\n</thread-updates>`)
+    }
+    return parts.filter(Boolean).join('\n\n')
+  }
+
+  /** Every turn, the coordinator sees the open threads and the last few resolved ones, so a follow-up goes to its thread. */
+  private threadIndex(projectId: string): string {
+    const all = this.threadsOf(projectId)
+    if (!all.length) return ''
+    const open = all.filter((t) => !t.resolved)
+    const done = all.filter((t) => t.resolved).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5)
+    const row = (t: Conversation) => `- 「${t.title}」 id:${t.id.slice(0, 8)} ${t.resolved ? '已解决' : t.status === 'waiting' ? '等待用户' : t.status === 'working' ? '进行中' : '未解决'}`
+    return [
+      `<threads>`,
+      open.length ? `未解决的讨论串：\n${open.map(row).join('\n')}` : '没有未解决的讨论串。',
+      done.length ? `最近解决的：\n${done.map(row).join('\n')}` : '',
+      `</threads>`
+    ].filter(Boolean).join('\n')
   }
 
   // ---- after each turn ----------------------------------------------------
@@ -322,7 +339,6 @@ export class Orchestrator {
     if (result.stopReason !== 'error' && fresh.status === 'idle') {
       this.chat.patchConversation(conv.id, { status: fresh.resolved ? 'done' : 'waiting' })
     }
-    if (fresh.resolved) this.suggestProgress(fresh.id)
     const summary = textOf(reply).replace(/\s+/g, ' ').slice(0, 300)
     this.note(conv.projectId, `- 「${fresh.title}」(${fresh.id.slice(0, 8)})${fresh.resolved ? '已解决' : '回复了'}：${summary || '（无文字回复）'}`)
     // Touch the project so it sorts as recently active.
@@ -463,20 +479,6 @@ export class Orchestrator {
         }
       }
     ]
-  }
-
-  /**
-   * App-side fallback for models that never touch the board: a finished
-   * thread with no progress item yet is offered to the user as a done item.
-   */
-  suggestProgress(threadId: string): void {
-    const t = this.store.conversation(threadId)
-    if (!t || t.kind !== 'thread' || !t.resolved || t.progressSuggested || !t.projectId || !this.progress) return
-    const items = this.store.project(t.projectId)?.progress ?? []
-    const linked = items.some((m) => m.links?.includes(t.id) || m.children?.some((c) => c.links?.includes(t.id)))
-    this.chat.patchConversation(t.id, { progressSuggested: true })
-    if (linked) return
-    this.progress(t.projectId, { title: t.title, status: 'done', link: [t.id], suggested: true }, 'app')
   }
 
   /** Called when a project's library of outputs changes. */
@@ -806,15 +808,25 @@ export class Orchestrator {
             {
               title: { type: 'string', description: '讨论串标题：几个词，用用户的说法，不是句子' },
               instructions: { type: 'string', description: '交给讨论串 agent 的完整任务说明' },
-              ack: { type: 'string', description: '讨论串里的第一句话，说明先做什么（可选）' }
+              ack: { type: 'string', description: '讨论串里的第一句话，说明先做什么（可选）' },
+              new_anyway: { type: 'boolean', description: '已有同名的已解决讨论串、但这确实是新目标时传 true（可选）' }
             },
             ['instructions']
           ),
           aliases: { instructions: ['task', 'prompt', 'description', 'content', 'message', 'request', 'details'], title: ['name', 'subject', 'topic'] },
           example: { title: '竞品定价调研', instructions: '用户原话：帮我调研三家竞品的定价。默认先看官网公开价格。' },
-          run: ({ title, instructions, ack }) => {
+          run: ({ title, instructions, ack, new_anyway }) => {
             const task = str(instructions, 'instructions')
             const name = typeof title === 'string' && title.trim() ? title.trim() : titleFrom(task)
+            // One thread per goal: a thread with the same title gets the follow-up instead of a twin.
+            const key = (s: string) => s.replace(/\s+/g, '').toLowerCase()
+            const same = this.threadsOf(project.id).filter((x) => key(x.title) === key(name))
+            const open = same.find((x) => !x.resolved)
+            if (open)
+              return { existing_thread_id: open.id, title: open.title, note: '已有同名的未解决讨论串，没有新开。请用 message_thread 把需求发过去。' }
+            const done = same[0]
+            if (done && new_anyway !== true)
+              return { existing_thread_id: done.id, title: done.title, note: '已有同名的已解决讨论串。是同一件事就用 message_thread 发过去（会自动重新打开）；确实是新目标就换个标题，或带 new_anyway:true 再调用一次。' }
             const t = this.startThread(project, name, task, typeof ack === 'string' ? ack : undefined)
             return { thread_id: t.id, title: t.title }
           }
@@ -879,7 +891,6 @@ export class Orchestrator {
             const t = this.findThread(project.id, thread_id)
             const r = resolved !== false
             this.chat.patchConversation(t.id, { resolved: r, status: r ? 'done' : 'waiting' })
-            if (r) this.suggestProgress(t.id)
             return 'ok'
           }
         }

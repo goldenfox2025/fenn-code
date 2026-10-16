@@ -762,4 +762,5 @@ export const en: Record<string, string> = {
   "退出玻璃效果": "Turn off glass",
   "正在连接 {0}…": "Connecting to {0}…",
   "{0} 在 {1} 秒内没有连上。请确认它在终端里能正常运行，然后点重试。": "{0} didn't connect within {1} seconds. Check that it runs in a terminal, then retry.",
+  "{0} 个讨论串都已解决。": "All {0} threads are resolved.",
 }

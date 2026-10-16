@@ -218,9 +218,12 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
         <button className={'tab' + (tab === 'threads' ? ' active' : '')} onClick={() => setTab('threads')}>
           <MessagesSquare size={15} />
           {t('讨论串')}</button>
-        <button className={'tab' + (tab === 'progress' ? ' active' : '')} title={t('进度')} onClick={() => setTab('progress')}>
-          <Milestone size={15} />
-        </button>
+        {/* Threads are the milestones; the separate board stays only for projects that already use it. */}
+        {(!!project.progress?.length || tab === 'progress') && (
+          <button className={'tab' + (tab === 'progress' ? ' active' : '')} title={t('进度')} onClick={() => setTab('progress')}>
+            <Milestone size={15} />
+          </button>
+        )}
         <button className={'tab' + (tab === 'outputs' ? ' active' : '')} title={t('成果')} onClick={() => setTab('outputs')}>
           <PackageOpen size={15} />
         </button>
@@ -262,7 +265,7 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
                   : waiting.length
                     ? t('有 {0} 个讨论串在等您处理。', waiting.length)
                     : threads.length
-                      ? t('都处理完了。')
+                      ? t('{0} 个讨论串都已解决。', threads.length)
                       : t('讨论串开始后，会在这里跟踪进展：哪些正在进行、哪些在等待您处理、哪些已完成。')}
               </div>
               {board.total > 0 && (
