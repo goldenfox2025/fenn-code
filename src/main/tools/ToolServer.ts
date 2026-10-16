@@ -89,6 +89,9 @@ export function findTool<T extends { name: string }>(tools: T[], name: unknown):
 }
 
 /** Return this from a tool to send rich MCP content (e.g. an image) instead of text. */
+/** A call that was well-formed but can't be done now (a limit, a state); no argument example is added to it. */
+export class ToolRefusal extends Error {}
+
 export class ToolContent {
   constructor(readonly content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]) {}
 }
@@ -193,7 +196,7 @@ export class ToolServer {
               content: [
                 {
                   type: 'text',
-                  text: (e instanceof Error ? e.message : String(e)) + (tool.example ? `\n正确的调用参数示例：${JSON.stringify(tool.example)}` : '')
+                  text: (e instanceof Error ? e.message : String(e)) + (tool.example && !(e instanceof ToolRefusal) ? `\n正确的调用参数示例：${JSON.stringify(tool.example)}` : '')
                 }
               ],
               isError: true

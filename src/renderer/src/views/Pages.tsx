@@ -174,7 +174,7 @@ export function ChatsPage() {
             {q ? t('标题匹配的对话 · {0}', list.length) : t('共 {0} 个对话', list.length)}
           </div>
         )}
-        {groupByFolder(list).map((g) => (
+        {groupByFolder(list, useApp.getState().platform).map((g) => (
           <section key={g.key} className="chat-group">
             <div className="chat-group-head" data-tip={g.folder}>
               {g.folder ? <Folder size={14} /> : <MessageCircle size={14} />}

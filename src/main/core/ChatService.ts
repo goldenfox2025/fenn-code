@@ -46,6 +46,8 @@ export interface TurnHooks {
   history?(conv: Conversation, prior: Message[]): string | undefined
   /** Text placed before every prompt (e.g. updates that happened since the last turn). */
   beforePrompt?(conv: Conversation): string
+  /** Another backend to use for now when the conversation's own is signed out (projects and routines). */
+  standIn?(conv: Conversation): string | undefined
   /** Called after each turn finishes. */
   afterTurn?(conv: Conversation, reply: Message, result: TurnResult): void
 }
@@ -349,7 +351,16 @@ export class ChatService {
     }
   }
 
-  private async openSession(conv: Conversation): Promise<{ live: Live; fresh: boolean }> {
+  private async openSession(saved: Conversation): Promise<{ live: Live; fresh: boolean }> {
+    // A stand-in runs this session only: the conversation keeps its backend, model and choices.
+    const standIn = this.hooks.standIn?.(saved)
+    const conv: Conversation = standIn
+      ? { ...saved, backendId: standIn, modelId: undefined, optionValues: undefined, sessionRef: saved.sessionRef?.backendId === standIn ? saved.sessionRef : undefined }
+      : saved
+    if (standIn) {
+      const nameOf = (id: string) => this.backends.list().find((b) => b.id === id)?.name ?? id
+      this.notice(saved.id, 'info', t('{0} 未登录，本次用 {1}', nameOf(saved.backendId), nameOf(standIn)), 'stand-in')
+    }
     // With a working folder the agent works there; without one it gets a private, empty
     // folder of its own, so it never lands in the user's home by default.
     const folder = this.folderOf(conv)
@@ -378,7 +389,7 @@ export class ChatService {
     if (!fresh) void this.readLoggedContext(conv.id, live)
     this.bySession.set(`${conv.backendId}:${info.sessionId}`, conv.id)
     // A new session's offered options replace the previous session's capabilities.
-    this.patchConversation(conv.id, { sessionOptions: info.options ?? [] })
+    if (!standIn) this.patchConversation(conv.id, { sessionOptions: info.options ?? [] })
     let modelId = info.currentModelId
     if (conv.modelId && conv.modelId !== info.currentModelId && info.models?.some((m) => m.id === conv.modelId)) {
       try { await this.backends.setModel(conv.backendId, info.sessionId, conv.modelId) }
@@ -396,7 +407,7 @@ export class ChatService {
         options = (await this.backends.setOption(conv.backendId, info.sessionId, o.id, v)) ?? options?.map((x) => (x.id === o.id ? { ...x, current: v } : x))
       } catch (error) { this.forgetSession(conv.id); throw error }
     }
-    this.patchConversation(conv.id, {
+    this.patchConversation(conv.id, standIn ? { sessionRef: live } : {
       models: info.models ?? conv.models,
       modelId: modelId ?? conv.modelId,
       sessionOptions: options ?? [],

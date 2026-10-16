@@ -24,7 +24,9 @@
     "test:e2e": "electron-vite build && node scripts/e2e.mjs",
     "test:package": "node scripts/package-smoke.mjs",
     "dist": "electron-vite build && electron-builder",
-    "postinstall": "install-electron"
+    "postinstall": "install-electron",
+    "visual": "node scripts/visual.mjs",
+    "style-check": "node scripts/style-check.mjs"
   },
   "license": "MIT",
   "dependencies": {

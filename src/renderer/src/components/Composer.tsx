@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp, ChevronDown, CornerDownLeft, FileText, Folder, FolderGit2, FolderKanban, FolderOpen, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, FileText, Folder, FolderGit2, FolderOpen, Plus, Square, X } from 'lucide-react'
 import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp } from '../store'
@@ -32,13 +32,12 @@ interface Props {
    * 'card': tall box with controls inside (chats, home).
    * 'line': single-line box with controls underneath (project chat, threads), as in Claude Projects.
    */
-  variant?: 'card' | 'line'
 }
 
 const MAX_TEXT_FILE = 1_000_000
 const MAX_IMAGE = 8_000_000
 
-export function Composer({ conversation, placeholder, autoFocus, onSubmit, leading, backendId, onBackendChange, modelId, onModelChange, folder, onFolderChange, variant = 'card' }: Props) {
+export function Composer({ conversation, placeholder, autoFocus, onSubmit, leading, backendId, onBackendChange, modelId, onModelChange, folder, onFolderChange }: Props) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<Attachment[]>([])
   const [dragging, setDragging] = useState(false)
@@ -50,7 +49,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   useEffect(() => {
     for (const b of backends) if (b.account) void refreshAccount(b.id, 60_000)
   }, [backends])
-  const [menu, openMenu, updateMenu] = useMenu({ placement: 'above', align: 'right', compact: true })
+  const [menu, openMenu, updateMenu] = useMenu({ placement: 'auto', align: 'right', compact: true })
   const hasPermission = useApp((s) => !!conversation && s.permissions.some((p) => p.conversationId === conversation.id))
   const busy = conversation?.status === 'working' || hasPermission
   const draftKey = conversation ? `draft:${conversation.id}` : 'draft:new'
@@ -253,6 +252,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       {canSwitch && (
         <button className="footer-chip backend-chip" aria-haspopup="menu" data-tip={t('Agent 后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
           {currentBackend?.name ?? t('选择后端')}
+          <ChevronDown size={12} className="chip-caret" />
         </button>
       )}
       {showModel && (
@@ -265,6 +265,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
         >
           {signedOut ? <span className="mode-note warn">{t('未登录')}</span> : (currentModel?.name ?? <span className="muted">{t('模型')}</span>)}
           {modeNote && <span className="mode-note"> · {modeNote}</span>}
+          <ChevronDown size={12} className="chip-caret" />
         </button>
       )}
       {effortOpt && canPick && !signedOut && (
@@ -338,10 +339,6 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       <button className="send-btn stop" data-tip={t('停止')} onClick={() => conversation && api().cancel(conversation.id)}>
         <Square size={12} fill="currentColor" />
       </button>
-    ) : variant === 'line' ? (
-      <button className="icon-btn" disabled={!canSend} onClick={submit} data-tip={t('发送 (Enter)')}>
-        <CornerDownLeft size={17} />
-      </button>
     ) : (
       <button className="send-btn" disabled={!canSend} onClick={submit} data-tip={t('发送 (Enter)')}>
         <ArrowUp size={18} />
@@ -349,7 +346,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     )
 
   return (
-    <div className={'composer-wrap v-' + variant}>
+    <div className="composer-wrap">
       {busy && conversation && <HousekeepingTimer conversationId={conversation.id} />}
       <div
         className={'composer' + (dragging ? ' dragging' : '')}
@@ -399,28 +396,16 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
               }
             }}
           />
-          {variant === 'line' && sendButton}
         </div>
-        {variant === 'card' && (
-          <div className="composer-row">
-            {attachButton}
-            {folderChip}
-            {leading}
-            <span className="spacer" />
-            {modelButton}
-            {sendButton}
-          </div>
-        )}
-      </div>
-      {variant === 'line' && (
-        <div className="composer-under">
+        <div className="composer-row">
           {attachButton}
           {folderChip}
           {leading}
           <span className="spacer" />
           {modelButton}
+          {sendButton}
         </div>
-      )}
+      </div>
       {menu}
       <input
         ref={picker}
@@ -512,7 +497,7 @@ const baseName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ||
  * one it works in a private scratch space and asks before touching any file.
  */
 export function FolderChip({ folder, onChange, hint = '' }: { folder: string; onChange: (folder: string) => void; hint?: string }) {
-  const [menu, openMenu] = useMenu({ placement: 'above' })
+  const [menu, openMenu] = useMenu({ placement: 'auto' })
   const recent = useApp((s) => {
     // The folder set in Settings comes first, as a suggestion only.
     const seen = new Set<string>(s.settings.defaultCwd ? [s.settings.defaultCwd] : [])

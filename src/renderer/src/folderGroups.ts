@@ -15,14 +15,19 @@ export const isNested = (c: Conversation, all: Conversation[]) => !!c.parentId &
 
 export const folderName = (path: string) => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
 
-const keyOf = (folder?: string) => (folder ? folder.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase() : '')
+/** Windows and macOS treat Foo and foo as one folder; Linux does not. */
+const keyOf = (folder: string | undefined, caseless: boolean) => {
+  const k = folder ? folder.replace(/[\\/]+$/, '').replace(/\\/g, '/') : ''
+  return caseless ? k.toLowerCase() : k
+}
 
 /**
  * Groups chats by working folder, the most recently active group first; chats
  * without a folder form one group of their own. Two folders with the same name
  * show their parent folder too.
  */
-export function groupByFolder(chats: Conversation[]): FolderGroup[] {
+export function groupByFolder(chats: Conversation[], platform = 'win32'): FolderGroup[] {
+  const caseless = platform !== 'linux'
   const groups = new Map<string, FolderGroup>()
   const ids = new Set(chats.map((c) => c.id))
   // Sub-conversations sit right under their parent, in its group.
@@ -32,7 +37,7 @@ export function groupByFolder(chats: Conversation[]): FolderGroup[] {
     if (c.parentId && ids.has(c.parentId)) continue
     // A folder the app made for one chat is not a place the user works in; it stays with the plain chats.
     const cwd = c.autoFolder ? undefined : c.cwd
-    const key = keyOf(cwd)
+    const key = keyOf(cwd, caseless)
     let g = groups.get(key)
     if (!g) groups.set(key, (g = { key: key || '~none', folder: cwd || undefined, name: cwd ? folderName(cwd) : t('对话'), chats: [] }))
     g.chats.push(c, ...(children.get(c.id) ?? []).sort((a, b) => a.createdAt - b.createdAt))

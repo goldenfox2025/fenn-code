@@ -51,7 +51,7 @@ describe('default backend', () => {
     await dispose()
   })
 
-  it('moves an upgraded default, project and routine off an agent that is signed out', async () => {
+  it('moves an upgraded default off a signed-out agent, and runs projects and routines elsewhere only for now', async () => {
     const { core, store, dispose } = await makeCore()
     await core.signInRepair
     fakeInstalled(core, { codex: false, 'claude-code': true, qoder: true })
@@ -61,9 +61,17 @@ describe('default backend', () => {
     store.patchSettings({ defaultBackendId: 'qoder' })
     await core.repairSignIns()
     expect(store.settings.defaultBackendId).toBe('claude-code')
-    expect(store.project(p.id)!.backendId).toBe('claude-code')
-    expect(store.conversation(p.conversationId)!.backendId).toBe('claude-code')
-    expect(store.routines.find((r: any) => r.id === 'r1')!.backendId).toBe('claude-code')
+    // The user's own choices stay saved; only this run uses another agent.
+    expect(store.project(p.id)!.backendId).toBe('qoder')
+    expect(store.conversation(p.conversationId)!.backendId).toBe('qoder')
+    expect(store.routines.find((r: any) => r.id === 'r1')!.backendId).toBe('qoder')
+    expect(core.chat.hooks.standIn!(store.conversation(p.conversationId)!)).toBe('claude-code')
+    // Plain chats are never switched behind the user's back.
+    expect(core.chat.hooks.standIn!({ ...store.conversation(p.conversationId)!, projectId: undefined, kind: 'chat' })).toBeUndefined()
+    // Signed in again: back to the chosen agent.
+    ;(core as any).backends.account = async () => ({ signedIn: true })
+    await core.backendAccount('qoder')
+    expect(core.chat.hooks.standIn!(store.conversation(p.conversationId)!)).toBeUndefined()
     await dispose()
   })
 

@@ -62,7 +62,7 @@ export function Menu({
   items: MenuItem[]
   onClose: () => void
   align?: 'left' | 'right'
-  placement?: 'below' | 'above' | 'side'
+  placement?: 'below' | 'above' | 'side' | 'auto'
   /** At least as wide as the anchor (form dropdowns). */
   matchWidth?: boolean
   /** Claude's model-menu look: narrow, one line per item. */
@@ -114,10 +114,13 @@ export function Menu({
       let left = align === 'right' ? r.right - width : r.left
       const gap = 8
       const room = { above: Math.max(0, r.top - gap - 8), below: Math.max(0, window.innerHeight - r.bottom - gap - 8) }
-      const other = placement === 'above' ? 'below' : 'above'
+      // 'auto': wherever the whole menu fits, below first (the composer in the
+      // middle of the home page opens down, at the bottom of a chat up).
+      const preferred = placement === 'auto' ? (room.below >= m.height || room.below >= room.above ? 'below' : 'above') : placement
+      const other = preferred === 'above' ? 'below' : 'above'
       // Preserve the preferred side when it can show a useful slice of a long
       // menu. Shrink and scroll it instead of clamping it across its opener.
-      const side = room[placement] < Math.min(m.height, 160) && room[other] > room[placement] ? other : placement
+      const side = room[preferred] < Math.min(m.height, 160) && room[other] > room[preferred] ? other : preferred
       const maxHeight = Math.min(m.height, room[side])
       const top = side === 'above' ? r.top - maxHeight - gap : r.bottom + gap
       left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
@@ -277,7 +280,7 @@ export function Menu({
 }
 
 /** Hook: const [menu, open] = useMenu(); <button onClick={e => open(e.currentTarget, items)}> {menu} */
-export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 'above'; matchWidth?: boolean; compact?: boolean } = {}) {
+export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 'above' | 'auto'; matchWidth?: boolean; compact?: boolean } = {}) {
   const [state, setState] = useState<{ anchor: HTMLElement; rect: DOMRect; items: MenuItem[] } | null>(null)
   const node = state ? <Menu anchor={state.anchor} rect={state.rect} items={state.items} onClose={() => setState(null)} {...opts} /> : null
   return [

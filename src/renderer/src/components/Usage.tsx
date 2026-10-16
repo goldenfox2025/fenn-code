@@ -12,8 +12,9 @@ import { tk } from '@shared/i18n'
 export function usageLine(u: MessageUsage): string {
   const parts: string[] = []
   const total = headline(u)
-  if (u.input !== undefined || u.output !== undefined || u.total !== undefined) parts.push(t('{0} tokens', formatTokens(total)))
-  if (u.cost) parts.push(formatCost(u.cost))
+  if (total > 0) parts.push(t('{0} tokens', formatTokens(total)))
+  // ACP reports a running cost; a reply that added nothing shows none rather than $0.0000.
+  if (u.cost && u.cost.amount > 0) parts.push(formatCost(u.cost))
   return parts.join(' · ')
 }
 
@@ -32,7 +33,7 @@ const seconds = (ms: number) => (ms < 1000 ? t('{0} 毫秒', Math.round(ms)) : t
 /** How fast the last reply streamed, as the app saw it (not the provider's own timing). */
 function timingLine(timing: GenerationTiming): string {
   const parts = [t('首个回复 {0}', seconds(timing.firstResponseMs))]
-  if (timing.tpotMs !== undefined) parts.push(t('平均每个 token {0}', seconds(timing.tpotMs)))
+  if (timing.tpotMs !== undefined && Math.round(timing.tpotMs) > 0) parts.push(t('平均每个 token {0}', seconds(timing.tpotMs)))
   return parts.join(' · ')
 }
 
@@ -46,7 +47,7 @@ export function MessageUsageLabel({ m }: { m: Message }) {
   if (credits || !m.usage) return null
   const line = usageLine(m.usage)
   if (!line) return null
-  const title = [...detailLines(m.usage), m.usage.cost ? t('费用 {0}', formatCost(m.usage.cost)) : '', m.timing ? timingLine(m.timing) : '']
+  const title = [...detailLines(m.usage), m.usage.cost && m.usage.cost.amount > 0 ? t('费用 {0}', formatCost(m.usage.cost)) : '', m.timing ? timingLine(m.timing) : '']
   return (
     <span className="msg-usage" data-tip={title.filter(Boolean).join('\n')}>
       {line}
@@ -108,19 +109,22 @@ export function usageMenu(u: UsageTotals | undefined, scope: string, timing?: Ge
     return items
   }
   if (ctx) items.push(ctx)
-  if (u.turns === 0) {
+  // [label, value, shown even when zero]
+  const rows: [string, number | undefined, boolean][] = [
+    [tk('新输入'), u.input, true],
+    [tk('输出'), u.output, true],
+    [tk('思考'), u.thought || undefined, false],
+    [tk('缓存读取'), u.cachedRead, false],
+    [tk('缓存写入'), u.cachedWrite, false]
+  ]
+  // Only real per-turn figures: an agent that reports just the context leaves these at zero.
+  if (u.turns > 0 && rows.some(([, v]) => !!v)) {
+    // Cache rows only when there was any; new input and output always.
+    for (const [label, v, always] of rows) if (v !== undefined && (v > 0 || always)) items.push({ label: t(label), hint: formatTokens(v), info: true })
+  } else if (!ctx) {
     items.push({ label: t('这个 agent 不提供用量'), sub: t('它没有报告 token 数，所以这里不显示数字。'), info: true })
-  } else {
-    const rows: [string, number | undefined][] = [
-      [tk('新输入'), u.input],
-      [tk('输出'), u.output],
-      [tk('思考'), u.thought || undefined],
-      [tk('缓存读取'), u.cachedRead],
-      [tk('缓存写入'), u.cachedWrite]
-    ]
-    for (const [label, v] of rows) if (v !== undefined) items.push({ label: t(label), hint: formatTokens(v), info: true })
   }
-  if (u.cost)
+  if (u.cost && u.cost.amount > 0)
     items.push({
       label: t('费用'),
       hint: formatCost(u.cost),
@@ -265,22 +269,31 @@ function CreditsButton({ backendId, className, activity }: { backendId: string; 
  * the usage details.
  */
 export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming }) {
-  const [menu, openMenu] = useMenu({ align: 'right', placement: 'above', compact: true })
+  const [menu, openMenu] = useMenu({ align: 'right', placement: 'auto', compact: true })
   const size = usage?.contextSize
   const used = usage?.contextUsed
   const share = size && used !== undefined ? Math.max(0, Math.min(1, used / size)) : 0
   const title =
     used === undefined
-      ? !usage || usage.turns + usage.unreported === 0 ? t('还没有用量') : t('这个 agent 不提供用量')
+      ? !usage || usage.turns + usage.unreported === 0
+        ? t('还没有用量')
+        : usage.turns > 0 && (usage.input || usage.output)
+          ? t('这个 agent 不报告上下文用量')
+          : t('这个 agent 不提供用量')
       : size
         ? t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(size), percent(used, size))
         : t('上下文 已用 {0}', formatTokens(used))
-  const r = 6.5
-  const c = 2 * Math.PI * r
+  // A small static pie, like Claude's: an outline, filled as far as the context is.
+  const a = share * 2 * Math.PI
+  const r = 4.6
+  const end = [9 + r * Math.sin(a), 9 - r * Math.cos(a)]
+  const pie = share >= 0.999 ? <circle cx="9" cy="9" r={r} className="ring-fill" /> : share > 0 ? (
+    <path className="ring-fill" d={`M9 9 L9 ${9 - r} A${r} ${r} 0 ${share > 0.5 ? 1 : 0} 1 ${end[0].toFixed(2)} ${end[1].toFixed(2)} Z`} />
+  ) : null
   return (
     <>
       <button
-        className={'context-ring' + (share >= 0.9 ? ' full' : share >= 0.75 ? ' high' : '')}
+        className={'context-ring' + (share >= 0.9 ? ' full' : share >= 0.75 ? ' high' : '') + (used === undefined ? ' none' : '')}
         data-tip={title}
         aria-label={title}
         onClick={(e) => {
@@ -289,8 +302,8 @@ export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; sco
         }}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-          <circle cx="9" cy="9" r={r} className="ring-track" />
-          {share > 0 && <circle cx="9" cy="9" r={r} className="ring-fill" strokeDasharray={`${Math.max(share * c, 1.5)} ${c}`} transform="rotate(-90 9 9)" />}
+          <circle cx="9" cy="9" r="6.6" className="ring-track" />
+          {pie}
         </svg>
       </button>
       {menu}

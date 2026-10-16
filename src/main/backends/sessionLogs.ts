@@ -99,10 +99,14 @@ export function claudeContext(lines: string[]): SessionContext | undefined {
   for (let i = lines.length - 1; i >= 0; i--) {
     const x = parse(lines[i])
     if (x?.type !== 'assistant' || x.isSidechain) continue
+    // Placeholder replies Claude Code writes after an interruption or API error carry no real usage.
+    if (x.message?.model === '<synthetic>') continue
     const u = x.message?.usage
     const input = n(u?.input_tokens)
     if (input === undefined) continue
-    return { used: input + (n(u.cache_read_input_tokens) ?? 0) + (n(u.cache_creation_input_tokens) ?? 0), model: typeof x.message.model === 'string' ? x.message.model : undefined }
+    const used = input + (n(u.cache_read_input_tokens) ?? 0) + (n(u.cache_creation_input_tokens) ?? 0)
+    if (!used) continue
+    return { used, model: typeof x.message.model === 'string' ? x.message.model : undefined }
   }
   return undefined
 }

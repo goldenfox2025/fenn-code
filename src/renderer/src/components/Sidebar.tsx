@@ -51,8 +51,9 @@ export function Sidebar() {
   )
   const pinnedChats = chats.filter((c) => c.pinned)
   const unpinned = chats.filter((c) => !c.pinned)
+  const platform = useApp((x) => x.platform)
   // Below the projects, chats are grouped by the folder they work in.
-  const groups = useMemo(() => groupByFolder(unpinned), [unpinned])
+  const groups = useMemo(() => groupByFolder(unpinned, platform), [unpinned, platform])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const SHOWN = 8
   const matchingProjects = q ? s.projects.filter((p) => p.name.toLowerCase().includes(q)) : []

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /**
  * The app's one tooltip, in Claude's style: elements say `data-tip="…"` (never
@@ -123,7 +124,8 @@ export function TooltipLayer() {
   }, [tip])
 
   if (!tip) return null
-  return (
+  // On <body>, above popovers that are portaled there too.
+  return createPortal(
     <div
       ref={bubble}
       role="tooltip"
@@ -131,6 +133,7 @@ export function TooltipLayer() {
       style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0 }}
     >
       {tip.text}
-    </div>
+    </div>,
+    document.body
   )
 }

@@ -122,7 +122,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
         )}
         <ProjectIntro project={project} conv={conv} />
         <PermissionPrompts conversationId={conv.id} />
-        <Composer conversation={conv} variant="line" placeholder={t('提问或开始一项任务…')} autoFocus={!threadId} />
+        <Composer conversation={conv} placeholder={t('提问或开始一项任务…')} autoFocus={!threadId} />
       </div>
 
       {panelOpen && (
@@ -562,7 +562,7 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
       <PlanLine conv={th} defaultOpen={st === 'working'} />
       <Transcript conversation={th} compact header={<ThreadRoot thread={th} />} />
       <PermissionPrompts conversationId={th.id} />
-      <Composer conversation={th} variant="line" placeholder={t('在讨论串中回复…')} />
+      <Composer conversation={th} placeholder={t('在讨论串中回复…')} />
     </div>
   )
 }

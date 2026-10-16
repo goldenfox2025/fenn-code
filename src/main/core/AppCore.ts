@@ -125,6 +125,10 @@ export class AppCore {
       // Titled first, so a folder made for the chat carries its real name.
       void this.autoAssigner.consider(conv, reply).catch(() => {}).then(() => this.placeChat(conv.id, reply.id)).catch(() => {})
     }
+    this.chat.hooks.standIn = (conv) => {
+      const id = conv.projectId || conv.routineId ? this.standIns.get(conv.backendId) : undefined
+      return id && this.backends.has(id) ? id : undefined
+    }
     const digest = this.chat.hooks.beforePrompt
     this.chat.hooks.beforePrompt = (conv) => {
       const moved = this.movedNotes.get(conv.id)
@@ -288,25 +292,23 @@ export class AppCore {
       const next = await pick()
       if (next && next !== def) this.publish({ type: 'settings', settings: this.store.patchSettings({ defaultBackendId: next }) })
     }
-    for (const p of this.store.projects) {
-      if (!p.backendId || p.archived || (await usable(p.backendId))) continue
+    // Projects and routines keep the backend the user chose; while it is signed out
+    // they run on another one for now, and the reply says so.
+    const chosen = new Set([...this.store.projects.filter((p) => !p.archived).map((p) => p.backendId), ...this.store.routines.map((r) => r.backendId)])
+    for (const id of chosen) {
+      if (!id || (await usable(id))) continue
       const next = await pick()
-      if (!next || next === p.backendId) continue
-      const project = { ...p, backendId: next }
-      this.store.putProject(project)
-      this.publish({ type: 'project', project })
-      const chat = this.store.conversation(p.conversationId)
-      if (chat && chat.backendId === p.backendId && chat.status !== 'working' && chat.status !== 'waiting')
-        this.chat.patchConversation(chat.id, { backendId: next, sessionRef: undefined, models: undefined, modelId: undefined, sessionOptions: undefined, optionValues: undefined })
+      if (next && next !== id) this.standIns.set(id, next)
     }
-    for (const r of this.store.routines) {
-      if (!r.backendId || (await usable(r.backendId))) continue
-      const next = await pick()
-      if (!next || next === r.backendId) continue
-      const routine = { ...r, backendId: next }
-      this.store.putRoutine(routine)
-      this.publish({ type: 'routine', routine })
-    }
+  }
+
+  /** Backends found signed out, with the one projects and routines use meanwhile. Never saved. */
+  readonly standIns = new Map<string, string>()
+
+  /** A backend is signed in again: its projects and routines go back to it. */
+  private signedInAgain(backendId: string): void {
+    if (!this.standIns.delete(backendId)) return
+    for (const c of this.store.conversations) if (c.backendId === backendId) this.chat.forgetSession(c.id)
   }
 
   resumeInterrupted(): void {
@@ -426,8 +428,10 @@ export class AppCore {
     }) })
   }
 
-  backendAccount(backendId: string) {
-    return this.backends.account(backendId)
+  async backendAccount(backendId: string) {
+    const status = await this.backends.account(backendId)
+    if (status.signedIn === true) this.signedInAgain(backendId)
+    return status
   }
 
   async prepareConversation(conversationId: string): Promise<void> {
@@ -910,6 +914,7 @@ export class AppCore {
     // Sessions created before signing in may be unusable; start fresh.
     for (const c of this.store.conversations) if (c.backendId === backendId) this.chat.forgetSession(c.id)
     const status = await this.backends.account(backendId)
+    if (status.signedIn === true) this.signedInAgain(backendId)
     if (status.signedIn === false) throw new Error(t('登录尚未完成。请检查登录窗口或终端里的错误。') + (status.detail ? `\n${status.detail}` : ''))
     return status
   }

@@ -33,7 +33,9 @@ describe('reading context from agent session logs', () => {
   writeFileSync(join(day, 'rollout-2026-10-16T02-00-00-bbbb-2222_cccc-3333.jsonl'), codexLine(42) + '\n')
   const proj = join(home, '.claude', 'projects', 'C--work-app')
   mkdirSync(proj, { recursive: true })
-  writeFileSync(join(proj, 'sess-1.jsonl'), [claudeLine(false, 338253), claudeLine(true, 5)].join('\n'))
+  // The last entry is the placeholder Claude Code writes after an interruption; it carries no usage.
+  const synthetic = JSON.stringify({ type: 'assistant', isSidechain: false, message: { model: '<synthetic>', usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
+  writeFileSync(join(proj, 'sess-1.jsonl'), [claudeLine(false, 338253), claudeLine(true, 5), synthetic].join('\n'))
   const grok = join(home, '.grok', 'sessions', 'C%3A%5Cwork', 'g1')
   mkdirSync(grok, { recursive: true })
   writeFileSync(join(grok, 'updates.jsonl'), grokLine(1) + '\n')

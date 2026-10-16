@@ -16,7 +16,14 @@ const SUGGESTIONS = [
 export function HomeView({ folder: initialFolder }: { folder?: string }) {
   const settings = useApp((s) => s.settings)
   const navigate = useApp((s) => s.navigate)
-  const [backendId, setBackendId] = useState(settings.defaultBackendId)
+  const [chosenBackend, setBackendId] = useState(settings.defaultBackendId)
+  // An agent removed while the app runs is not offered: what is shown is what the message goes to.
+  const backendId = useApp((s) => {
+    const ok = (id?: string) => !!id && s.backends.some((b) => b.id === id && b.installed !== false)
+    if (ok(chosenBackend)) return chosenBackend
+    if (ok(s.settings.defaultBackendId)) return s.settings.defaultBackendId
+    return (s.backends.find((b) => b.id === 'codex' && b.installed !== false) ?? s.backends.find((b) => b.installed !== false))?.id
+  })
   const [modelId, setModelId] = useState<string | undefined>(undefined)
   useEffect(() => {
     setBackendId(settings.defaultBackendId)

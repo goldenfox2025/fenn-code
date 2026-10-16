@@ -117,6 +117,12 @@ const scenarios = {
     await page.waitForSelector('.working-mark')
     await wait(2600)
     await shot('turn-working')
+    await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
+    await page.click('.composer .effort-chip')
+    await page.hover('.effort-help')
+    await page.waitForSelector('.tooltip.on')
+    await wait(300)
+    await shot('tooltip')
     void c
   },
   // Many agents: the backend menu keeps four and puts the rest under 更多后端.

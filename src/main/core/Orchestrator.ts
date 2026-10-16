@@ -17,7 +17,7 @@ import type { HostToolServer, TurnResult } from '../../shared/contract'
 import { withBlocker, type Block, type Conversation, type Message, type ProgressItem, type ProgressPatch, type Project } from '../../shared/model'
 import { progressText, resolveItem, statusOf } from './progress'
 import type { Store } from '../store/Store'
-import { ToolContent, type ToolDef, type ToolServer } from '../tools/ToolServer'
+import { ToolContent, ToolRefusal, type ToolDef, type ToolServer } from '../tools/ToolServer'
 import { fmt, linesOf, textOf, transcript, type ChatService } from './ChatService'
 import type { BackendManager } from '../backends/BackendManager'
 import type { ProjectMemory } from './ProjectMemory'
@@ -629,7 +629,7 @@ export class Orchestrator {
     if (parent.kind !== 'chat' || parent.parentId) throw new Error('只有普通对话能开子对话，子对话里不能再开')
     if (parent.routineId || this.chat.isUnattended(parent.id)) throw new Error('定时任务无人值守，不能开子对话')
     const running = this.store.conversations.filter((c) => c.parentId === parent.id && (c.status === 'working' || c.status === 'waiting')).length
-    if (running >= Orchestrator.MAX_RUNNING_SUBCHATS) throw new Error(`已有 ${running} 个子对话在进行，先等它们完成`)
+    if (running >= Orchestrator.MAX_RUNNING_SUBCHATS) throw new ToolRefusal(`已有 ${running} 个子对话在进行，先等它们完成`)
     const by = this.backends?.list().find((b) => b.id === parent.backendId)?.name ?? parent.backendId
     const child = this.chat.createConversation({
       kind: 'chat',

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { HelpCircle } from 'lucide-react'
+import { Brain, ChevronDown, HelpCircle } from 'lucide-react'
 import type { SessionOption } from '@shared/contract'
 import { effortLabel, effortRank, effortStops } from './sessionOptionLabels'
 import { t } from '../i18n'
@@ -39,7 +39,9 @@ export function EffortPicker({ option, value, disabled, onChange }: { option: Se
           setOpen((o) => !o)
         }}
       >
+        <Brain size={13} className="chip-icon" />
         {label}
+        <ChevronDown size={12} className="chip-caret" />
       </button>
       {open && chip.current && (
         <EffortPopover anchor={chip.current} option={option} index={index} disabled={disabled} onChange={onChange} onClose={() => setOpen(false)} />
@@ -74,8 +76,10 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
       const r = anchor.getBoundingClientRect()
       const m = ref.current!.getBoundingClientRect()
       const left = Math.max(8, Math.min(r.right - m.width + 40, window.innerWidth - m.width - 8))
+      // Below when it fits (the home page), else above (a chat's composer at the bottom).
+      const below = r.bottom + 8
       const above = r.top - m.height - 8
-      setPos({ left, top: above >= 8 ? above : r.bottom + 8 })
+      setPos({ left, top: below + m.height <= window.innerHeight - 8 || above < 8 ? below : above })
     }
     place()
     ref.current?.querySelector<HTMLElement>('[role="slider"]')?.focus({ preventScroll: true })
@@ -121,7 +125,7 @@ function EffortPopover({ anchor, option, index, disabled, onChange, onClose }: {
         <span className="effort-title">{t('努力程度')}</span>
         <span className="effort-level">{name}</span>
         <span className="spacer" />
-        <span className="effort-help" data-tip={t('努力程度越高，agent 思考得越多：回答更周到，但更慢，也更耗额度。')}>
+        <span className="effort-help" tabIndex={0} data-tip={t('努力程度越高，agent 思考得越多：回答更周到，但更慢，也更耗额度。')}>
           <HelpCircle size={16} />
         </span>
       </div>

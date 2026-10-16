@@ -9,3 +9,4 @@ release/
 .env.*
 coverage/
 shots/
+test/visual/*.actual.png
