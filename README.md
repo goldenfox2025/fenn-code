@@ -88,10 +88,10 @@ You need [Node.js](https://nodejs.org) 22 or newer and git. Clone this repositor
 
 | OS | Command |
 |---|---|
-| Windows | `.\build.cmd -Run` (or double-click `build.cmd`) |
+| Windows | `.\build.cmd -Run` (double-clicking `build.cmd` builds without starting the app) |
 | macOS / Linux | `./build.sh --run` |
 
-The script checks Node.js, installs dependencies, builds the app and prints where it is (`release/win-unpacked/Ancora.exe`, `release/mac*/Ancora.app` or `release/linux-unpacked/ancora-desktop`). Add `-Installer` (Windows) or `--installer` (macOS / Linux) to also build an installer. Behind a proxy, set `HTTPS_PROXY` first and the scripts pass it on to Node's own downloads.
+The script checks Node.js, installs dependencies, builds the app and prints where it is (`release/win-unpacked/Ancora.exe`, `release/mac*/Ancora.app` or `release/linux-unpacked/ancora-desktop` on x64; other architectures get their own folder). Add `-Installer` (Windows) or `--installer` (macOS / Linux) to also build an installer. Behind a proxy, set `HTTPS_PROXY` first and the scripts pass it on to Node's own downloads.
 
 On macOS, an app you built yourself opens with right-click → **Open** the first time.
 

@@ -3,7 +3,7 @@ import { Bot, Check, FolderGit2, FolderKanban, FolderOpen, Info, Palette, Plug, 
 import type { AppInfo, ConnectorView, FolderCandidate, Project, Routine, Schedule, UpdateCheck } from '@shared/model'
 import { Dropdown, useMenu } from './Menu'
 import { confirmDialog, Overlay, useLayer } from './Modal'
-import { api, refreshAccount, toast, useApp } from '../store'
+import { api, refreshAccount, toast, useApp, useUsableBackends } from '../store'
 import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
 
@@ -27,12 +27,12 @@ export function Dialogs() {
 
 function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => void }) {
   const existing = useApp((s) => s.projects.find((p) => p.id === projectId))
-  const backends = useApp((s) => s.backends)
   const defaultBackend = useApp((s) => s.settings.defaultBackendId)
   const navigate = useApp((s) => s.navigate)
   const [f, setF] = useState<Partial<Project>>(
     existing ?? { name: '', description: '', instructions: '', backendId: defaultBackend }
   )
+  const usable = useUsableBackends(f.backendId)
   // Folders whose name matches the project's, offered as one click; never set on their own.
   const [likely, setLikely] = useState<FolderCandidate[]>([])
   useEffect(() => {
@@ -94,7 +94,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
       </div>
       <div className="field">
         <label>{t('Agent 后端')}</label>
-        <Dropdown value={f.backendId} onChange={(v) => setF({ ...f, backendId: v })} options={backends.map((b) => ({ value: b.id, label: b.name, sub: b.description }))} />
+        <Dropdown value={f.backendId} onChange={(v) => setF({ ...f, backendId: v })} options={usable.map((b) => ({ value: b.id, label: b.name, sub: b.description }))} />
       </div>
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
@@ -112,11 +112,11 @@ const WEEK = [t('日'), t('一'), t('二'), t('三'), t('四'), t('五'), t('六
 function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; projectId?: string; onDone: () => void }) {
   const existing = useApp((s) => s.routines.find((r) => r.id === routineId))
   const projects = useApp((s) => s.projects)
-  const backends = useApp((s) => s.backends)
   const [name, setName] = useState(existing?.name ?? '')
   const [prompt, setPrompt] = useState(existing?.prompt ?? '')
   const [target, setTarget] = useState(existing?.target.projectId ?? projectId ?? '')
   const [backendId, setBackendId] = useState(existing?.backendId ?? '')
+  const usableForRoutine = useUsableBackends(backendId)
   const [schedule, setSchedule] = useState<Schedule>(existing?.schedule ?? { kind: 'daily', time: '09:00' })
 
   const save = async () => {
@@ -229,7 +229,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
         <Dropdown
           value={backendId}
           onChange={setBackendId}
-          options={[{ value: '', label: t('默认') }, ...backends.map((b) => ({ value: b.id, label: b.name, sub: b.description }))]}
+          options={[{ value: '', label: t('默认') }, ...usableForRoutine.map((b) => ({ value: b.id, label: b.name, sub: b.description }))]}
         />
       </div>
       <div className="modal-actions">

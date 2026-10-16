@@ -88,10 +88,10 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 
 | 系统 | 命令 |
 |---|---|
-| Windows | `.\build.cmd -Run`（或双击 `build.cmd`） |
+| Windows | `.\build.cmd -Run`（双击 `build.cmd` 只编译，不会启动程序） |
 | macOS / Linux | `./build.sh --run` |
 
-脚本会检查 Node.js、安装依赖、编译，最后打印程序位置（`release\win-unpacked\Ancora.exe`、`release/mac*/Ancora.app` 或 `release/linux-unpacked/ancora-desktop`）。要同时生成安装包，加 `-Installer`（Windows）或 `--installer`（macOS / Linux）。需要代理时，先设好 `HTTPS_PROXY`，脚本会让 Node 自己的下载也走代理。
+脚本会检查 Node.js、安装依赖、编译，最后打印程序位置（`release\win-unpacked\Ancora.exe`、`release/mac*/Ancora.app` 或 x64 上的 `release/linux-unpacked/ancora-desktop`，其他架构会有各自的目录）。要同时生成安装包，加 `-Installer`（Windows）或 `--installer`（macOS / Linux）。需要代理时，先设好 `HTTPS_PROXY`，脚本会让 Node 自己的下载也走代理。
 
 在 macOS 上，自己编译的程序第一次打开时请右键点它，选「打开」。
 

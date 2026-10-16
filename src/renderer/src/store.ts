@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { create } from 'zustand'
 import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/contract'
 import type { AppEvent, AppSettings, Conversation, Message, AncoraApi, Project, Routine } from '@shared/model'
@@ -206,4 +207,17 @@ export function refreshAccount(backendId: string, maxAgeMs = 0): Promise<Account
 
 export function toast(text: string, level: 'info' | 'error' = 'info'): void {
   applyEvent({ type: 'toast', level, text }, useApp.setState, useApp.getState)
+}
+
+/**
+ * Backends that are installed and signed in, as far as they report it, plus `keep`
+ * (the one already chosen), so a form never offers an agent that can't answer.
+ */
+export function useUsableBackends(keep?: string): BackendSummary[] {
+  const backends = useApp((s) => s.backends)
+  const accounts = useApp((s) => s.accounts)
+  useEffect(() => {
+    for (const b of backends) if (b.account) void refreshAccount(b.id, 60_000)
+  }, [backends])
+  return backends.filter((b) => b.id === keep || (accounts[b.id]?.installed !== false && accounts[b.id]?.signedIn !== false))
 }
