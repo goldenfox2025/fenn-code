@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import type { AccountStatus, BackendHost, BackendPlugin, PluginSetting, UpgradeSpec } from '../../../shared/contract'
 import { findOnPath } from '../install'
 import { t } from '../../../shared/i18n'
+import { readSessionContext, type SessionLogKind } from '../sessionLogs'
 import { AcpBackend, windowsSafe, type AcpLaunchSpec, type AcpQuirks } from './AcpBackend'
 
 /** A command that reports the sign-in state, and how to read its output. */
@@ -36,6 +37,8 @@ export interface AcpPluginOptions {
   account?: (config: Record<string, string>) => AccountCheck
   credits?: BackendPlugin['credits']
   upgrade?: UpgradeSpec
+  /** Which CLI session log to read for context figures (see sessionLogs.ts). */
+  sessionLog?: SessionLogKind
 }
 
 /** Runs an account check; a missing program or a failure reads as "unknown", never as an error. */
@@ -99,6 +102,7 @@ export function acpPlugin(opts: AcpPluginOptions): BackendPlugin {
     } : undefined),
     account: opts.account ? (config) => runAccountCheck(opts.account!(config)) : undefined,
     upgrade: opts.upgrade,
+    sessionContext: opts.sessionLog ? (sessionId) => readSessionContext(opts.sessionLog!, sessionId) : undefined,
     create: (host: BackendHost) =>
       new AcpBackend(opts.name, () => opts.launch(host), host, { ...opts.quirks, authHint: opts.quirks?.authHint ?? authHintFor(opts) })
   }

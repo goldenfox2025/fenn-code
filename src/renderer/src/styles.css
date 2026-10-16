@@ -3452,6 +3452,25 @@ details.advanced > summary {
 .menu.compact .menu-sep {
   margin: 5px 6px;
 }
+/* Usage popovers use the same compact menu; their rows are read, not picked. */
+.menu.compact:has(.menu-item.info) {
+  min-width: 260px;
+  max-width: 320px;
+}
+.menu.compact .menu-item.info {
+  cursor: default;
+  opacity: 1;
+}
+.menu.compact .menu-item.info .menu-text {
+  white-space: normal;
+}
+.menu.compact .menu-item.info .menu-hint {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.menu.compact .menu-label {
+  padding: 6px 11px 2px;
+}
 
 /* The composer footer: [agent] [model] [effort] [ring], each a quiet text chip as in Claude. */
 .composer-row .model-group,
@@ -3487,4 +3506,10 @@ details.advanced > summary {
 .footer-chip.select-btn {
   height: 28px;
   font-size: 14px;
+}
+
+.modal h3.settings-sub {
+  margin: 28px 0 12px;
+  font-size: 15px;
+  font-weight: 600;
 }

@@ -79,7 +79,7 @@ export function Menu({
     const sel = items.findIndex((it) => it.checked && actionable(it))
     return sel >= 0 ? sel : items.findIndex(actionable)
   })
-  const hasChecks = items.some((it) => it.checked !== undefined || it.shortcut || it.submenu || it.hint)
+  const hasChecks = items.some((it) => it.checked !== undefined || it.shortcut || it.submenu)
   const [sub, setSub] = useState<{ index: number; el: HTMLElement } | null>(null)
   const subTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(subTimer.current), [])

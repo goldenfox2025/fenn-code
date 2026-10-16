@@ -38,6 +38,19 @@ export interface CreditQuota {
   at: number
 }
 
+/** What an agent CLI's own session log says about a session (read-only). */
+export interface SessionContext {
+  /** Tokens in the context as of the last model call; unset when the log can't tell. */
+  used?: number
+  /** The window size, when the log says. */
+  size?: number
+  model?: string
+  /** The latest turn's usage, for agents that report it only in their log (Grok). */
+  turn?: TurnUsage & { cost?: Cost }
+  /** Tells one logged turn from the next, so an old turn is never counted again. */
+  turnKey?: string
+}
+
 /** Tokens one turn used, exactly as the backend reported them. Fields it left out stay unset. */
 export interface TurnUsage {
   input?: number
@@ -246,6 +259,8 @@ export interface BackendPlugin {
   credits?(config: Record<string, string>): Promise<CreditQuota | undefined>
   /** How to upgrade the backend's program; settings show 「升级」 only when this is set. */
   upgrade?: UpgradeSpec
+  /** Read-only: how full a session's context is, from the agent CLI's own session log. */
+  sessionContext?(sessionId: string): Promise<SessionContext | undefined>
   create(host: BackendHost): AgentBackend
 }
 

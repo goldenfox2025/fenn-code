@@ -18,7 +18,8 @@ import type {
   PermissionRequest,
   PromptPart,
   SessionInfo,
-  TurnResult
+  TurnResult,
+  SessionContext
 } from '../../shared/contract'
 
 import { existsSync } from 'node:fs'
@@ -269,6 +270,12 @@ export class BackendManager {
     const value = plugin.credits(config).catch(() => undefined)
     this.creditReads.set(backendId, { key, at: Date.now(), value })
     return value
+  }
+
+  /** How full a session's context is, from the agent CLI's own log (read-only). */
+  async sessionContext(backendId: string, sessionId: string): Promise<SessionContext | undefined> {
+    const plugin = this.opts.plugins.find((p) => p.id === backendId)
+    return plugin?.sessionContext?.(sessionId).catch(() => undefined)
   }
 
   /** The latest version of the backend's program, if the plugin can tell. */

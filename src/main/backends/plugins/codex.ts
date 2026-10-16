@@ -23,6 +23,7 @@ export function codexAccount(config: Record<string, string> = {}): AccountCheck 
  */
 export default acpPlugin({
   id: 'codex',
+  sessionLog: 'codex',
   name: 'Codex',
   description: tk('OpenAI 的 Codex 命令行，经 ACP 适配器接入'),
   settings: [
@@ -38,6 +39,7 @@ export default acpPlugin({
     latest: { command: 'npm', args: ['view', '@openai/codex', 'version'] }
   },
   quirks: {
+    inputIncludesCache: true,
     authHint: tk('请在 设置 → Agent 后端 → Codex 里点「登录」（会在终端里运行 codex login），登录后重试。'),
     missingHint: tk('请在 设置 → Agent 后端 → Codex 里点「安装」，或在终端运行 npm install -g @openai/codex @agentclientprotocol/codex-acp，然后重试。')
   },

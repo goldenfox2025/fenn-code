@@ -502,6 +502,31 @@ function AboutSettings() {
           )}
         </div>
       </div>
+      <Diagnostics />
+    </>
+  )
+}
+
+/** 诊断: an opt-in log of every ACP message, to see what an agent actually sends. */
+function Diagnostics() {
+  const on = useApp((s) => !!s.settings.acpDebugLog)
+  return (
+    <>
+      <h3 className="settings-sub">{t('诊断')}</h3>
+      <div className="field">
+        <div className="row-between">
+          <div>
+            <label>{t('记录 agent 通信')}</label>
+            <div className="help">{t('把与 agent 往来的每条 ACP 消息写进数据文件夹的 logs 里，用来排查用量或连接问题。日志含对话内容，只留在本机；默认关闭。')}</div>
+          </div>
+          <button className={'switch' + (on ? ' on' : '')} role="switch" aria-checked={on} aria-label={t('记录 agent 通信')} onClick={() => api().updateSettings({ acpDebugLog: !on })} />
+        </div>
+        {on && (
+          <button className="btn" style={{ marginTop: 10 }} onClick={() => api().openLogFolder()}>
+            {t('打开日志文件夹')}
+          </button>
+        )}
+      </div>
     </>
   )
 }

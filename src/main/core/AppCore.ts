@@ -3,7 +3,9 @@
  * be driven from tests; main/index.ts only wires it to IPC.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
 import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate } from '../../shared/model'
 import type { BackendManager } from '../backends/BackendManager'
@@ -58,6 +60,7 @@ export class AppCore {
     this.secrets = extras.secrets ?? { seal: (v) => v, unseal: (v) => v }
     this.backendsConfigError = extras.backendsConfigError
     this.chat = new ChatService(store, backends, publish)
+    if (store.settings.acpDebugLog) setAcpDebugLog(this.logDir)
     this.memory = new ProjectMemory(store.dir)
     this.files = new ProjectFiles(store.dir)
     this.artifacts = new Artifacts(store.dir)
@@ -853,8 +856,19 @@ export class AppCore {
 
   // ---- settings -----------------------------------------------------------
 
+  /** Where the opt-in ACP debug log goes. */
+  get logDir(): string {
+    return join(this.store.dir, 'logs')
+  }
+
+  async openLogFolder(): Promise<void> {
+    mkdirSync(this.logDir, { recursive: true })
+    await this.shellOpen?.(this.logDir, false)
+  }
+
   async updateSettings(patch: Partial<AppSettings>): Promise<void> {
     const settings = this.store.patchSettings(patch)
+    if ('acpDebugLog' in patch) setAcpDebugLog(settings.acpDebugLog ? this.logDir : undefined)
     this.publish({ type: 'settings', settings })
     this.onSettingsChanged?.(settings)
   }

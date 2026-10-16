@@ -93,3 +93,26 @@ describe('usage in conversations', () => {
     expect(t.cachedRead).toBe(160000)
   })
 })
+
+describe('usage from the agent’s own log', () => {
+  it('reads the turn and the context when the agent reports nothing over ACP, never counting a turn twice', async () => {
+    const { core, store, dispose } = await makeCore(undefined, { MOCK_USAGE: 'none' })
+    const mock = (core as any).backends.opts.plugins.find((p: any) => p.id === 'mock')
+    let key = 'k1'
+    mock.sessionContext = async () => ({ used: 5000, model: 'gpt-5.5', turn: { input: 10, output: 5, total: 15, cost: { amount: 0.01, currency: 'USD' } }, turnKey: key })
+    const c = await core.startChat({ text: '你好', backendId: 'mock' })
+    await idle(store, c.id, 1)
+    const u = await until(() => store.conversation(c.id)!.usage?.contextSource === 'log' && store.conversation(c.id)!.usage)
+    expect(u).toMatchObject({ turns: 1, unreported: 0, input: 10, output: 5, contextUsed: 5000, contextSize: 1_050_000, contextSizeSource: 'table' })
+    expect(store.messagesOf(c.id).find((m: any) => m.role === 'assistant')!.usage).toMatchObject({ input: 10, cost: { amount: 0.01 } })
+    // The log still shows the same turn: the second reply counts as unreported.
+    await core.send(c.id, '再说一句')
+    await idle(store, c.id, 2)
+    expect(await until(() => store.conversation(c.id)!.usage!.unreported === 1 && store.conversation(c.id)!.usage)).toMatchObject({ turns: 1 })
+    key = 'k2'
+    await core.send(c.id, '第三句')
+    await idle(store, c.id, 3)
+    expect(await until(() => store.conversation(c.id)!.usage!.turns === 2 && store.conversation(c.id)!.usage)).toMatchObject({ input: 20 })
+    await dispose()
+  }, 30000)
+})

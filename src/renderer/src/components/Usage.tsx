@@ -32,7 +32,7 @@ const seconds = (ms: number) => (ms < 1000 ? t('{0} 毫秒', Math.round(ms)) : t
 /** How fast the last reply streamed, as the app saw it (not the provider's own timing). */
 function timingLine(timing: GenerationTiming): string {
   const parts = [t('首个回复 {0}', seconds(timing.firstResponseMs))]
-  if (timing.tpotMs !== undefined) parts.push(t('每个 token 约 {0}', seconds(timing.tpotMs)))
+  if (timing.tpotMs !== undefined) parts.push(t('平均每个 token {0}', seconds(timing.tpotMs)))
   return parts.join(' · ')
 }
 
@@ -70,31 +70,67 @@ const percent = (used: number, total: number) => {
   return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%`
 }
 
-/** The items of a usage popover: totals, breakdown, cost and context, or 「后端未提供」. */
+const SOURCE: Record<string, string> = {
+  agent: tk('agent 报告'),
+  log: tk('读取自 agent 的会话日志'),
+  table: tk('窗口大小来自模型上限表')
+}
+
+/** The context row: N / M (P%) with a bar, or 已用 N when the window size is unknown. */
+function contextItem(u: UsageTotals): MenuItem | undefined {
+  if (u.contextUsed === undefined) return undefined
+  const used = u.contextUsed
+  const from = [u.contextSource && t(SOURCE[u.contextSource]), u.contextSizeSource === 'table' && t(SOURCE.table)].filter(Boolean).join(' · ')
+  if (!u.contextSize)
+    return { label: t('上下文 已用 {0}', formatTokens(used)), sub: [from, t('不知道窗口大小，所以不显示百分比')].filter(Boolean).join(' · '), info: true }
+  return {
+    label: t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(u.contextSize), percent(used, u.contextSize)),
+    sub: (
+      <span className="menu-meter-sub">
+        <Meter label={t('上下文')} used={used} total={u.contextSize} />
+        {from && <span>{from}</span>}
+      </span>
+    ),
+    info: true
+  }
+}
+
+/**
+ * The items of a usage popover: context, then this conversation's new input,
+ * output and cache figures on separate rows, and cost only when the agent
+ * reported one. Nothing is estimated.
+ */
 export function usageMenu(u: UsageTotals | undefined, scope: string, timing?: GenerationTiming): MenuItem[] {
   const items: MenuItem[] = [{ heading: scope }]
-  if (!u || u.turns + u.unreported === 0) {
+  const ctx = u && contextItem(u)
+  if (!u || (u.turns + u.unreported === 0 && !ctx)) {
     items.push({ label: t('还没有用量'), sub: t('第一条回复完成后，这里会显示 agent 报告的用量。'), info: true })
     return items
   }
+  if (ctx) items.push(ctx)
   if (u.turns === 0) {
-    items.push({ label: t('后端未提供'), sub: t('这个 agent 没有报告用量，所以这里不显示数字。'), info: true })
-    return items
+    items.push({ label: t('这个 agent 不提供用量'), sub: t('它没有报告 token 数，所以这里不显示数字。'), info: true })
+  } else {
+    const rows: [string, number | undefined][] = [
+      [tk('新输入'), u.input],
+      [tk('输出'), u.output],
+      [tk('思考'), u.thought || undefined],
+      [tk('缓存读取'), u.cachedRead],
+      [tk('缓存写入'), u.cachedWrite]
+    ]
+    for (const [label, v] of rows) if (v !== undefined) items.push({ label: t(label), hint: formatTokens(v), info: true })
   }
-  items.push({ label: t('{0} tokens', formatTokens(u.total)), sub: detailLines(u).join(' · '), info: true })
-  if (u.cost) items.push({ label: t('费用 {0}', formatCost(u.cost)), sub: u.costSkipped ? t('另有 {0} 轮的费用用的是别的币种，没有计入', u.costSkipped) : undefined, info: true })
-  if (u.contextSize) {
-    const used = u.contextUsed ?? 0
+  if (u.cost)
     items.push({
-      label: t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(u.contextSize), percent(used, u.contextSize)),
-      sub: <Meter label={t('上下文')} used={used} total={u.contextSize} />,
+      label: t('费用'),
+      hint: formatCost(u.cost),
+      sub: [t('按标价估算，订阅账号不实际扣费'), u.costSkipped ? t('另有 {0} 轮的费用用的是别的币种，没有计入', u.costSkipped) : ''].filter(Boolean).join(' · '),
       info: true
     })
-  }
   if (timing) items.push({ label: t('最近一次回复'), sub: timingLine(timing), info: true })
   items.push({
     label: t('共 {0} 轮', u.turns + u.unreported),
-    sub: u.unreported ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : undefined,
+    sub: u.unreported && u.turns ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : undefined,
     info: true
   })
   return items
@@ -159,9 +195,9 @@ function TokensButton({ usage, scope, timing, className, align, children }: {
   align: 'left' | 'right'
   children?: ReactNode
 }) {
-  const [menu, openMenu] = useMenu({ align })
+  const [menu, openMenu] = useMenu({ align, compact: true })
   if (!usage || usage.turns + usage.unreported === 0) return null
-  const label = usage.turns ? usageLine({ total: usage.total, cost: usage.cost }) : t('用量：后端未提供')
+  const label = usage.turns ? usageLine({ total: usage.total, cost: usage.cost }) : t('用量：agent 不提供')
   return (
     <>
       <button className={className} title={t('用量')} onClick={(e) => openMenu(e.currentTarget, usageMenu(usage, scope, timing))}>
@@ -182,7 +218,7 @@ function CreditsButton({ backendId, className, activity }: { backendId: string; 
   const name = useApp((s) => s.backends.find((b) => b.id === backendId)?.name ?? backendId)
   const [quota, setQuota] = useState<CreditQuota | undefined>()
   const [loading, setLoading] = useState(false)
-  const [menu, openMenu, updateMenu] = useMenu({ align: 'right' })
+  const [menu, openMenu, updateMenu] = useMenu({ align: 'right', compact: true })
   const seen = useRef({ backendId, activity })
   useEffect(() => {
     let live = true
@@ -224,16 +260,21 @@ function CreditsButton({ backendId, className, activity }: { backendId: string; 
 
 /**
  * How full the context window is, as a small ring beside the model name (like
- * Claude's). Uses only the agent's own figures. Click for the usage details.
+ * Claude's): the last model call against the window. Only figures the agent
+ * reported (over ACP or in its own log); otherwise a plain grey ring. Click for
+ * the usage details.
  */
 export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming }) {
-  const [menu, openMenu] = useMenu({ align: 'right', placement: 'above' })
+  const [menu, openMenu] = useMenu({ align: 'right', placement: 'above', compact: true })
   const size = usage?.contextSize
-  const used = usage?.contextUsed ?? 0
-  const share = size ? Math.max(0, Math.min(1, used / size)) : 0
-  const title = size
-    ? t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(size), percent(used, size))
-    : t('上下文')
+  const used = usage?.contextUsed
+  const share = size && used !== undefined ? Math.max(0, Math.min(1, used / size)) : 0
+  const title =
+    used === undefined
+      ? !usage || usage.turns + usage.unreported === 0 ? t('还没有用量') : t('这个 agent 不提供用量')
+      : size
+        ? t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(size), percent(used, size))
+        : t('上下文 已用 {0}', formatTokens(used))
   const r = 6.5
   const c = 2 * Math.PI * r
   return (

@@ -292,6 +292,8 @@ export interface AppSettings {
   theme: 'system' | 'light' | 'dark' | 'glass'
   /** The frosted glass look, layered over the color scheme. */
   glass?: boolean
+  /** Diagnostics: write every ACP message to logs/ in the data folder. Off by default. */
+  acpDebugLog?: boolean
   /** UI language (Settings → 通用); 'system' follows the OS. */
   language?: 'system' | 'zh' | 'en'
   userName: string
@@ -443,6 +445,8 @@ export interface AncoraApi {
   backendCredits(backendId: string, refresh?: boolean): Promise<CreditQuota | undefined>
   /** Opens the conversation's agent session in the background, before the first message. Sends nothing. */
   prepareConversation(conversationId: string): Promise<void>
+  /** Opens the folder the ACP debug log is written to. */
+  openLogFolder(): Promise<void>
   /** Reads the agent's session metadata without sending a prompt or creating a chat. */
   backendModels(backendId: string, modelId?: string): Promise<BackendModelCatalog>
   backendLatestVersion(backendId: string): Promise<string | undefined>

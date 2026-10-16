@@ -5,6 +5,7 @@
  * backend-neutral contract. This is the only module allowed to import
  * `@agentclientprotocol/sdk`.
  */
+import { tap } from './debugLog'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
@@ -51,6 +52,11 @@ export interface AcpQuirks {
   authHint?: string
   /** Shown when the agent's program can't be found (instead of a bare ENOENT). */
   missingHint?: string
+  /**
+   * The agent's reported input already counts cache reads (OpenAI-style: Codex,
+   * Grok). Anthropic-style input (Claude Code) does not.
+   */
+  inputIncludesCache?: boolean
 }
 
 interface ModelSelector {
@@ -167,9 +173,12 @@ export class AcpBackend implements AgentBackend {
     })
     exited.catch(() => {})
 
+    // Both directions pass through the opt-in debug log (a no-op while it is off).
+    const toAgent = tap(this.name, 'out')
+    toAgent.readable.pipeTo(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>).catch(() => {})
     const stream = acp.ndJsonStream(
-      Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>,
-      Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>
+      toAgent.writable,
+      (Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>).pipeThrough(tap(this.name, 'in'))
     )
     this.conn = new acp.ClientSideConnection(() => this.clientHandler(), stream)
 
@@ -335,7 +344,7 @@ export class AcpBackend implements AgentBackend {
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await this.conn!.prompt({ sessionId, prompt: this.toContent(sessionId, parts) })
-        const usage = turnUsage(res)
+        const usage = turnUsage(res, this.quirks.inputIncludesCache)
         return usage ? { stopReason: normalizeStop(res.stopReason), usage } : { stopReason: normalizeStop(res.stopReason) }
       } catch (err) {
         // If the process died mid-turn, its exit reason says more than "connection closed".
@@ -580,7 +589,7 @@ function num(v: unknown): number | undefined {
  * The turn's token usage: ACP's `usage` field, or else a vendor's `_meta.quota.token_count`
  * (Qoder). Undefined when neither carries a number, so nothing is ever made up.
  */
-export function turnUsage(res: unknown): TurnUsage | undefined {
+export function turnUsage(res: unknown, inputIncludesCache = false): TurnUsage | undefined {
   const r = (res ?? {}) as { usage?: Record<string, unknown> | null; _meta?: { quota?: { token_count?: Record<string, unknown> } } | null }
   const u = r.usage
   let out: TurnUsage = {}
@@ -599,6 +608,8 @@ export function turnUsage(res: unknown): TurnUsage | undefined {
   }
   for (const k of Object.keys(out) as (keyof TurnUsage)[]) if (out[k] === undefined) delete out[k]
   if (!Object.keys(out).length) return undefined
+  // Input is shown as new input only, the same for every agent; cache reads are listed apart.
+  if (inputIncludesCache && out.input !== undefined && out.cachedRead) out.input = Math.max(0, out.input - out.cachedRead)
   if (out.total === undefined && out.input !== undefined && out.output !== undefined) out.total = out.input + out.output
   return out
 }

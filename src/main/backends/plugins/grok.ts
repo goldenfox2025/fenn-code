@@ -32,6 +32,7 @@ const MISSING = tk('找不到 Grok 程序。请在 设置 → Agent 后端 → G
 /** xAI Grok Build CLI, which speaks ACP natively over stdio. */
 export default acpPlugin({
   id: 'grok',
+  sessionLog: 'grok',
   name: 'Grok',
   description: tk('xAI 官方 Grok Build 命令行'),
   signIn: true,
@@ -46,6 +47,7 @@ export default acpPlugin({
     { key: 'model', label: tk('默认模型'), placeholder: 'grok-4.6' }
   ],
   quirks: {
+    inputIncludesCache: true,
     authHint: tk('请在 设置 → Agent 后端 → Grok 填写 xAI API Key，或点「登录」用 grok.com 账号登录。'),
     missingHint: MISSING,
     // Grok reports retries through its own `_x.ai/session_notification`; surface them as notices.

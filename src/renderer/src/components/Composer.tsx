@@ -270,7 +270,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       {effortOpt && canPick && !signedOut && (
         <EffortPicker option={effortOpt} value={valueOf(effortOpt)} disabled={busy} onChange={(v) => setOptionValue(effortOpt, v)} />
       )}
-      {conversation?.usage?.contextSize ? (
+      {conversation ? (
         <ContextRing usage={conversation.usage} timing={conversation.timing} scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')} />
       ) : null}
     </span>

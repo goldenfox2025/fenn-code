@@ -6,10 +6,11 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionInfo, SessionOption, TurnResult } from '../../shared/contract'
+import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, TurnResult } from '../../shared/contract'
+import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
 import type { AppEvent, Attachment, Block, Conversation, Message } from '../../shared/model'
-import { addTurn, emptyTotals, type MessageUsage } from '../../shared/usage'
+import { addTurn, emptyTotals, type MessageUsage, type UsageTotals } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import { t } from '../../shared/i18n'
@@ -59,6 +60,10 @@ interface Live {
   unprompted?: { fresh: boolean }
   /** The session's cumulative cost as the backend last reported it (ACP usage_update). */
   cost?: Cost
+  /** The agent sent a usage_update during the current turn. */
+  reported?: boolean
+  /** The last turn read from the agent's own log, so it is never counted twice. */
+  turnKey?: string
 }
 
 interface QueuedTurn {
@@ -238,6 +243,7 @@ export class ChatService {
       live.turns++
       live.chars += promptText.length
       costAtStart = live.cost
+      live.reported = false
       this.meters.set(conversationId, new TurnMeter(performance.now()))
       result = await this.backends.prompt(live.backendId, live.sessionId, parts)
     } catch (err) {
@@ -248,6 +254,14 @@ export class ChatService {
     this.current.delete(conversationId)
     reply.state = result.stopReason === 'error' ? 'error' : result.stopReason === 'cancelled' ? 'cancelled' : 'done'
     if (result.error) reply.error = result.error
+    // Agents that report little over ACP (Grok) write it to their own log: read the turn from there.
+    let logged: SessionContext | undefined
+    if (live && result.stopReason !== 'error' && (!result.usage || !live.reported)) {
+      logged = await this.backends.sessionContext(live.backendId, live.sessionId)
+      if (logged?.turnKey && logged.turnKey === live.turnKey) logged = { ...logged, turn: undefined }
+      else if (logged?.turnKey) live.turnKey = logged.turnKey
+      if (logged?.turn && !result.usage) result = { ...result, usage: logged.turn }
+    }
     const usage = turnUsageOf(result, costAtStart, live?.cost)
     if (usage) reply.usage = usage
     reply.timing = this.meters.get(conversationId)?.finish(result.usage, result.stopReason,
@@ -257,8 +271,9 @@ export class ChatService {
     // A turn that failed before the agent answered says nothing about what the backend reports.
     if (usage || (live && result.stopReason !== 'error')) {
       const c = this.store.conversation(conversationId)
-      if (c) this.patchConversation(conversationId, { usage: { ...addTurn(c.usage, usage), contextUsed: c.usage?.contextUsed, contextSize: c.usage?.contextSize } })
+      if (c) this.patchConversation(conversationId, { usage: { ...addTurn(c.usage, usage), ...contextOf(c.usage) } })
     }
+    if (live && !live.reported && logged?.used !== undefined) this.setLoggedContext(conversationId, logged)
 
     if (live) live.chars += JSON.stringify(reply.blocks).length
     // If the save-memory turn failed, keep the session: rotating now would lose what it didn't save.
@@ -351,9 +366,11 @@ export class ChatService {
     if (fresh) {
       const u = this.store.conversation(conv.id)?.usage
       if (u && (u.contextUsed !== undefined || u.contextSize !== undefined))
-        this.patchConversation(conv.id, { usage: { ...u, contextUsed: undefined, contextSize: undefined } })
+        this.patchConversation(conv.id, { usage: { ...u, contextUsed: undefined, contextSize: undefined, contextSource: undefined, contextSizeSource: undefined } })
     }
     this.live.set(conv.id, live)
+    // A reopened session has said nothing yet: its own log shows how full it already is.
+    if (!fresh) void this.readLoggedContext(conv.id, live)
     this.bySession.set(`${conv.backendId}:${info.sessionId}`, conv.id)
     // A new session's offered options replace the previous session's capabilities.
     this.patchConversation(conv.id, { sessionOptions: info.options ?? [] })
@@ -523,6 +540,24 @@ export class ChatService {
 
   // ---- streaming ----------------------------------------------------------
 
+  private async readLoggedContext(conversationId: string, live: Live): Promise<void> {
+    const ctx = await this.backends.sessionContext(live.backendId, live.sessionId)
+    if (!ctx || this.live.get(conversationId) !== live) return
+    live.turnKey ??= ctx.turnKey
+    if (ctx.used !== undefined && this.store.conversation(conversationId)?.usage?.contextSource !== 'agent') this.setLoggedContext(conversationId, ctx)
+  }
+
+  /** Context figures read from the agent's own log; a size the agent reported is kept. */
+  private setLoggedContext(conversationId: string, ctx: SessionContext): void {
+    const c = this.store.conversation(conversationId)
+    if (!c || ctx.used === undefined) return
+    const u = c.usage ?? emptyTotals()
+    const size = ctx.size !== undefined
+      ? { contextSize: ctx.size, contextSizeSource: 'log' as const }
+      : u.contextSize !== undefined && u.contextSizeSource !== 'table' ? { contextSize: u.contextSize, contextSizeSource: u.contextSizeSource } : tableSize(ctx.model ?? c.modelId)
+    this.patchConversation(conversationId, { usage: { ...u, contextUsed: ctx.used, contextSource: 'log', contextSize: undefined, contextSizeSource: undefined, ...size } })
+  }
+
   private onAgentEvent(backendId: string, sessionId: string, event: AgentEvent): void {
     const conversationId = this.bySession.get(`${backendId}:${sessionId}`)
     if (!conversationId) return
@@ -535,10 +570,16 @@ export class ChatService {
       const live = this.live.get(conversationId)
       if (event.cost && live) live.cost = event.cost
       const c = this.store.conversation(conversationId)
-      if (c && (event.contextUsed !== undefined || event.contextSize !== undefined))
+      if (c && (event.contextUsed !== undefined || event.contextSize !== undefined)) {
+        if (live) live.reported = true
+        const u = c.usage ?? emptyTotals()
+        const size = event.contextSize !== undefined
+          ? { contextSize: event.contextSize, contextSizeSource: 'agent' as const }
+          : u.contextSize !== undefined ? { contextSize: u.contextSize, contextSizeSource: u.contextSizeSource } : tableSize(c.modelId)
         this.patchConversation(conversationId, {
-          usage: { ...(c.usage ?? emptyTotals()), contextUsed: event.contextUsed ?? c.usage?.contextUsed, contextSize: event.contextSize ?? c.usage?.contextSize }
+          usage: { ...u, contextUsed: event.contextUsed ?? u.contextUsed, contextSource: event.contextUsed !== undefined ? 'agent' : u.contextSource, ...size }
         })
+      }
       return
     }
     const reply = this.current.get(conversationId)
@@ -816,6 +857,17 @@ export function transcript(messages: Message[], maxChars = 24000, maxRecent = In
  * A reply's usage: the tokens the turn reported, plus its cost, worked out from the
  * session's cumulative cost before and after it. Undefined when nothing was reported.
  */
+/** A conversation's context figures, carried over unchanged. */
+function contextOf(u: UsageTotals | undefined): Partial<UsageTotals> {
+  return u ? { contextUsed: u.contextUsed, contextSize: u.contextSize, contextSource: u.contextSource, contextSizeSource: u.contextSizeSource } : {}
+}
+
+/** The window size from the bundled model-limit table, when the model is in it. */
+function tableSize(modelId?: string): Partial<UsageTotals> {
+  const size = contextLimit(modelId)
+  return size ? { contextSize: size, contextSizeSource: 'table' } : {}
+}
+
 export function turnUsageOf(result: TurnResult, before: Cost | undefined, after: Cost | undefined): MessageUsage | undefined {
   const u: MessageUsage = { ...(result.usage ?? {}) }
   if (after && after !== before && (!before || before.currency === after.currency)) {
