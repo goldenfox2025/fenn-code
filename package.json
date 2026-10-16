@@ -1,0 +1,52 @@
+{
+  "name": "ancora-desktop",
+  "productName": "Ancora",
+  "version": "0.1.0",
+  "description": "Ancora: an unofficial, Claude-style desktop app for ACP agents (chats, projects, threads, scheduled tasks). Not affiliated with Anthropic.",
+  "keywords": [
+    "acp",
+    "agent-client-protocol",
+    "electron",
+    "desktop",
+    "ai-agent",
+    "qoder",
+    "grok",
+    "claude-code",
+    "codex"
+  ],
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:e2e": "electron-vite build && node scripts/e2e.mjs",
+    "dist": "electron-vite build && electron-builder",
+    "postinstall": "install-electron"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "lucide-react": "^1.55.0",
+    "playwright-core": "^1.64.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.7",
+    "vitest": "^3.2.7",
+    "zustand": "^5.0.15"
+  },
+  "type": "module"
+}

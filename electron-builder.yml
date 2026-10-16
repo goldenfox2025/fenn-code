@@ -1,0 +1,26 @@
+appId: dev.ancora.desktop
+productName: Ancora
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources/
+    to: .
+    filter: ["**/*"]
+asarUnpack:
+  - "**/*.node"
+mac:
+  category: public.app-category.productivity
+  target: [dmg, zip]
+win:
+  target: [nsis, zip]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  category: Utility
+  target: [AppImage, deb]
+  maintainer: Ancora contributors
