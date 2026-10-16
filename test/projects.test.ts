@@ -207,7 +207,10 @@ describe('sub-conversations', () => {
     await until(() => store.messagesOf(child.id).filter((m) => m.role === 'assistant' && m.state === 'done').length >= 2)
     await new Promise((r) => setTimeout(r, 500))
     expect(store.messagesOf(parent.id).length).toBe(parentMessages)
-    // No grandchildren.
+    // No grandchildren: the tool isn't even offered in a child, and the app refuses it anyway.
+    const names = (id: string) => (core.orchestrator as any).toolsFor(id).map((x: any) => x.name)
+    expect(names(parent.id)).toContain('start_subconversation')
+    expect(names(child.id)).not.toContain('start_subconversation')
     expect(() => core.orchestrator.startSubconversation(store.conversation(child.id)!, 'x', 'y')).toThrow()
     await dispose()
   }, 30000)

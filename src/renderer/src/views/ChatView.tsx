@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Download, MoreHorizontal, Pin, PinOff, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, CornerUpLeft, Download, MoreHorizontal, Pin, PinOff, Trash2 } from 'lucide-react'
 import type { Conversation } from '@shared/model'
 import { Composer } from '../components/Composer'
 import { useMenu } from '../components/Menu'
@@ -29,6 +29,12 @@ export function ChatView({ conversationId }: { conversationId: string }) {
     <div className="center">
       <div className="chat-header">
         <EditableTitle conv={conv} />
+        {parent && (
+          <button className="pill-btn back-to-parent" title={parent.title} onClick={() => navigate({ view: 'chat', conversationId: parent.id })}>
+            <CornerUpLeft size={14} />
+            {t('回到主对话')}
+          </button>
+        )}
         <span className="spacer" />
         <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} />
         <button

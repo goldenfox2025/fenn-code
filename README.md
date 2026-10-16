@@ -59,7 +59,7 @@ Light, dark or follow the system, with an optional translucent glass look on top
 
 ![The same view in light, dark and glass](docs/screenshots/en/themes.webp)
 
-Also included: attachments, editing and regenerating with version history, token and cost usage as the backend reports it, working folders with file and terminal tools, MCP connectors, full-text search, automatic filing of loose chats into projects, and desktop notifications.
+Also included: attachments, editing and regenerating with version history, token and cost usage as the agent reports it (over ACP or in its own session log, never estimated), chats grouped by working folder, sub-conversations the agent can hand side work to, working folders with file and terminal tools, MCP connectors, full-text search, and desktop notifications.
 
 ## Quick start
 
@@ -140,7 +140,7 @@ A backend that doesn't speak ACP implements `AgentBackend` from `src/shared/cont
 ```
 renderer (React)  ──IPC──▶  AppCore ─┬─ ChatService ── BackendManager ──▶ plugin ──▶ agent
                                      ├─ Orchestrator (projects, threads)
-                                     ├─ AutoAssigner (titles, filing)
+                                     ├─ AutoAssigner (titles, folder)
                                      ├─ Scheduler (scheduled tasks)
                                      └─ ToolServer (MCP tools the agents call)
 ```

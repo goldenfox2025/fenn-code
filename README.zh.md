@@ -59,7 +59,7 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 
 ![同一个界面的浅色、深色和玻璃效果](docs/screenshots/zh/themes.webp)
 
-此外还有：附件、编辑和重新生成（保留历史版本）、按后端上报显示的 token 用量和费用、带文件和终端工具的工作文件夹、MCP 连接器、全文搜索、零散对话自动归入项目，以及桌面通知。
+此外还有：附件、编辑和重新生成（保留历史版本）、按 agent 上报显示的 token 用量和费用（来自 ACP 或它自己的会话日志，从不估算）、按工作文件夹分组的对话、agent 可以把旁支工作交给子对话、带文件和终端工具的工作文件夹、MCP 连接器、全文搜索，以及桌面通知。
 
 ## 快速开始
 
@@ -140,7 +140,7 @@ export default acpPlugin({
 ```
 renderer (React)  ──IPC──▶  AppCore ─┬─ ChatService ── BackendManager ──▶ plugin ──▶ agent
                                      ├─ Orchestrator（项目、讨论串）
-                                     ├─ AutoAssigner（标题、自动归类）
+                                     ├─ AutoAssigner（标题、文件夹）
                                      ├─ Scheduler（定时任务）
                                      └─ ToolServer（agent 调用的 MCP 工具）
 ```

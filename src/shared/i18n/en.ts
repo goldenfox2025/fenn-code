@@ -796,4 +796,5 @@ export const en: Record<string, string> = {
   "由 {0} 启动，来自": "Started by {0} from",
   "由 {0} 从另一个对话启动": "Started by {0} from another chat",
   "任务": "Task",
+  "回到主对话": "Back to main chat",
 }
