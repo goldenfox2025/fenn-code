@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -24,6 +24,7 @@ import { initials } from '../util'
 import { useMenu } from './Menu'
 import { t } from '../i18n'
 import { confirmDialog, promptDialog } from './Modal'
+import { groupByFolder } from '../folderGroups'
 
 export function Sidebar() {
   const s = useApp()
@@ -50,12 +51,10 @@ export function Sidebar() {
   )
   const pinnedChats = chats.filter((c) => c.pinned)
   const unpinned = chats.filter((c) => !c.pinned)
-  const recent = unpinned.filter((c) => !c.projectId || !s.projects.some((p) => p.id === c.projectId)).slice(0, 40)
-  // Chats that belong to a project are listed under that project's name, newest project first.
-  const byProject = live
-    .map((p) => ({ p, list: unpinned.filter((c) => c.projectId === p.id) }))
-    .filter((g) => g.list.length > 0)
-    .sort((a, b) => b.list[0].updatedAt - a.list[0].updatedAt)
+  // Below the projects, chats are grouped by the folder they work in.
+  const groups = useMemo(() => groupByFolder(unpinned), [unpinned])
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const SHOWN = 8
   const matchingProjects = q ? s.projects.filter((p) => p.name.toLowerCase().includes(q)) : []
 
   const projectActivity = (p: Project) => {
@@ -81,18 +80,7 @@ export function Sidebar() {
         label: c.pinned ? t('取消置顶') : t('置顶'),
         onClick: () => api().updateConversation(c.id, { pinned: !c.pinned })
       },
-      ...(live.length
-        ? [
-            { heading: t('移到项目') },
-            ...live.map((p) => ({
-              icon: <FolderKanban size={15} />,
-              label: p.name,
-              checked: c.projectId === p.id,
-              onClick: () => api().updateConversation(c.id, { projectId: c.projectId === p.id ? undefined : p.id })
-            })),
-            { separator: true }
-          ]
-        : []),
+      { separator: true },
       { icon: <Trash2 size={15} />, label: t('删除'), danger: true, onClick: () => removeChat(c) }
     ])
 
@@ -117,14 +105,13 @@ export function Sidebar() {
   // every render, remounting each row and detaching the 「…」 button a menu is anchored to.
   const chatRow = (c: Conversation) => {
     const selected = route.view === 'chat' && route.conversationId === c.id
-    const proj = s.projects.find((p) => p.id === c.projectId)
     return (
       <div
         key={c.id}
         className={'nav-item' + (selected ? ' selected' : '')}
         role="button"
         onClick={() => s.navigate({ view: 'chat', conversationId: c.id })}
-        title={proj ? `${c.title} · ${proj.name}` : c.title}
+        title={c.title}
       >
         <span className={'dot ' + (c.status === 'working' ? 'working' : c.status === 'waiting' ? 'waiting' : c.unread ? 'unread' : '')} />
         <span className="label">{c.title}</span>
@@ -249,36 +236,47 @@ export function Sidebar() {
         )}
 
         {!q &&
-          byProject.map(({ p, list }) => (
-            <div key={p.id}>
-              <div className="section-head">
-                <span className="grow link" role="button" onClick={() => s.navigate({ view: 'project', projectId: p.id })}>
-                  {p.name}
-                </span>
-                <button
-                  className="icon-btn sm"
-                  title={t('在 {0} 中新建对话', p.name)}
-                  onClick={() => s.navigate({ view: 'home', projectId: p.id })}
-                >
-                  <Plus size={14} />
-                </button>
+          groups.map((g) => {
+            const open = expanded.has(g.key)
+            return (
+              <div key={g.key} className="folder-group">
+                <div className="section-head folder-head" title={g.folder}>
+                  <span className="grow">{g.name}</span>
+                  <button
+                    className="icon-btn sm"
+                    title={g.folder ? t('在 {0} 中新建对话', g.name) : t('新对话')}
+                    onClick={() => s.navigate({ view: 'home', folder: g.folder })}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+                <nav className="nav">
+                  {(open ? g.chats : g.chats.slice(0, SHOWN)).map((c) => chatRow(c))}
+                  {g.chats.length > SHOWN && (
+                    <button
+                      className="nav-item more-row"
+                      onClick={() => setExpanded((cur) => {
+                        const next = new Set(cur)
+                        if (open) next.delete(g.key)
+                        else next.add(g.key)
+                        return next
+                      })}
+                    >
+                      <span className="label">{open ? t('收起') : t('显示全部（{0}）', g.chats.length)}</span>
+                    </button>
+                  )}
+                </nav>
               </div>
-              <nav className="nav">
-                {list.slice(0, 6).map((c) => chatRow(c))}
-              </nav>
-            </div>
-          ))}
+            )
+          })}
 
-        {(recent.length > 0 || q) && (
+        {q && (
           <>
             <div className="section-head">
-              <span className="grow">{q ? t('搜索结果') : t('最近')}</span>
-              <button className="icon-btn sm" title={t('新对话')} onClick={() => s.navigate({ view: 'home' })}>
-                <Plus size={14} />
-              </button>
+              <span className="grow">{t('搜索结果')}</span>
             </div>
             <nav className="nav">
-              {(q ? chats : recent).map((c) => chatRow(c))}
+              {chats.map((c) => chatRow(c))}
               {q && !chats.length && <div className="small muted" style={{ padding: '4px 10px' }}>{t('没有匹配的对话标题')}</div>}
               {searchable(q) && (
                 <button className="nav-item" onClick={() => s.navigate({ view: 'chats' })}>

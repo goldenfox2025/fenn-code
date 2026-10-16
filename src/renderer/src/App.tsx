@@ -34,7 +34,7 @@ export function App() {
   let view: React.ReactNode
   switch (route.view) {
     case 'home':
-      view = <HomeView key={route.projectId ?? ''} projectId={route.projectId} />
+      view = <HomeView key={(route.projectId ?? '') + '|' + (route.folder ?? '')} projectId={route.projectId} folder={route.folder} />
       break
     case 'chat':
       view = <ChatView conversationId={route.conversationId} />

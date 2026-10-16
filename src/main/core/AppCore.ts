@@ -69,7 +69,13 @@ export class AppCore {
     this.orchestrator.onProjectChanged = (project) => this.publish({ type: 'project', project })
     this.orchestrator.pickBackend = (preferred) => this.resolveBackend(preferred)
     this.orchestrator.extraTools = (conv) => [...this.routineTools(conv), ...(this.computer?.tools(conv) ?? [])]
-    this.autoAssigner = new AutoAssigner(store, this.chat, backends)
+    this.autoAssigner = new AutoAssigner(
+      store,
+      this.chat,
+      backends,
+      () => [...new Set([...(store.settings.recentFolders ?? []), ...store.projects.map((p) => p.cwd ?? ''), store.settings.defaultCwd ?? ''].filter(Boolean))],
+      (id, folder) => void this.updateConversation(id, { cwd: folder }).catch(() => {})
+    )
     this.scheduler = new Scheduler(store, this)
     this.orchestrator.extraServers = () => this.connectorServers()
     if (extras.computer) {
@@ -109,6 +115,7 @@ export class AppCore {
       this.chat.turnEndListeners.add((id) => computer.turnEnded(id))
     }
     this.repairBackends()
+    this.separateChatsFromProjects()
     this.signInRepair = this.repairSignIns().catch(() => undefined)
     const orchestrate = this.chat.hooks.afterTurn
     this.chat.hooks.afterTurn = (conv, reply, result) => {
@@ -164,6 +171,19 @@ export class AppCore {
    * and a backend can disappear from backends.json. Chats keep their history and
    * continue on the default backend, which gets the conversation so far.
    */
+  /**
+   * Ordinary chats never belong to a project (a project is its own chat plus
+   * threads). Chats an earlier version filed into a project go back to the
+   * chat list, under the project's folder when they had none of their own.
+   */
+  separateChatsFromProjects(): void {
+    for (const c of this.store.conversations) {
+      if (c.kind !== 'chat' || !c.projectId) continue
+      const cwd = c.cwd || this.store.project(c.projectId)?.cwd || undefined
+      this.chat.patchConversation(c.id, { projectId: undefined, cwd })
+    }
+  }
+
   repairBackends(): void {
     const list = this.backends.list()
     if (!list.length) return
@@ -260,13 +280,18 @@ export class AppCore {
   }
 
   async startChat(opts: NewChatOptions): Promise<Conversation> {
+    // Asking within a project goes to the project's own chat; it never makes a loose chat inside it.
     const project = this.store.project(opts.projectId)
+    const projectChat = project && this.store.conversation(project.conversationId)
+    if (projectChat) {
+      await this.send(projectChat.id, opts.text, opts.attachments)
+      return projectChat
+    }
     const conv = this.chat.createConversation({
       kind: 'chat',
       title: titleFrom(opts.text || opts.attachments?.[0]?.name || ''),
-      projectId: project?.id,
-      backendId: this.resolveBackend(opts.backendId ?? project?.backendId),
-      cwd: opts.cwd === undefined ? project?.cwd || undefined : opts.cwd || undefined,
+      backendId: this.resolveBackend(opts.backendId),
+      cwd: opts.cwd || undefined,
       modelId: opts.modelId,
       optionValues: opts.optionValues && Object.keys(opts.optionValues).length ? { ...opts.optionValues } : undefined
     })
@@ -422,6 +447,10 @@ export class AppCore {
 
   async updateConversation(id: string, patch: Partial<Conversation>): Promise<void> {
     const before = this.store.conversation(id)
+    if (before?.kind === 'chat' && 'projectId' in patch) {
+      const { projectId: _ignored, ...rest } = patch
+      patch = rest
+    }
     if (before && patch.backendId !== undefined && patch.backendId !== before.backendId) {
       const nextBackendId = patch.backendId
       if (!this.backends.has(patch.backendId)) throw new Error(t('后端「{0}」已经不存在了', patch.backendId))

@@ -511,7 +511,7 @@ export function ProjectPicker({ projectId, onChange }: { projectId?: string; onC
         onClick={(e) => {
           e.stopPropagation()
           openMenu(e.currentTarget, [
-            { label: t('不放入项目（自动归类）'), checked: !projectId, onClick: () => onChange(undefined) },
+            { label: t('不放入项目'), checked: !projectId, onClick: () => onChange(undefined) },
             ...(projects.length ? [{ separator: true } as MenuItem] : []),
             ...projects.filter((p) => !p.archived || p.id === projectId).map((p) => ({ label: p.name, checked: p.id === projectId, onClick: () => onChange(p.id) }))
           ])

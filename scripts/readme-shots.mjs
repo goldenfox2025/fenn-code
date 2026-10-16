@@ -276,7 +276,7 @@ writeFileSync(
     conversations,
     routines,
     connectors: [],
-    settings: { defaultBackendId: 'codex', theme: 'glass', userName: '', autoAssignChats: true, notifications: false, language: lang, onboarded: true, computerUse: true },
+    settings: { defaultBackendId: 'codex', theme: 'glass', userName: '', notifications: false, language: lang, onboarded: true, computerUse: true },
     backendSettings: {}
   })
 )

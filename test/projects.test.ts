@@ -52,28 +52,30 @@ describe('projects and threads', () => {
   }, 30000)
 })
 
-describe('auto-assign', () => {
-  it('files a loose chat into the matching project', async () => {
+describe('chats and projects stay apart', () => {
+  it('never files a chat into a project, and a message for a project goes to its own chat', async () => {
     const { core, store, dispose } = await makeCore()
     const a = await core.createProject({ name: '园艺', description: '番茄 种植 浇水', backendId: 'mock' })
-    await core.createProject({ name: '财务', description: '报税 账单', backendId: 'mock' })
     const c = await core.startChat({ text: '我的番茄叶子发黄，浇水太多了吗？', backendId: 'mock' })
-    const assigned = await until(() => store.conversation(c.id)?.projectId)
-    expect(assigned).toBe(a.id)
-    const sys = store.messagesOf(c.id).find((m) => m.role === 'system')!
-    expect(textOf(sys)).toContain('园艺')
-    await dispose()
-  }, 30000)
-
-  it('leaves unrelated chats alone', async () => {
-    const { core, store, dispose } = await makeCore()
-    await core.createProject({ name: '园艺', description: '番茄 种植', backendId: 'mock' })
-    const c = await core.startChat({ text: 'hello there', backendId: 'mock' })
     await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).length >= 2)
     await new Promise((r) => setTimeout(r, 1500))
     expect(store.conversation(c.id)?.projectId).toBeUndefined()
+    await core.updateConversation(c.id, { projectId: a.id })
+    expect(store.conversation(c.id)?.projectId).toBeUndefined()
+    const into = await core.startChat({ text: '帮我看看番茄', backendId: 'mock', projectId: a.id })
+    expect(into.id).toBe(a.conversationId)
+    expect(store.conversations.filter((x) => x.kind === 'chat')).toHaveLength(1)
     await dispose()
   }, 30000)
+
+  it('moves chats an earlier version filed into a project back out, under its folder', async () => {
+    const { core, store, dispose } = await makeCore()
+    const p = await core.createProject({ name: 'x', backendId: 'mock', cwd: process.cwd() })
+    const c = core.chat.createConversation({ kind: 'chat', title: 'old', projectId: p.id, backendId: 'mock' })
+    core.separateChatsFromProjects()
+    expect(store.conversation(c.id)).toMatchObject({ projectId: undefined, cwd: process.cwd() })
+    await dispose()
+  })
 })
 
 describe('chat titles', () => {

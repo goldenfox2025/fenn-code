@@ -23,7 +23,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   // A login name (root, j.doe) is not what people want to be called; ask in settings instead.
   userName: '',
-  autoAssignChats: true,
   notifications: true
 }
 

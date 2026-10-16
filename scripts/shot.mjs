@@ -2,7 +2,7 @@
 // Usage: xvfb-run -a node scripts/shot.mjs <outDir> [scenario]
 import { _electron as electron } from 'playwright-core'
 import { execSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -58,6 +58,32 @@ const scenarios = {
     await page.click('.model-btn')
     await wait(500)
     await shot('signed-out-picker')
+  },
+  // The sidebar with chats in a few folders, one without a folder, and a pinned project.
+  async sidebar() {
+    const base = mkdtempSync(join(tmpdir(), 'work-'))
+    const dirs = ['web-shop', 'text-adventure'].map((n) => join(base, n))
+    for (const d of dirs) mkdirSync(d, { recursive: true })
+    const p = await page.evaluate(() => window.ancora.createProject({ name: 'Ancora', backendId: 'mock' }))
+    await page.evaluate((id) => window.ancora.updateProject(id, { pinned: true }), p.id)
+    const chats = [
+      ['网站首页改版', dirs[0]],
+      ['把图片压缩脚本的 CPU 降下来', dirs[0]],
+      ['文字冒险游戏重构', dirs[1]],
+      ['周末去哪儿玩', undefined],
+      ['帮我起草一封邮件', undefined]
+    ]
+    for (const [text, cwd] of chats) {
+      await page.evaluate(([text, cwd]) => window.ancora.startChat({ text, backendId: 'mock', cwd }), [text, cwd])
+      await wait(400)
+    }
+    await wait(2500)
+    await page.hover('.sidebar .section-head >> nth=-1')
+    await wait(300)
+    await page.screenshot({ path: `${out}/sidebar.png`, clip: { x: 0, y: 0, width: 300, height: 960 } })
+    await page.click('.sidebar .nav-item:has-text("对话")')
+    await wait(800)
+    await shot('chats-page')
   },
   // Many agents: the backend menu keeps four and puts the rest under 更多后端.
   async many() {

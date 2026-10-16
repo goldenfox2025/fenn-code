@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Check, CheckSquare, ChevronDown, Clock, FolderKanban, MessageCircle, Pause, Play, Plus, Search, Trash2 } from 'lucide-react'
-import { useMenu } from '../components/Menu'
+import { Check, CheckSquare, ChevronDown, Clock, Folder, FolderKanban, MessageCircle, Pause, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { searchable, type Conversation, type Project, type Routine, type Schedule, type SearchHit } from '@shared/model'
 import { api, toast, useApp } from '../store'
 import { relTime } from '../util'
 import { locale, t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
 import { boardCount } from '../components/ProgressPanel'
+import { groupByFolder } from '../folderGroups'
 
 const WEEKDAY = [t('日'), t('一'), t('二'), t('三'), t('四'), t('五'), t('六')]
 
@@ -95,12 +95,10 @@ export function ProjectsPage() {
 
 export function ChatsPage() {
   const conversations = useApp((s) => s.conversations)
-  const projects = useApp((s) => s.projects)
   const navigate = useApp((s) => s.navigate)
   const [q, setQ] = useState(() => useApp.getState().search)
   const [selecting, setSelecting] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  const [menu, openMenu] = useMenu()
   const list = conversations
     .filter((c) => c.kind === 'chat')
     .filter((c) => !q || c.title.toLowerCase().includes(q.toLowerCase()) || c.lastPreview?.toLowerCase().includes(q.toLowerCase()))
@@ -128,16 +126,6 @@ export function ChatsPage() {
     try { await api().deleteConversation(c.id) }
     catch (error) { toast(String(error), 'error') }
   }
-  const moveChosen = (el: HTMLElement) =>
-    openMenu(el, [
-      { label: t('不属于任何项目'), onClick: () => void Promise.all(chosen.map((c) => api().updateConversation(c.id, { projectId: undefined }))).then(stop) },
-      ...(projects.length ? [{ separator: true as const }] : []),
-      ...projects.filter((p) => !p.archived).map((p) => ({
-        icon: <FolderKanban size={15} />,
-        label: p.name,
-        onClick: () => void Promise.all(chosen.map((c) => api().updateConversation(c.id, { projectId: p.id }))).then(stop)
-      }))
-    ])
   return (
     <div className="scroll">
       <div className="page">
@@ -165,22 +153,18 @@ export function ChatsPage() {
               {chosen.length === list.length ? t('取消全选') : t('全选')}</button>
             <span className="small muted">{t('已选 {0} 个', chosen.length)}</span>
             <span className="spacer" />
-            <button className="btn" disabled={!chosen.length} onClick={(e) => moveChosen(e.currentTarget)}>
-              <FolderKanban size={15} />
-              {t('移到项目')}</button>
             <button className="btn danger" disabled={!chosen.length} onClick={() => void removeChosen()}>
               <Trash2 size={15} />
               {t('删除')}</button>
             <button className="btn ghost" onClick={stop}>
               {t('完成')}</button>
-            {menu}
           </div>
         )}
         {!selecting && <MessageHits q={q} />}
         {!q && list.length === 0 && (
           <div className="empty">
             <MessageCircle size={24} />
-            <div>{t('还没有对话。不属于任何项目的单独提问都会出现在这里。')}</div>
+            <div>{t('还没有对话。对话按工作文件夹分组列在这里；项目里的讨论在项目中。')}</div>
             <button className="btn" onClick={() => navigate({ view: 'home' })}>
               {t('开始新对话')}</button>
           </div>
@@ -190,8 +174,14 @@ export function ChatsPage() {
             {q ? t('标题匹配的对话 · {0}', list.length) : t('共 {0} 个对话', list.length)}
           </div>
         )}
-        {list.map((c) => {
-          const p = projects.find((x) => x.id === c.projectId)
+        {groupByFolder(list).map((g) => (
+          <section key={g.key} className="chat-group">
+            <div className="chat-group-head" title={g.folder}>
+              {g.folder ? <Folder size={14} /> : <MessageCircle size={14} />}
+              <span>{g.name}</span>
+              {g.folder && <span className="small muted chat-group-path">{g.folder}</span>}
+            </div>
+        {g.chats.map((c) => {
           const on = picked.has(c.id)
           return (
             <div className={'list-row chat-row' + (on ? ' picked' : '')} key={c.id}>
@@ -213,12 +203,6 @@ export function ChatsPage() {
                   {c.lastPreview}
                 </div>
               </div>
-              {p && (
-                <span className="status-chip">
-                  <FolderKanban size={11} />
-                  {p.name}
-                </span>
-              )}
               <span className="small muted">{relTime(c.updatedAt)}</span>
             </button>
             {!selecting && <button className="icon-btn" title={t('删除对话')} aria-label={t('删除对话「{0}」', c.title)} onClick={() => void removeOne(c)}>
@@ -227,6 +211,8 @@ export function ChatsPage() {
             </div>
           )
         })}
+          </section>
+        ))}
       </div>
     </div>
   )

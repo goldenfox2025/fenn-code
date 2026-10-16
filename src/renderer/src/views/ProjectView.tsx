@@ -197,9 +197,7 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
   setWide: (w: boolean) => void
 }) {
   const threads = useThreads(project.id)
-  const chats = useApp(useShallow((s) => s.conversations.filter((c) => c.projectId === project.id && c.kind === 'chat')))
   const routines = useApp(useShallow((s) => s.routines.filter((r) => r.target.projectId === project.id)))
-  const navigate = useApp((s) => s.navigate)
   const [tab, setTab] = useState<'threads' | 'progress' | 'outputs' | 'memory' | 'files' | 'routines'>('threads')
   const [q, setQ] = useState<string | null>(null)
   const shown = threads.filter((t) => !q || t.title.toLowerCase().includes(q.toLowerCase()))
@@ -235,9 +233,6 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
         </button>
         <button className={'tab' + (tab === 'routines' ? ' active' : '')} title={t('定时任务')} onClick={() => setTab('routines')}>
           <Clock size={15} />
-        </button>
-        <button className="icon-btn" title={t('新对话')} onClick={() => navigate({ view: 'home', projectId: project.id })}>
-          <Plus size={16} />
         </button>
         <span className="spacer" />
         {q != null ? (
@@ -293,18 +288,6 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
               <ThreadGroup title={t('等待您处理')} empty={t('决策、审阅和权限请求。')} items={waiting} onOpen={onOpen} />
               <ThreadGroup title={t('进行中')} empty={t('正在推进的讨论串。')} items={working} onOpen={onOpen} />
               <ThreadGroup title={t('已解决')} empty={t('已完成的讨论串。')} items={done} onOpen={onOpen} collapsed={done.length > 8} />
-              {chats.length > 0 && (
-                <ThreadGroup title={t('项目内的对话')} items={[]} onOpen={onOpen}>
-                  {[...chats]
-                    .sort((a, b) => b.updatedAt - a.updatedAt)
-                    .map((c) => (
-                      <button key={c.id} className="thread-row" onClick={() => navigate({ view: 'chat', conversationId: c.id })}>
-                        <span className="title">{c.title}</span>
-                        <span className="meta">{relTime(c.updatedAt)}</span>
-                      </button>
-                    ))}
-                </ThreadGroup>
-              )}
             </div>
           </>
         )}

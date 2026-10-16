@@ -363,24 +363,22 @@ await check('a chat can be renamed from the sidebar', async () => {
   await page.waitForSelector('.sidebar .nav-item.selected:has-text("接口排查")', { timeout: 3000 })
 })
 
-await check('the chats page selects several chats to move or delete at once', async () => {
+await check('the chats page groups chats by folder, and selects several to delete at once', async () => {
   await page.click('.sidebar .nav-item:has-text("对话")')
   const before = await page.locator('.page .list-row').count()
   if (before < 3) throw new Error('need at least 3 chats, have ' + before)
+  if (!(await page.locator('.page .chat-group-head').count())) throw new Error('no folder groups')
+  if (await page.locator('.select-bar .btn:has-text("移到项目")').count()) throw new Error('chats can still be moved into projects')
   await page.click('.page-head .btn:has-text("选择")')
   await page.locator('.page .list-row').nth(0).click()
   await page.locator('.page .list-row').nth(1).click()
   if (!(await page.locator('.select-bar').innerText()).includes('已选 2 个')) throw new Error('selection count wrong')
-  await page.click('.select-bar .btn:has-text("移到项目")')
-  await page.click('.menu-item:has-text("端到端")')
-  await page.waitForTimeout(300)
-  const moved = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.filter((c) => c.kind === 'chat' && c.projectId).length)
-  if (moved < 2) throw new Error('moved ' + moved)
-  await page.click('.page-head .btn:has-text("选择")')
-  await page.locator('.page .list-row').nth(0).click()
+  if (await page.locator('.select-bar .btn:has-text("移到项目")').count()) throw new Error('chats can still be moved into projects')
   await page.click('.select-bar .btn:has-text("删除")')
   await page.click('.modal.confirm .btn.danger-solid')
-  await page.waitForFunction((n) => document.querySelectorAll('.page .list-row').length === n - 1, before, { timeout: 3000 })
+  await page.waitForFunction((n) => document.querySelectorAll('.page .list-row').length === n - 2, before, { timeout: 3000 })
+  const inProjects = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.filter((c) => c.kind === 'chat' && c.projectId).length)
+  if (inProjects) throw new Error(inProjects + ' chats inside projects')
 })
 
 await check('a project keeps a progress board of milestones and tasks, edited by hand', async () => {

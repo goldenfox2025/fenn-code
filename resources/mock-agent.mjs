@@ -145,7 +145,7 @@ const handlers = {
     }
     // "#进度 里程碑 / 任务" records work on the project board through the app's tool.
     if (raw.includes("#进度") && s.mcp) {
-      const m = raw.match(/#进度\s*([^\n<]*)/);
+      const m = [...raw.matchAll(/#进度\s*([^\n<]*)/g)].pop();
       const [milestone, task] = (m?.[1] ?? "").split("/").map((x) => x.trim());
       if (milestone) await callTool(sessionId, s, "progress_update", { title: milestone, status: "doing" });
       if (milestone && task) await callTool(sessionId, s, "progress_update", { milestone, title: task, status: "done" });
@@ -179,7 +179,7 @@ const handlers = {
         await stream(sessionId, `好的，我直接在这里回答「${text.slice(0, 40)}」。` + "这是一个比较完整的回答，涵盖了背景、做法和下一步。".repeat(20), abort);
       else if (s.mcp && (await toolNames(s)).includes("start_thread"))
         await coordinatorTurn(sessionId, s, text, abort, raw);
-      else if (s.mcp && (await toolNames(s)).includes("set_resolved"))
+      else if (s.mcp && !/^(交付文件|附上)/.test(text) && (await toolNames(s)).includes("set_resolved"))
         await threadTurn(sessionId, s, text, abort);
       else await turn(sessionId, s, text, abort, raw.includes("<history>"));
     } catch (e) {

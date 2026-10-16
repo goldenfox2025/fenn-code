@@ -50,9 +50,11 @@ describe('progress board in a project', () => {
   it('lets the agent record work, linked to the chat that did it, without duplicates', async () => {
     const { core, store, dispose } = await makeCore()
     const p = await core.createProject({ name: '发布', backendId: 'mock' })
-    const c = await core.startChat({ text: '#进度 发布 v1 / 写安装说明', backendId: 'mock', projectId: p.id })
+    // Work happens in the project's threads (a project has no loose chats).
+    const c = core.chat.createConversation({ kind: 'thread', title: '发布', projectId: p.id, backendId: 'mock' })
+    await core.send(c.id, '#进度 发布 v1 / 写安装说明')
     await until(() => store.project(p.id)?.progress?.[0]?.children?.length)
-    await until(() => store.conversation(c.id)?.status === 'idle')
+    await until(() => store.conversation(c.id)?.status !== 'working')
     await core.send(c.id, '#进度 发布 v1 / 打包')
     await until(() => store.project(p.id)?.progress?.[0]?.children?.length === 2)
     const board = store.project(p.id)!.progress!

@@ -69,7 +69,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
       </div>
       <div className="field">
         <label>{t('描述')}</label>
-        <input className="input" value={f.description ?? ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder={t('这个项目要做什么（也用于自动归类对话）')} />
+        <input className="input" value={f.description ?? ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder={t('这个项目要做什么')} />
       </div>
       <div className="field">
         <label>{t('项目指令')}</label>
@@ -355,15 +355,6 @@ function GeneralSettings() {
           )}
         </div>
         <div className="small muted">{t('排在输入框文件夹菜单的第一个。新对话默认不带文件夹，选了文件夹，agent 才能读写其中的文件、运行命令。')}</div>
-      </div>
-      <div className="field">
-        <div className="row-between">
-          <div>
-            <label>{t('自动归类对话')}</label>
-            <div className="help">{t('不属于任何项目的新对话，会在第一轮回复后自动判断是否属于某个项目，并归入其中。')}</div>
-          </div>
-          <button className={'switch' + (settings.autoAssignChats ? ' on' : '')} onClick={() => api().updateSettings({ autoAssignChats: !settings.autoAssignChats })} />
-        </div>
       </div>
       <div className="field">
         <div className="row-between">

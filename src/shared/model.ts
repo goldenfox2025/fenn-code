@@ -297,7 +297,6 @@ export interface AppSettings {
   /** UI language (Settings → 通用); 'system' follows the OS. */
   language?: 'system' | 'zh' | 'en'
   userName: string
-  autoAssignChats: boolean
   notifications?: boolean
   /** Keep running in the tray after the window closes (Windows/Linux). */
   runInBackground?: boolean

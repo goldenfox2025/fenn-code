@@ -788,4 +788,9 @@ export const en: Record<string, string> = {
   "记录 agent 通信": "Log agent traffic",
   "把与 agent 往来的每条 ACP 消息写进数据文件夹的 logs 里，用来排查用量或连接问题。日志含对话内容，只留在本机；默认关闭。": "Writes every ACP message to and from agents into the logs folder in the data folder, to troubleshoot usage or connection problems. The log contains conversation content and stays on this computer. Off by default.",
   "打开日志文件夹": "Open log folder",
+  "这个项目要做什么": "What this project is for",
+  "不放入项目": "No project",
+  "收起": "Show less",
+  "显示全部（{0}）": "Show all ({0})",
+  "还没有对话。对话按工作文件夹分组列在这里；项目里的讨论在项目中。": "No chats yet. Chats are listed here by working folder; project discussions stay in their project.",
 }

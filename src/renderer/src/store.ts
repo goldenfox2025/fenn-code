@@ -13,7 +13,7 @@ declare global {
 export const api = (): AncoraApi => window.ancora
 
 export type Route =
-  | { view: 'home'; projectId?: string }
+  | { view: 'home'; projectId?: string; folder?: string }
   | { view: 'chat'; conversationId: string }
   | { view: 'project'; projectId: string; threadId?: string; overview?: boolean }
   | { view: 'projects' }
@@ -64,7 +64,7 @@ export const useApp = create<State>((set, get) => ({
   projects: [],
   conversations: [],
   routines: [],
-  settings: { defaultBackendId: '', theme: 'system', userName: '', autoAssignChats: true },
+  settings: { defaultBackendId: '', theme: 'system', userName: '' },
   backends: [],
   accounts: {},
   platform: 'linux',

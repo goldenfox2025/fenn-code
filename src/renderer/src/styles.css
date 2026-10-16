@@ -3513,3 +3513,41 @@ details.advanced > summary {
   font-size: 15px;
   font-weight: 600;
 }
+
+/* Sidebar folder groups: the 「+」 shows on hover, as in Claude. */
+.folder-head .icon-btn {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.folder-head:hover .icon-btn,
+.folder-head .icon-btn:focus-visible {
+  opacity: 1;
+}
+.folder-head .grow {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.nav-item.more-row .label {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.chat-group + .chat-group {
+  margin-top: 18px;
+}
+.chat-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.chat-group-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

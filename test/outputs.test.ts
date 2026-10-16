@@ -9,7 +9,8 @@ describe('outputs agents hand over', () => {
   it('a project file the agent writes shows as a card and in the project library', async () => {
     const { core, store, dispose } = await makeCore()
     const p = await core.createProject({ name: 'x', backendId: 'mock' })
-    const chat = await core.startChat({ text: '交付文件 结论.md', backendId: 'mock', projectId: p.id })
+    const chat = core.chat.createConversation({ kind: 'thread', title: '结论', projectId: p.id, backendId: 'mock' })
+    await core.send(chat.id, '交付文件 结论.md')
     const reply = await until(() => store.messagesOf(chat.id).find((m) => m.role === 'assistant' && m.state === 'done'))
     const card = reply.blocks.find((b) => b.type === 'output')
     expect(card).toMatchObject({ type: 'output', kind: 'file', title: '结论.md' })
