@@ -68,6 +68,8 @@ export interface Message {
   state?: 'streaming' | 'done' | 'error' | 'cancelled'
   /** Cut off because the app quit mid-reply (not stopped by the user). */
   interrupted?: boolean
+  /** Cut off because the user switched to this agent mid-reply (its name). */
+  switchedTo?: string
   error?: string
   reactions?: string[]
   /** Hidden from the transcript (e.g. relayed notes delivered to an agent). */

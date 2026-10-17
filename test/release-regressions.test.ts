@@ -135,10 +135,9 @@ describe('switching an existing conversation to another agent', () => {
       await until(() => store.conversation(first.id)?.status === 'idle')
       expect(textOf(store.messagesOf(first.id).filter((m) => m.role === 'assistant').at(-1)!)).toContain('switch-4821')
       expect(store.conversation(first.id)?.sessionRef?.backendId).toBe('other')
-      core.chat.patchConversation(first.id, { status: 'working' })
-      await expect(core.updateConversation(first.id, { backendId: 'mock' })).rejects.toThrow('请先停止')
-      expect(store.conversation(first.id)?.backendId).toBe('other')
-      core.chat.patchConversation(first.id, { status: 'idle' })
+      // A switch no longer has to wait for the reply to end (the reply is stopped first; see backend-preferences).
+      await core.updateConversation(first.id, { backendId: 'mock' })
+      expect(store.conversation(first.id)).toMatchObject({ backendId: 'mock', status: 'idle' })
     } finally { await dispose() }
   })
 })

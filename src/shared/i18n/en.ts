@@ -849,4 +849,7 @@ export const en: Record<string, string> = {
   "等「{0}」空闲后交接": "Handing over when 「{0}」 is free",
   "正在交给「{0}」": "Handing over to 「{0}」",
   "等「{0}」完成后交接": "Handing over when 「{0}」 is done",
+  "会中断当前回复": "Stops the current reply",
+  "下一轮生效": "From the next turn",
+  "已中断：换成了 {0}": "Stopped: switched to {0}",
 }

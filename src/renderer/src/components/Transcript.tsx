@@ -34,6 +34,7 @@ import { currentBlocker, type Block, type Conversation, type Message } from '@sh
 import { planHeadline } from './PlanLine'
 import { api, toast, useApp } from '../store'
 import { dayLabel, STATUS_LABEL, textOf, threadState } from '../util'
+import { markdownParts } from '../markdownParts'
 import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
 import { t } from '../i18n'
@@ -358,22 +359,30 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
   )
 }
 
+const MD_COMPONENTS = {
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+  pre: ({ children }: { children?: React.ReactNode }) => <CodeBlock>{children}</CodeBlock>
+}
+
+/** One piece of a reply; unchanged pieces are not parsed again while the reply streams. */
+const MarkdownPart = memo(function MarkdownPart({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+      {text}
+    </ReactMarkdown>
+  )
+})
+
 const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer">
-              {children}
-            </a>
-          ),
-          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>
-        }}
-      >
-        {text}
-      </ReactMarkdown>
+      {markdownParts(text).map((part, i) => (
+        <MarkdownPart key={i} text={part} />
+      ))}
     </div>
   )
 })
@@ -734,6 +743,7 @@ function Stopped({ m, last }: { m: Message; last?: boolean }) {
     const c = s.conversations.find((x) => x.id === m.conversationId)
     return c?.kind === 'thread' && !c.resolved
   })
+  if (m.switchedTo) return <div className="small muted">{t('已中断：换成了 {0}', m.switchedTo)}</div>
   if (!m.interrupted) return <div className="small muted">{t('已停止')}</div>
   return (
     <div className="msg-error interrupted">

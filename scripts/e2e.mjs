@@ -521,6 +521,22 @@ await check('every 「…」 menu opens next to its button, inside the window', 
   await page.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
 })
 
+await check('the model menu stays open during a reply; another model applies from the next turn', async () => {
+  await page.click('.sidebar .nav-item:has-text("新建")')
+  await page.fill('.composer textarea', '讲一个很长的故事')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.working-mark', { timeout: 10000 })
+  await page.click('.composer .model-btn')
+  await page.waitForSelector('.menu')
+  const other = page.locator('.menu .menu-item:not(.checked):has-text("下一轮生效")').first()
+  await other.waitFor({ timeout: 3000 })
+  if (await other.evaluate((el) => el.classList.contains('disabled') || el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true')) throw new Error('model item disabled mid-reply')
+  await other.click()
+  await page.waitForSelector('.menu', { state: 'detached' })
+  if (!(await page.locator('.working-mark').count())) throw new Error('the reply stopped when the model changed')
+  await page.waitForSelector('.working-mark', { state: 'detached', timeout: 30000 })
+})
+
 await check('a chat shows its plan under the title, opening to the full plan and obstacles', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
   await send('#难点 文档和接口对不上 先看看')

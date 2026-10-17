@@ -269,6 +269,8 @@ export class ChatService {
       })
       live = session.live
       live.unprompted = undefined
+      if (!session.fresh) await this.applyDeferred(conversationId, live)
+      else this.deferred.delete(conversationId)
       let promptText = text
       if (session.fresh) {
         // Only a conversation the agent already worked in has history to hand over; a new thread's
@@ -281,8 +283,10 @@ export class ChatService {
         promptText = [pre, history, updates, history ? `新消息：\n${text}` : text].filter(Boolean).join('\n\n')
       } else {
         const updates = this.hooks.beforePrompt?.(conv) ?? ''
-        if (updates) promptText = `${updates}\n\n${text}`
+        const note = this.withdrawn.delete(conversationId) ? WITHDRAWN : ''
+        promptText = [updates, note, text].filter(Boolean).join('\n\n')
       }
+      this.withdrawn.delete(conversationId)
       const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
       live.turns++
       live.chars += promptText.length
@@ -487,9 +491,31 @@ export class ChatService {
     for (const [rid, cid] of this.pendingPermissions) if (cid === conversationId) this.respondPermission(rid, null)
   }
 
+  /**
+   * Model and option changes made while a reply runs: they apply before the next
+   * turn instead of mid-turn (not every agent takes a model change mid-reply).
+   */
+  private deferred = new Map<string, { model?: string; options: Record<string, string> }>()
+
+  private defer(conversationId: string): { model?: string; options: Record<string, string> } {
+    let d = this.deferred.get(conversationId)
+    if (!d) this.deferred.set(conversationId, (d = { options: {} }))
+    return d
+  }
+
+  /** Applies what was changed during the last reply to the live session, before the next prompt. */
+  private async applyDeferred(conversationId: string, live: Live): Promise<void> {
+    const d = this.deferred.get(conversationId)
+    if (!d) return
+    this.deferred.delete(conversationId)
+    if (d.model) await this.backends.setModel(live.backendId, live.sessionId, d.model)
+    for (const [id, value] of Object.entries(d.options)) await this.backends.setOption(live.backendId, live.sessionId, id, value)
+  }
+
   async setModel(conversationId: string, modelId: string): Promise<void> {
     const live = this.live.get(conversationId)
-    if (live) await this.backends.setModel(live.backendId, live.sessionId, modelId)
+    if (live && this.running.has(conversationId)) this.defer(conversationId).model = modelId
+    else if (live) await this.backends.setModel(live.backendId, live.sessionId, modelId)
     this.patchConversation(conversationId, { modelId })
     const conv = this.store.conversation(conversationId)
     if (conv) {
@@ -511,7 +537,8 @@ export class ChatService {
     if (!conv) return
     const live = this.live.get(conversationId)
     let options = conv.sessionOptions?.map((o) => (o.id === optionId ? { ...o, current: value } : o))
-    if (live) options = (await this.backends.setOption(live.backendId, live.sessionId, optionId, value)) ?? options
+    if (live && this.running.has(conversationId)) this.defer(conversationId).options[optionId] = value
+    else if (live) options = (await this.backends.setOption(live.backendId, live.sessionId, optionId, value)) ?? options
     this.patchConversation(conversationId, { sessionOptions: options, optionValues: { ...conv.optionValues, [optionId]: value } })
   }
 
@@ -522,11 +549,20 @@ export class ChatService {
    */
   async rewind(conversationId: string, fromMessageId: string): Promise<Message['variant']> {
     await this.stopTurn(conversationId)
+    // Retrying or editing the last exchange keeps the agent's session (and its cache): the next
+    // prompt tells it that exchange was withdrawn. Anything further back needs a fresh replay.
+    const list = this.store.messagesOf(conversationId)
+    const lastUser = [...list].reverse().find((m) => m.role === 'user' && !m.hidden && !m.housekeeping)
+    const keep = lastUser?.id === fromMessageId && this.live.has(conversationId)
     const { removed, variant } = this.store.archiveFrom(conversationId, fromMessageId)
     for (const m of removed) this.publish({ type: 'message-removed', conversationId, id: m.id })
-    this.restartSession(conversationId)
+    if (keep) this.withdrawn.add(conversationId)
+    else this.restartSession(conversationId)
     return variant
   }
+
+  /** Conversations whose last exchange was withdrawn while keeping the session (see rewind). */
+  private withdrawn = new Set<string>()
 
   /** Shows another version of an edited or regenerated turn; the next turn continues from it. */
   async switchVariant(conversationId: string, group: string, index: number): Promise<void> {
@@ -538,7 +574,8 @@ export class ChatService {
     this.restartSession(conversationId)
   }
 
-  private async stopTurn(conversationId: string) {
+  /** Stops the running reply, if any, and waits until its turn has wound down. */
+  async stopTurn(conversationId: string): Promise<void> {
     if (this.running.has(conversationId)) await this.cancel(conversationId)
     await until(() => !this.running.has(conversationId))
   }
@@ -556,6 +593,8 @@ export class ChatService {
     const live = this.live.get(conversationId)
     if (live) this.bySession.delete(`${live.backendId}:${live.sessionId}`)
     this.live.delete(conversationId)
+    this.deferred.delete(conversationId)
+    this.withdrawn.delete(conversationId)
   }
 
   // ---- permissions --------------------------------------------------------
@@ -792,8 +831,18 @@ export type Line = { who: '用户' | '助手' | '（内部消息）'; text: stri
 export function linesOf(messages: Message[]): Line[] {
   return messages
     .filter((m) => m.role !== 'system' && !m.housekeeping && !(m.hidden && m.role === 'assistant'))
-    .map((m): Line => ({ who: m.role === 'user' ? (m.hidden ? '（内部消息）' : '用户') : '助手', text: textOf(m) }))
+    .map((m): Line => ({ who: m.role === 'user' ? (m.hidden ? '（内部消息）' : '用户') : '助手', text: cutNote(m) }))
     .filter((l) => l.text)
+}
+
+const WITHDRAWN =
+  '（应用说明：用户撤回了上一条消息和你对它的回答，那一版已作废，用户看不到了。请只按下面这条消息回答，不要提到撤回。）'
+
+/** A reply that was stopped says so, so the next agent knows where it left off. */
+function cutNote(m: Message): string {
+  const text = textOf(m)
+  if (m.role !== 'assistant' || m.state !== 'cancelled') return text
+  return text ? `${text}（这条回复没说完就被中断了）` : '（这条回复刚开始就被中断了）'
 }
 
 export const fmt = (l: Line, max = Infinity) => `${l.who}：${l.text.length > max ? l.text.slice(0, max) + '……' : l.text}`

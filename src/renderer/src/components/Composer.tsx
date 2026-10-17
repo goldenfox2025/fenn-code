@@ -235,9 +235,11 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       else onBackendChange?.(id)
     }
     const [top, rest] = firstFew(usable, (b) => b.id === bid)
-    const items: MenuItem[] = top.map((b, i) => ({ label: b.name, checked: b.id === bid, shortcut: String(i + 1), disabled: busy, onClick: () => pick(b.id) }))
+    // Mid-reply a switch stops the reply (what it said stays); the new agent gets the conversation so far.
+    const cuts = (id: string) => (busy && conversation && id !== bid ? t('会中断当前回复') : undefined)
+    const items: MenuItem[] = top.map((b, i) => ({ label: b.name, sub: cuts(b.id), checked: b.id === bid, shortcut: String(i + 1), onClick: () => pick(b.id) }))
     if (!usable.length) items.push({ label: t('还没有可用的 Agent 后端'), info: true })
-    if (rest.length) items.push({ separator: true }, { label: t('更多后端'), submenu: rest.map((b) => ({ label: b.name, checked: false, disabled: busy, onClick: () => pick(b.id) })) })
+    if (rest.length) items.push({ separator: true }, { label: t('更多后端'), submenu: rest.map((b) => ({ label: b.name, sub: cuts(b.id), checked: false, onClick: () => pick(b.id) })) })
     items.push({ separator: true }, manageItem)
     return items
   }
@@ -257,16 +259,18 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
         onModelChange?.(id)
       })
     const [top, rest] = firstFew(models, (m) => m.id === currentModel?.id)
-    top.forEach((m, i) => items.push({ label: m.name, checked: m.id === currentModel?.id, shortcut: String(i + 1), disabled: busy, onClick: () => setModel(m.id) }))
+    // Mid-reply a model change waits for the next turn; the reply keeps going.
+    const later = (id: string) => (busy && conversation && id !== currentModel?.id ? t('下一轮生效') : undefined)
+    top.forEach((m, i) => items.push({ label: m.name, sub: later(m.id), checked: m.id === currentModel?.id, shortcut: String(i + 1), onClick: () => setModel(m.id) }))
     const more: MenuItem[] = []
-    if (rest.length) more.push({ label: t('更多模型'), submenu: rest.map((m) => ({ label: m.name, checked: false, disabled: busy, onClick: () => setModel(m.id) })) })
+    if (rest.length) more.push({ label: t('更多模型'), submenu: rest.map((m) => ({ label: m.name, sub: later(m.id), checked: false, onClick: () => setModel(m.id) })) })
     for (const o of options) {
       if (o === effortOpt) continue
       const now = valueOf(o)
       more.push({
         label: optionLabel(o),
         hint: choiceLabel(o.choices.find((c) => c.value === now)?.name ?? '', now),
-        submenu: o.choices.map((c) => ({ label: choiceLabel(c.name, c.value), checked: c.value === now, disabled: busy, onClick: () => setOptionValue(o, c.value) }))
+        submenu: o.choices.map((c) => ({ label: choiceLabel(c.name, c.value), checked: c.value === now, onClick: () => setOptionValue(o, c.value) }))
       })
     }
     if (more.length && items.length) items.push({ separator: true })
@@ -304,7 +308,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
         </button>
       )}
       {effortOpt && canPick && !signedOut && (
-        <EffortPicker option={effortOpt} value={valueOf(effortOpt)} disabled={busy} onChange={(v) => setOptionValue(effortOpt, v)} />
+        <EffortPicker option={effortOpt} value={valueOf(effortOpt)} onChange={(v) => setOptionValue(effortOpt, v)} />
       )}
       {conversation ? (
         <ContextRing usage={conversation.usage} timing={conversation.timing} scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')} />

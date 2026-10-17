@@ -506,7 +506,13 @@ export class AppCore {
     if (before && patch.backendId !== undefined && patch.backendId !== before.backendId) {
       const nextBackendId = patch.backendId
       if (!this.backends.has(patch.backendId)) throw new Error(t('后端「{0}」已经不存在了', patch.backendId))
-      if (before.status === 'working' || before.status === 'waiting') throw new Error(t('请先停止当前回复，再切换后端。'))
+      // Mid-reply: stop it (what it said so far stays, marked as cut off by the switch), then switch.
+      const reply = this.chat.currentReply(id)
+      if (reply) {
+        await this.chat.stopTurn(id)
+        const m = this.store.messagesOf(id).find((x) => x.id === reply.id)
+        if (m && m.state === 'cancelled') this.chat.updateMessage({ ...m, switchedTo: this.backends.list().find((b) => b.id === nextBackendId)?.name ?? nextBackendId })
+      }
       this.chat.forgetSession(id)
       patch = { ...patch, sessionRef: undefined, models: undefined, modelId: this.store.settings.backendModelDefaults?.[nextBackendId],
         sessionOptions: undefined, optionValues: undefined, status: 'idle',

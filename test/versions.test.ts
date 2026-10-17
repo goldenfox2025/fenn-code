@@ -42,6 +42,30 @@ describe('versions of an edited or regenerated turn', () => {
   }, 60000)
 })
 
+describe('retrying keeps the session', () => {
+  it('a retry of the last reply reuses the session and tells the agent the old answer was withdrawn; an older edit replays', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      const chat = await core.startChat({ text: '你好', backendId: 'mock' })
+      await done(store, chat.id, 1)
+      await core.send(chat.id, '你看到了什么')
+      await done(store, chat.id, 2)
+      const session = store.conversation(chat.id)?.sessionRef?.sessionId
+      await core.regenerate(chat.id)
+      await until(() => store.conversation(chat.id)?.status === 'idle' && store.messagesOf(chat.id).filter((m) => m.role === 'assistant' && m.state === 'done').length === 2 || undefined)
+      expect(store.conversation(chat.id)?.sessionRef?.sessionId).toBe(session)
+      const seen = JSON.stringify(store.messagesOf(chat.id).filter((m) => m.role === 'assistant').pop()!.blocks)
+      expect(seen).toContain('撤回了上一条消息')
+      expect(seen).not.toContain('<history>')
+      // Editing the first message changes what came before the last turn: a fresh session replays.
+      const first = store.messagesOf(chat.id).find((m) => m.role === 'user')!
+      await core.editMessage(chat.id, first.id, '你看到了什么')
+      await until(() => store.conversation(chat.id)?.status === 'idle' && store.messagesOf(chat.id).filter((m) => m.role === 'assistant' && m.state === 'done').length === 1 || undefined)
+      expect(store.conversation(chat.id)?.sessionRef?.sessionId).not.toBe(session)
+    } finally { await dispose() }
+  }, 40000)
+})
+
 describe('agents correcting an earlier reply', () => {
   it('strikes out the wrong sentence in place, marks it edited, and posts nothing new there', async () => {
     const { core, store, dispose } = await makeCore()
