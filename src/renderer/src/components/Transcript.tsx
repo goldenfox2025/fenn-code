@@ -266,8 +266,8 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
       )}
       <div className="msg-actions">
         {m.variant && m.variant.count > 1 && <VersionSwitch m={m} busy={busy} />}
-        <CopyButton text={text} />
-        {!busy && (
+        {!!text && <CopyButton text={text} />}
+        {!busy && !!text && (
           <button className="icon-btn sm" data-tip={t('编辑')} onClick={() => setEditing(text)}>
             <Pencil size={14} />
           </button>
@@ -341,7 +341,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           {t('已编辑')}
         </div>
       )}
-      {m.state === 'error' && <ErrorBar m={m} />}
+      {m.state === 'error' && <ErrorBar m={m} last={last} busy={busy} />}
       {!streaming && m.state === 'done' && <ThreadSuggestion m={m} last={last} busy={busy} />}
       {m.state === 'cancelled' && <Stopped m={m} last={last} />}
       {!!m.reactions?.length && (
@@ -355,7 +355,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
       )}
       {!streaming && (
         <div className="msg-actions">
-          <CopyButton text={textOf(m)} />
+          {!!textOf(m) && <CopyButton text={textOf(m)} />}
           <button
             className="icon-btn sm"
             data-tip={t('添加回应')}
@@ -371,12 +371,14 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           >
             <SmilePlus size={14} />
           </button>
-          {inProjectChat && !busy && !m.blocks.some((b) => b.type === 'thread-card') && (
+          {/* The banner below a long answer already offers it. */}
+          {inProjectChat && !busy && !m.blocks.some((b) => b.type === 'thread-card') && !(m.state === 'done' && suggestsThread(m, inProjectChat, last, busy)) && (
             <button className="icon-btn sm" data-tip={t('转为讨论串')} onClick={() => void api().convertToThread(m.conversationId, m.id)}>
               <Split size={14} />
             </button>
           )}
-          {last && !busy && !m.blocks.some((b) => b.type === 'thread-card') && (
+          {/* A failed or interrupted reply has its own 重试 button. */}
+          {last && !busy && !m.blocks.some((b) => b.type === 'thread-card') && m.state !== 'error' && !(m.interrupted && !m.switchedTo) && (
             <button className="icon-btn sm" data-tip={t('重新生成')} onClick={() => api().regenerate(m.conversationId)}>
               <RotateCcw size={14} />
             </button>
@@ -820,7 +822,7 @@ function errorSentence(kind: ErrorKind, name: string, how: string): string {
 }
 
 /** A failed reply, with the one action that fixes the common cases (sign in, retry). */
-export function ErrorBar({ m }: { m: Message }) {
+export function ErrorBar({ m, last = true, busy }: { m: Message; last?: boolean; busy?: boolean }) {
   const backendId = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.backendId)
   const backend = useApp((s) => s.backends.find((b) => b.id === backendId))
   const raw = m.error ?? ''
@@ -851,11 +853,18 @@ export function ErrorBar({ m }: { m: Message }) {
           <button className="btn" onClick={() => useApp.getState().set({ settingsOpen: 'backends' })}>
             {t('打开设置')}</button>
         )}
-        <button className="btn" onClick={() => void api().regenerate(m.conversationId)}>
-          {t('重试')}</button>
+        {last && !busy && (
+          <button className="btn" onClick={() => void api().regenerate(m.conversationId)}>
+            {t('重试')}</button>
+        )}
       </div>
     </div>
   )
+}
+
+/** A long answer in the project chat that could have been a thread (see ThreadSuggestion). */
+function suggestsThread(m: Message, inProjectChat: boolean, last?: boolean, busy?: boolean): boolean {
+  return inProjectChat && !!last && !busy && !m.blocks.some((b) => b.type === 'thread-card') && textOf(m).length >= 400
 }
 
 /**
@@ -865,8 +874,7 @@ export function ErrorBar({ m }: { m: Message }) {
 function ThreadSuggestion({ m, last, busy }: { m: Message; last?: boolean; busy?: boolean }) {
   const inProjectChat = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.kind === 'project')
   const [sent, setSent] = useState(false)
-  if (!inProjectChat || !last || busy || sent) return null
-  if (m.blocks.some((b) => b.type === 'thread-card') || textOf(m).length < 400) return null
+  if (sent || !suggestsThread(m, inProjectChat, last, busy)) return null
   return (
     <div className="thread-suggestion">
       <Split size={14} />

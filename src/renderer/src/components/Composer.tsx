@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { errorText } from '@shared/errors'
-import { ArrowUp, ChevronDown, CornerDownRight, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
+import { ArrowLeftRight, ArrowUp, ChevronDown, CornerDownRight, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
 import type { Attachment, Conversation, FolderCandidate, QueuedMessage } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp, toastError } from '../store'
@@ -835,20 +835,30 @@ export function FolderChip({ folder, onChange, hint = '' }: { folder: string; on
           e.stopPropagation()
           const el = e.currentTarget
           const others = recent.split('\n').filter((f) => f && f !== folder)
+          const recentItems = (list: string[]): MenuItem[] => list.length
+            ? [{ heading: t('最近使用') }, ...list.map((f) => ({ icon: <Folder size={15} />, label: baseName(f), sub: f, onClick: () => onChange(f) }))]
+            : []
+          // A folder is chosen: the menu is about that folder, not suggestions for another.
+          if (folder)
+            return openMenu(el, [
+              { icon: <Folder size={15} />, label: baseName(folder), sub: folder, info: true },
+              { icon: <FolderOpen size={15} />, label: t('在文件管理器中打开'), onClick: () => void api().openOutput(folder) },
+              { icon: <ArrowLeftRight size={15} />, label: t('换一个文件夹…'), onClick: () => void choose() },
+              ...(others.length ? [{ separator: true } as MenuItem, ...recentItems(others.slice(0, 3))] : []),
+              { separator: true },
+              { icon: <X size={15} />, label: t('不使用文件夹'), onClick: () => onChange('') }
+            ])
           // Likely project folders, found by a quick scan the app caches; the menu doesn't wait long for it.
           const found = await Promise.race([
             api().suggestFolders(hint).catch(() => [] as FolderCandidate[]),
             new Promise<FolderCandidate[]>((r) => setTimeout(() => r([]), 1200))
           ])
-          const likely = found.filter((f) => f.path !== folder && !others.includes(f.path)).slice(0, 5)
+          const likely = found.filter((f) => !others.includes(f.path)).slice(0, 5)
           openMenu(el, [
-            ...(folder ? [{ heading: folder }, { separator: true } as MenuItem] : []),
             { icon: <FolderOpen size={15} />, label: t('选择文件夹…'), onClick: () => void choose() },
-            ...(others.length ? [{ heading: t('最近使用') } as MenuItem] : []),
-            ...others.map((f) => ({ icon: <Folder size={15} />, label: baseName(f), sub: f, onClick: () => onChange(f) })),
+            ...recentItems(others),
             ...(likely.length ? [{ heading: t('可能的项目文件夹') } as MenuItem] : []),
-            ...likely.map((f) => ({ icon: <FolderGit2 size={15} />, label: f.name, sub: f.path, onClick: () => onChange(f.path) })),
-            ...(folder ? [{ separator: true } as MenuItem, { icon: <X size={15} />, label: t('不使用文件夹'), onClick: () => onChange('') }] : [])
+            ...likely.map((f) => ({ icon: <FolderGit2 size={15} />, label: f.name, sub: f.path, onClick: () => onChange(f.path) }))
           ])
         }}
       >

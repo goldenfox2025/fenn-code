@@ -926,4 +926,6 @@ export const en: Record<string, string> = {
   "留空自动查找；也可填写 agy_acp_server 的绝对路径。": "Leave empty to find it automatically, or enter the full path to agy_acp_server.",
   "解压 Antigravity 服务": "Unpacking the Antigravity server",
   "{0} 没有执行 {1}": "{0} did not run {1}",
+  "换一个文件夹…": "Choose another folder…",
+  "没有匹配的项目": "No matching projects",
 }

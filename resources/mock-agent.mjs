@@ -60,6 +60,8 @@ const handlers = {
         // MOCK_SYSTEM_PROMPT=1: takes a client system prompt, as claude-agent-acp does.
         sessionCapabilities: { resume: {}, ...(process.env.MOCK_SYSTEM_PROMPT === "1" ? { systemPrompt: { mode: { override: {} } } } : {}) },
         mcpCapabilities: { http: !STDIO_ONLY },
+        // MOCK_META_PROMPT=1: appends a client prompt given at _meta.antigravity.systemPrompt.append (as Antigravity advertises).
+        ...(process.env.MOCK_META_PROMPT === "1" ? { _meta: { antigravity: { systemPrompt: { append: true } } } } : {}),
       },
       agentInfo: { name: "ancora-mock", version: "0.1.0" },
       authMethods: signedIn
@@ -101,7 +103,7 @@ const handlers = {
       .map((m) => ({ mcp: m, mcpReady: null, tools: null }));
     sessions.set(sessionId, {
       // A client system prompt, or Grok's way of appending to its own (_meta.rules).
-      system: systemPrompt?.content?.map((c) => c.text).join("\n") ?? _meta?.rules ?? "",
+      system: systemPrompt?.content?.map((c) => c.text).join("\n") ?? _meta?.rules ?? _meta?.antigravity?.systemPrompt?.append ?? "",
       cwd,
       model: FIRST_MODEL,
       turns: 0,

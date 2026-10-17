@@ -119,7 +119,8 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
-            {chosen && (chosen.signIn || chosen.settings.length > 0) && (
+            {/* Only what still has to be done: a backend already signed in needs nothing here. */}
+            {chosen && accounts[chosen.id]?.signedIn !== true && (chosen.signIn || chosen.terminalLogin || chosen.settings.length > 0) && (
               <div className="card" style={{ marginTop: 12 }}>
                 <div className="small muted">
                   {chosen.signIn || chosen.terminalLogin

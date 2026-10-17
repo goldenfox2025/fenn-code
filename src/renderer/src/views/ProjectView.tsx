@@ -247,8 +247,9 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
   const extra = MORE.find((m) => m.id === tab)
   const [q, setQ] = useState<string | null>(null)
   const shown = threads.filter((t) => !q || t.title.toLowerCase().includes(q.toLowerCase()))
-  const waiting = shown.filter((x) => !x.resolved && ['waiting', 'error'].includes(threadState(x)))
-  const working = shown.filter((x) => !x.resolved && threadState(x) === 'working')
+  // The welcome line speaks for all threads, whatever the search shows.
+  const waiting = threads.filter((x) => !x.resolved && ['waiting', 'error'].includes(threadState(x)))
+  const working = threads.filter((x) => !x.resolved && threadState(x) === 'working')
   const done = shown.filter((x) => x.resolved || threadState(x) === 'done')
   const board = boardCount(project.progress)
   const next = nextMilestone(project.progress)

@@ -71,7 +71,8 @@ export function ProjectsPage() {
           <Search size={15} />
           <input placeholder={t('搜索项目…')} value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
-        {list.length === 0 && !archived.length && (
+        {q && projects.length > 0 && !matching.length && <div className="empty small muted">{t('没有匹配的项目')}</div>}
+        {projects.length === 0 && (
           <div className="empty">
             <FolderKanban size={24} />
             <div>{t('项目把一个主对话和多个讨论串组织在一起，适合长期推进的工作。')}</div>

@@ -771,10 +771,15 @@ const scenarios = {
     await page.fill('.composer textarea', '写文件 计划.md')
     await page.keyboard.press('Enter')
     // The folder the app makes once the agent writes a file gets its own header in the sidebar.
-    await page.waitForFunction(() => document.querySelectorAll('.sidebar .folder-head').length > 1, null, { timeout: 30000 })
+    await page.waitForSelector('.sidebar .folder-head:has-text("写文件")', { timeout: 30000 })
     await page.hover('.sidebar .folder-head >> nth=0')
     await wait(500)
     await shot('40-autoassign')
+    // With a folder chosen, its menu is about that folder only.
+    await page.click('.composer .folder-chip')
+    await page.waitForSelector('.menu')
+    await wait(300)
+    await shot('41-folder-menu')
   },
   async threads() {
     await page.fill('.center .composer textarea', '帮我调研一下 ACP 协议的会话管理')

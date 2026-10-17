@@ -194,3 +194,31 @@ describe('a permission mode the agent takes only as a command (Grok)', () => {
     } finally { await mgr.disposeAll() }
   }, 30000)
 })
+
+describe('an agent that signs in again in each process and takes rules in its own _meta (Antigravity)', () => {
+  it('signs in quietly when a session needs it, and hands the rules over where it advertises', async () => {
+    const { acpPlugin } = await import('../src/main/backends/acp')
+    const plugin = acpPlugin({
+      id: 'meta-auth',
+      name: 'MetaAuth',
+      launch: ({ nodeCommand, resourcesDir }) => ({ command: nodeCommand.command, args: [join(resourcesDir, 'mock-agent.mjs')], env: { ...nodeCommand.env, MOCK_AUTH: '1', MOCK_META_PROMPT: '1' } }),
+      quirks: { systemPromptMeta: 'antigravity.systemPrompt.append', autoAuth: () => 'mock-login' }
+    })
+    const events: HostEvent[] = []
+    const mgr = new BackendManager({
+      plugins: [plugin],
+      settings: { get: () => ({}), set: () => undefined },
+      resourcesDir: join(__dirname, '../resources'),
+      nodeCommand: { command: process.execPath, env: {} },
+      defaultCwd: process.cwd(),
+      emit: (e) => events.push(e)
+    })
+    try {
+      const s = await mgr.newSession('meta-auth', { system: '<ancora-context>规则</ancora-context>' })
+      expect(s.systemApplied).toBe(true)
+      await mgr.prompt('meta-auth', s.sessionId, [{ type: 'text', text: '规则在哪' }])
+      const said = events.map((e) => (e.type === 'agent' && e.event.kind === 'message.delta' ? e.event.text : '')).join('')
+      expect(said).toBe('系统提示：有；本条消息：无')
+    } finally { await mgr.disposeAll() }
+  }, 30000)
+})

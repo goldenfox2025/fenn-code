@@ -228,7 +228,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
           onChange={setTarget}
           options={[
             { value: '', label: t('每次新建一个对话') },
-            ...(projects.length ? [{ heading: t('项目') }] : []),
+            ...(projects.some((p) => !p.archived || p.id === projectId) ? [{ heading: t('项目') }] : []),
             ...projects.filter((p) => !p.archived || p.id === projectId).map((p) => ({ value: p.id, label: p.name, icon: <FolderKanban size={15} /> }))
           ]}
         />
@@ -541,6 +541,7 @@ function AppearanceSettings() {
 
 function BackendSettings() {
   const backends = useApp((s) => s.backends)
+  const accounts = useApp((s) => s.accounts)
   const def = useApp((s) => s.settings.defaultBackendId)
   const [config, setConfig] = useState<{ error?: string; example: string }>({ example: '' })
   const [showExample, setShowExample] = useState(false)
@@ -567,7 +568,12 @@ function BackendSettings() {
             {t('现在用的还是上一次能用的后端列表。改好后点「重新加载」。')}</div>
         </div>
       )}
-      {backends.map((b) => (
+      {backends.map((b) => {
+        const account = accounts[b.id]
+        const installed = (account?.installed ?? b.installed) !== false
+        // Sign in only to something installed and not already signed in; only a usable backend can be the default.
+        const canSignIn = installed && account?.signedIn !== true
+        return (
         <div key={b.id} className="card" style={{ marginBottom: 12 }}>
           <div className="row-between backend-card-head">
             <div className="backend-card-info">
@@ -575,22 +581,23 @@ function BackendSettings() {
               <div className="small muted">{b.description}</div>
               {(b.account || b.upgrade) && <AccountLine backendId={b.id} name={b.name} upgrade={b.upgrade} configKey={JSON.stringify(b.configured)} />}
             </div>
-            {b.signIn && <LoginButton backendId={b.id} />}
-            {!b.signIn && b.terminalLogin && <TerminalLoginButton backendId={b.id} />}
+            {canSignIn && b.signIn && <LoginButton backendId={b.id} />}
+            {canSignIn && !b.signIn && b.terminalLogin && <TerminalLoginButton backendId={b.id} />}
             {def === b.id ? (
               <span className="status-chip done">
                 <Check size={11} />
                 {t('默认')}</span>
-            ) : (
+            ) : backendAvailable(b, account) ? (
               <button className="btn" onClick={() => api().updateSettings({ defaultBackendId: b.id })}>
                 {t('设为默认')}</button>
-            )}
+            ) : null}
           </div>
           {b.settings.map((s) => (
             <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />
           ))}
         </div>
-      ))}
+        )
+      })}
       <details className="advanced">
         <summary>{t('高级')}</summary>
         <div className="help small muted" style={{ margin: '8px 0 12px' }}>
@@ -893,6 +900,7 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
           />
           <button
             className="btn primary"
+            disabled={!value.trim()}
             onClick={() => void save()}
           >
             {t('保存')}</button>

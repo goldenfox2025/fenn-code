@@ -50,7 +50,14 @@ export default acpPlugin({
     { key: 'AGY_ACP_BIN', label: tk('服务程序路径'), placeholder: EXE, help: tk('留空自动查找；也可填写 agy_acp_server 的绝对路径。') }
   ],
   isInstalled: (config) => !!findAgy(config),
-  quirks: { missingHint: MISSING },
+  quirks: {
+    missingHint: MISSING,
+    // It advertises `_meta.antigravity.systemPrompt.append` in its capabilities; rules there outlive its compaction.
+    systemPromptMeta: 'antigravity.systemPrompt.append',
+    // Each new server process asks for sign-in again: with a key, or the Google sign-in it stored.
+    autoAuth: (config) =>
+      config.GEMINI_API_KEY ? 'gemini-api-key' : existsSync(join(homedir(), '.gemini', 'antigravity-acp', 'acp_token.json')) ? 'oauth-personal' : undefined
+  },
   // Built-in curl and tar (Windows 10 and later have both): download Google's archive, unpack it into ~/.agy-acp-server.
   upgrade: archive
     ? {

@@ -61,8 +61,15 @@ export interface AcpQuirks {
   /**
    * The `session/new` `_meta` field that appends to the agent's system prompt, for
    * agents that take one there instead of ACP sessionCapabilities.systemPrompt (Grok: `rules`).
+   * A dotted path (Antigravity: `antigravity.systemPrompt.append`) is nested, and used only
+   * when the agent advertises the same path in its capabilities' `_meta`.
    */
   systemPromptMeta?: string
+  /**
+   * A sign-in the agent needs again in each new process, and can do without the user (an API key
+   * in settings, or a stored token it refreshes). Tried once when a session says it needs sign-in.
+   */
+  autoAuth?(config: Record<string, string>): string | undefined
   /**
    * A choice the agent offers only as a / command (Grok's `/always-approve on|off`), shown as a
    * session option like any other. Picking a value sends its command as a quiet prompt.
@@ -382,12 +389,21 @@ export class AcpBackend implements AgentBackend {
 
   /** The agent accepts a client system prompt (ACP sessionCapabilities.systemPrompt), which survives its compaction. */
   private takesSystemPrompt(system?: string): boolean {
-    return !!system && (!!this.quirks.systemPromptMeta || !!(this.caps?.sessionCapabilities as { systemPrompt?: unknown } | undefined)?.systemPrompt)
+    return !!system && (this.metaPromptPath().length > 0 || !!(this.caps?.sessionCapabilities as { systemPrompt?: unknown } | undefined)?.systemPrompt)
+  }
+
+  /** Where in session/new `_meta` the system prompt goes, or [] when it can't go there. */
+  private metaPromptPath(): string[] {
+    const path = this.quirks.systemPromptMeta?.split('.') ?? []
+    if (path.length < 2) return path
+    const advertised = path.reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], (this.caps as { _meta?: unknown } | undefined)?._meta)
+    return advertised ? path : []
   }
 
   private systemPrompt(system?: string): Record<string, unknown> {
     if (!this.takesSystemPrompt(system)) return {}
-    if (this.quirks.systemPromptMeta) return { _meta: { [this.quirks.systemPromptMeta]: system } }
+    const path = this.metaPromptPath()
+    if (path.length) return { _meta: path.reduceRight<unknown>((inner, k) => ({ [k]: inner }), system) as Record<string, unknown> }
     return { systemPrompt: { mode: 'append', content: [{ type: 'text', text: system! }] } }
   }
 
@@ -395,8 +411,15 @@ export class AcpBackend implements AgentBackend {
     await this.start()
     const mcpServers = this.mcpServers(tools)
     let res: acp.NewSessionResponse
+    const open = () => this.conn!.newSession({ cwd, mcpServers, ...this.systemPrompt(system) } as acp.NewSessionRequest)
     try {
-      res = await this.conn!.newSession({ cwd, mcpServers, ...this.systemPrompt(system) } as acp.NewSessionRequest)
+      res = await open().catch(async (err) => {
+        // Signed in before, in another process: sign in again quietly and try once more.
+        const method = classifyError(errorText(err)) === 'auth' ? this.quirks.autoAuth?.(this.host.config) : undefined
+        if (!method || !this.auth.some((m) => m.id === method)) throw err
+        await this.conn!.authenticate({ methodId: method })
+        return open()
+      })
     } catch (err) {
       const msg = errorText(err)
       if (classifyError(msg) === 'auth' || classifyError(msg) === 'refresh') {

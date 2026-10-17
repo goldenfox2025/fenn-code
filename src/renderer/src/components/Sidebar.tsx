@@ -75,7 +75,7 @@ export function Sidebar() {
   const groups = useMemo(() => groupByFolder(unpinned, platform), [unpinned, platform])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const SHOWN = 8
-  const matchingProjects = q ? s.projects.filter((p) => p.name.toLowerCase().includes(q)) : []
+  const matchingProjects = q ? s.projects.filter((p) => !p.archived && p.name.toLowerCase().includes(q)) : []
 
   const projectActivity = (p: Project) => stats.get(p.id)?.activity ?? ''
 

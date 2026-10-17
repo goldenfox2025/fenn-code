@@ -303,7 +303,9 @@ export function ContextRing({ usage, scope, timing, onCompact }: { usage?: Usage
         onClick={(e) => {
           e.stopPropagation()
           // The agent's own compact command, when it has one, as Claude Code's /compact.
-          openMenu(e.currentTarget, [...usageMenu(usage, scope, timing), ...(onCompact ? [{ separator: true }, { label: t('压缩上下文'), onClick: onCompact }] : [])])
+          // Nothing to compact before the first turn.
+          const something = !!used || (usage?.turns ?? 0) + (usage?.unreported ?? 0) > 0
+          openMenu(e.currentTarget, [...usageMenu(usage, scope, timing), ...(onCompact && something ? [{ separator: true }, { label: t('压缩上下文'), onClick: onCompact }] : [])])
         }}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
