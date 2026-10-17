@@ -843,6 +843,28 @@ await check('a mode picked on the new-chat page applies to that chat only', asyn
   await page.keyboard.press('Escape')
 })
 
+await check('approvals come one at a time, each in the place of the last', async () => {
+  await page.click('.sidebar .nav-item:has-text("新建")')
+  await page.locator('.composer-row .backend-chip').click()
+  await page.locator('.menu .menu-item', { hasText: '演示 Agent' }).click()
+  await page.fill('.composer textarea', '同时写三个')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.perm', { timeout: 15000 })
+  await page.waitForTimeout(300)
+  for (let left = 2; left >= 0; left--) {
+    if ((await page.locator('.perm').count()) !== 1) throw new Error(`${await page.locator('.perm').count()} approval cards at once`)
+    const more = await page.locator('.perm-more').textContent().catch(() => '')
+    if (left && !more?.includes(String(left))) throw new Error(`says "${more}" with ${left} more waiting`)
+    const before = (await page.locator('.perm-slot').boundingBox()).y
+    await page.click('.perm .btn.primary')
+    if (!left) break
+    await page.waitForSelector('.perm', { timeout: 3000 })
+    const after = (await page.locator('.perm-slot').boundingBox()).y
+    if (Math.abs(after - before) > 30) throw new Error(`the next card moved ${Math.round(after - before)}px`)
+  }
+  await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
+})
+
 await check('the new-chat page shows usage widgets that can be removed and brought back', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
   // The demo agent's replies above count as usage.

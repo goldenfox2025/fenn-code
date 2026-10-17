@@ -30,12 +30,20 @@ function detailLines(u: MessageUsage | UsageTotals): string[] {
 
 const seconds = (ms: number) => (ms < 1000 ? t('{0} 毫秒', Math.round(ms)) : t('{0} 秒', (ms / 1000).toFixed(1)))
 
-/** How fast the last reply streamed, as the app saw it (not the provider's own timing). */
-function timingLine(timing: GenerationTiming): string {
-  const parts = [t('首个回复 {0}', seconds(timing.firstResponseMs))]
+const NO_SPEED: Record<NonNullable<GenerationTiming['noSpeed']>, string> = {
+  output: tk('没有速度：agent 没报告这条回复的输出 token 数'),
+  short: tk('没有速度：回复不到 1 秒就到齐了'),
+  waited: tk('没有速度：回复中途等过确认或重试'),
+  stopped: tk('没有速度：回复没有正常结束')
+}
+
+/** How fast a reply streamed, as the app saw it (not the provider's own timing), or why that isn't known. */
+function timingLines(timing: GenerationTiming): string[] {
   const speed = tokensPerSecond(timing)
-  if (speed !== undefined) parts.push(rate(speed))
-  return parts.join(' · ')
+  return [
+    t('首个回复 {0}', seconds(timing.firstResponseMs)),
+    speed !== undefined ? t('输出速度 {0}，平均每个 token {1}', rate(speed), seconds(timing.tpotMs!)) : timing.noSpeed ? t(NO_SPEED[timing.noSpeed]) : ''
+  ].filter(Boolean)
 }
 
 /** Accounts billed in credits (Qoder) report no per-reply tokens worth showing. */
@@ -49,7 +57,7 @@ export function MessageUsageLabel({ m }: { m: Message }) {
   const speed = tokensPerSecond(m.timing)
   const line = [usageLine(m.usage), speed !== undefined ? rate(speed) : ''].filter(Boolean).join(' · ')
   if (!line) return null
-  const title = [...detailLines(m.usage), m.usage.cost && m.usage.cost.amount > 0 ? t('费用 {0}', formatCost(m.usage.cost)) : '', m.timing ? timingLine(m.timing) : '']
+  const title = [...detailLines(m.usage), m.usage.cost && m.usage.cost.amount > 0 ? t('费用 {0}', formatCost(m.usage.cost)) : '', ...(m.timing ? timingLines(m.timing) : [])]
   return (
     <span className="msg-usage" data-tip={title.filter(Boolean).join('\n')}>
       {line}
@@ -160,6 +168,8 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
           <div className="usage-head">{t('最近一次回复')}</div>
           <Row label={t('首个回复')} value={seconds(timing.firstResponseMs)} />
           {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Ancora 看到的输出时间计算，不含工具运行的时间')} />}
+          {speed !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs!)} tip={t('输出时平均每个 token 的间隔（TPOT）')} />}
+          {speed === undefined && timing.noSpeed && <div className="usage-foot">{t(NO_SPEED[timing.noSpeed])}</div>}
         </div>
       )}
     </div>

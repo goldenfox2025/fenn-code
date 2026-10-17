@@ -42,7 +42,7 @@ function useWaiting(conv: Conversation): { rows: string[]; live: Set<string> } {
   const rows: string[] = []
   const live = new Set<string>()
   if (conv.needsUser?.kind === 'decision') rows.push(t('等您决定：{0}', conv.needsUser.text ?? ''))
-  if (conv.needsUser?.kind === 'permission') rows.push(t('等您确认一个操作'))
+  // A permission request is not listed: its card is right below, and the row would blink between two requests.
   for (const o of outgoing) {
     const row = o.deliver === 'when_idle' ? t('等「{0}」空闲后交接', o.to) : o.deliver === 'now' ? t('正在交给「{0}」', o.to) : t('等「{0}」完成后交接', o.to)
     rows.push(row)

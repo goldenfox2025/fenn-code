@@ -1,5 +1,5 @@
 import { ShieldQuestion } from 'lucide-react'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { PermissionRequest } from '../../../shared/contract'
 import { api, useApp } from '../store'
@@ -13,15 +13,44 @@ const TIERS: { id: Tier; label: string }[] = [
   { id: 'none', label: '不允许' } // i18n-ignore
 ]
 
-/** Pending permission requests from agents working in this conversation. */
+/** How long an answered request's place is kept for the next one (agents often ask several in a row). */
+const HOLD_MS = 400
+
+/**
+ * This conversation's permission requests, one at a time, oldest first, with how many more wait.
+ * After an answer the card's place is held a moment, so a next request lands where it was
+ * and the conversation above doesn't jump.
+ */
 export function PermissionPrompts({ conversationId }: { conversationId: string }) {
-  const perms = useApp(useShallow((s) => s.permissions.filter((p) => p.conversationId === conversationId)))
-  if (!perms.length) return null
+  const queue = useApp(useShallow((s) => s.permissions.filter((p) => p.conversationId === conversationId)))
+  const current = queue[0]
+
+  const box = useRef<HTMLDivElement>(null)
+  const height = useRef(0)
+  const [hold, setHold] = useState<{ height: number; closing?: boolean } | null>(null)
+  const shown = current?.request.requestId
+  useLayoutEffect(() => {
+    const el = box.current
+    if (shown && el) {
+      setHold(null)
+      // Its height as last drawn: that is the place to keep once it goes.
+      const ro = new ResizeObserver(() => (height.current = el.offsetHeight))
+      ro.observe(el)
+      return () => ro.disconnect()
+    }
+    if (!height.current) return
+    setHold({ height: height.current })
+    height.current = 0
+    const close = setTimeout(() => setHold({ height: 0, closing: true }), HOLD_MS)
+    const end = setTimeout(() => setHold(null), HOLD_MS + 300)
+    return () => (clearTimeout(close), clearTimeout(end))
+  }, [shown])
+
+  if (!current) return hold ? <div className={'perm-hold' + (hold.closing ? ' closing' : '')} style={{ height: hold.height }} /> : null
   return (
-    <div style={{ padding: '0 24px' }}>
-      {perms.map(({ request: r }) => (
-        <Prompt key={r.requestId} r={r} />
-      ))}
+    <div className="perm-slot" ref={box}>
+      <Prompt key={current.request.requestId} r={current.request} />
+      {queue.length > 1 && <div className="perm-more">{t('还有 {0} 个等您确认', queue.length - 1)}</div>}
     </div>
   )
 }

@@ -176,7 +176,24 @@
   transform: translateX(16px);
 }
 
-/* permission prompt */
+/* permission prompt: one at a time, in a slot that holds its place between requests */
+.perm-slot,
+.perm-hold {
+  /* Holds the card's margins inside, so its height is the height to keep. */
+  display: flow-root;
+  padding: 0 var(--space-9);
+}
+.perm-hold.closing {
+  transition: height var(--dur-2) var(--ease);
+}
+.perm-more {
+  max-width: 800px;
+  margin: calc(-1 * var(--space-3)) auto var(--space-5);
+  padding: 0 var(--space-2);
+  color: var(--text-3);
+  font-size: var(--font-xs);
+  text-align: right;
+}
 .perm {
   max-width: 800px;
   margin: 0 auto var(--space-5);

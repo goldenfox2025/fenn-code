@@ -384,12 +384,14 @@ export class ChatService {
     const usage = turnUsageOf(result, costAtStart, live?.cost)
     if (usage) reply.usage = usage
     if (usage) reply.model = this.replyModel(conversationId, live?.backendId)
-    reply.timing = this.meters.get(conversationId)?.finish(result.usage, result.stopReason,
+    // An agent's own / command is answered by the program, not the model: it says nothing about speed.
+    reply.timing = opts.raw ? undefined : this.meters.get(conversationId)?.finish(result.usage, result.stopReason,
       !this.backends.list().find((b) => b.id === conv!.backendId)?.credits)
     this.meters.delete(conversationId)
     this.updateMessage(reply)
-    // A turn that failed before the agent answered says nothing about what the backend reports.
-    if (usage || (live && result.stopReason !== 'error')) {
+    // A turn that failed before the agent answered says nothing about what the backend reports,
+    // nor does an agent's own / command (the program answers it, no model runs).
+    if (usage || (live && result.stopReason !== 'error' && !opts.raw)) {
       const c = this.store.conversation(conversationId)
       if (c) this.patchConversation(conversationId, { usage: { ...addTurn(c.usage, usage), ...contextOf(c.usage) } })
     }
@@ -403,7 +405,7 @@ export class ChatService {
     const after = this.patchConversation(conversationId, {
       status: result.stopReason === 'error' ? 'error' : 'idle',
       ...(opts.hiddenReply ? {} : { updatedAt: Date.now(), lastPreview: preview || this.store.conversation(conversationId)?.lastPreview, unread: true,
-        ...(!opts.housekeeping ? { timing: reply.timing } : {}) })
+        ...(!opts.housekeeping && !opts.raw ? { timing: reply.timing } : {}) })
     })
     // The conversation may have been deleted while the reply ran.
     if (after && !opts.hiddenReply) this.hooks.afterTurn?.(after, reply, result)

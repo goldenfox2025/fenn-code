@@ -25,18 +25,21 @@ describe('observed streaming timings', () => {
     const quick = meter()
     quick.chunk(300)
     quick.chunk(310)
-    expect(quick.m.finish({ output: 380 }, 'end_turn')).toEqual({ firstResponseMs: 300 })
+    expect(quick.m.finish({ output: 380 }, 'end_turn')).toEqual({ firstResponseMs: 300, noSpeed: 'short' })
   })
   it('does not derive TPOT from missing counts, partial replies, a single chunk, or untrusted counts', () => {
     const { m, chunk } = meter()
     expect(m.finish({ output: 10 }, 'end_turn')).toBeUndefined()
     chunk(100)
-    expect(m.finish({ output: 10 }, 'end_turn')).toEqual({ firstResponseMs: 100 })
+    expect(m.finish({ output: 10 }, 'end_turn')).toEqual({ firstResponseMs: 100, noSpeed: 'short' })
     chunk(200)
     for (const output of [undefined, 0, 1, -1, NaN, Infinity, 1.5]) expect(m.finish({ output }, 'end_turn')?.tpotMs).toBeUndefined()
     expect(m.finish({ output: 10 }, 'cancelled')?.tpotMs).toBeUndefined()
     expect(m.finish({ output: 10 }, 'error')?.tpotMs).toBeUndefined()
     expect(m.finish({ output: 10 }, 'end_turn', false)?.tpotMs).toBeUndefined()
+    // Each says why, for the reply's tooltip.
+    expect(m.finish({ output: 10 }, 'cancelled')?.noSpeed).toBe('stopped')
+    expect(m.finish({}, 'end_turn')?.noSpeed).toBe('output')
   })
   it('leaves out the time tools run, and gives no speed for waits it cannot account for', () => {
     const { m, chunk } = meter()
@@ -53,7 +56,7 @@ describe('observed streaming timings', () => {
     waited.chunk(100)
     waited.m.interrupt()
     waited.chunk(20000)
-    expect(waited.m.finish({ output: 10 }, 'end_turn')).toEqual({ firstResponseMs: 100 })
+    expect(waited.m.finish({ output: 10 }, 'end_turn')).toEqual({ firstResponseMs: 100, noSpeed: 'waited' })
   })
   it('persists reply timings separately from token totals and restores them across restart', async () => {
     const first = await makeCore(undefined, { MOCK_SIMPLE_STREAM: '1' })

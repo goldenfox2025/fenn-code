@@ -847,21 +847,24 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
 
   if (/写|write/i.test(text)) {
     // Like real agents, the session's mode decides whether edits need asking.
-    const res = s.mode === "acceptEdits" || s.mode === "bypassPermissions" ? { outcome: { outcome: "selected", optionId: "allow" } } : await requestClient("session/request_permission", {
+    // 「写三次」 asks three times in a row; 「同时写三个」 asks three at once.
+    const ask = (i) => s.mode === "acceptEdits" || s.mode === "bypassPermissions" ? { outcome: { outcome: "selected", optionId: "allow" } } : requestClient("session/request_permission", {
       sessionId,
       toolCall: {
-        toolCallId: `w${s.turns}`,
-        title: "写入 notes.md",
+        toolCallId: `w${s.turns}-${i}`,
+        title: i ? `写入 notes-${i + 1}.md` : "写入 notes.md",
         kind: "edit",
-        rawInput: { path: "notes.md" },
+        rawInput: { path: i ? `notes-${i + 1}.md` : "notes.md" },
       },
       options: [
         { optionId: "allow", name: "允许", kind: "allow_once" },
         { optionId: "reject", name: "拒绝", kind: "reject_once" },
       ],
     });
-    const ok =
-      res?.outcome?.outcome === "selected" && res.outcome.optionId === "allow";
+    const results = [];
+    if (/同时写三个/.test(text)) results.push(...(await Promise.all([0, 1, 2].map(ask))));
+    else for (let i = 0; i < (/写三次/.test(text) ? 3 : 1); i++) results.push(await ask(i));
+    const ok = results.every((res) => res?.outcome?.outcome === "selected" && res.outcome.optionId === "allow");
     await stream(
       sessionId,
       ok ? "已获得许可（演示中不会真的写文件）。\n\n" : "好的，不写文件。\n\n",

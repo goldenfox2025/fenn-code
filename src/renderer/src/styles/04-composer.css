@@ -36,10 +36,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.queue-row .text-link {
-  flex: none;
-  font-size: var(--font-xs);
-}
 /* As in Claude: a waiting message's actions show when the pointer is on it. */
 .queue-row > button {
   opacity: 0;

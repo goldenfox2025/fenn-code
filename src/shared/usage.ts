@@ -11,6 +11,8 @@ export interface GenerationTiming {
   tpotMs?: number
   streamMs?: number
   outputTokens?: number
+  /** Why there is no speed for this reply: no output count, too short, a wait inside it, or it didn't end normally. */
+  noSpeed?: 'output' | 'short' | 'waited' | 'stopped'
 }
 
 /**

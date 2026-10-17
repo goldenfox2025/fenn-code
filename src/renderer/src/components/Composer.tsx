@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { errorText } from '@shared/errors'
-import { ArrowLeftRight, ArrowUp, ChevronDown, CornerDownRight, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
+import { ArrowLeftRight, ArrowUp, ChevronDown, CornerDownRight, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, SendHorizontal, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
 import { MODEL_PROBE_TIMEOUT_MS, type Attachment, type Conversation, type FolderCandidate, type QueuedMessage } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp, toastError } from '../store'
@@ -541,7 +541,9 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             <div key={q.id} className="queue-row">
               <CornerDownRight size={14} />
               <span className="queue-text">{q.text || t('{0} 个附件', q.attachments?.length ?? 0)}</span>
-              <button className="text-link" onClick={() => void queued(q.id, 'now')}>{t('立即发送')}</button>
+              <button className="icon-btn sm" data-tip={t('立即发送')} aria-label={t('立即发送')} onClick={() => void queued(q.id, 'now')}>
+                <SendHorizontal size={14} />
+              </button>
               <button className="icon-btn sm" data-tip={t('编辑')} onClick={() => void queued(q.id, 'edit')}>
                 <Pencil size={14} />
               </button>

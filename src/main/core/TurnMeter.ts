@@ -19,7 +19,7 @@ export class TurnMeter {
 
   observe(event: AgentEvent): void {
     const time = this.now()
-    if ((event.kind === 'message.delta' || event.kind === 'thought.delta') && event.text.length) {
+    if ((event.kind === 'message.delta' || event.kind === 'thought.delta') && event.text.trim()) {
       this.first ??= time
       this.last = time
       this.chunks++
@@ -50,8 +50,11 @@ export class TurnMeter {
     // Output that arrives in one burst (an agent that buffers it) says nothing about speed on its own:
     // time it from the send instead, which counts the model's thinking before the burst.
     if (genMs < MIN_STREAM_MS) genMs = this.last! - this.started - this.toolMs
-    if (reliableTokens && stop === 'end_turn' && !this.interrupted && !this.open.size &&
-      output !== undefined && Number.isSafeInteger(output) && output > 1 && genMs >= MIN_STREAM_MS) {
+    if (!reliableTokens || output === undefined || !Number.isSafeInteger(output) || output <= 1) timing.noSpeed = 'output'
+    else if (stop !== 'end_turn') timing.noSpeed = 'stopped'
+    else if (this.interrupted || this.open.size) timing.noSpeed = 'waited'
+    else if (genMs < MIN_STREAM_MS) timing.noSpeed = 'short'
+    else {
       timing.streamMs = genMs
       timing.outputTokens = output
       timing.tpotMs = genMs / (output - 1)
