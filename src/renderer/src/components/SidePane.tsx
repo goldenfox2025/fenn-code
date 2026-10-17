@@ -103,7 +103,7 @@ function BackgroundList({ conv }: { conv: Conversation }) {
               </span>
             )}
           </div>
-          <div className="preview">{b.endedAt ? relTime(b.endedAt) : t('{0}开始', relTime(b.startedAt))}</div>
+          <div className="preview">{b.endedAt ? relTime(b.endedAt) : (Date.now() - b.startedAt < 60_000 ? t('刚刚开始') : t('{0}开始', relTime(b.startedAt)))}</div>
         </div>
       ))}
     </div>

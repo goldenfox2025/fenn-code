@@ -184,6 +184,6 @@
 /* Switching looks cross-fades the whole window (App.tsx useTheme). */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 300ms;
-  animation-timing-function: ease;
+  animation-duration: var(--dur-3);
+  animation-timing-function: var(--ease);
 }

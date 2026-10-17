@@ -568,6 +568,21 @@ const scenarios = {
     await wait(300)
     await shot('03-chat')
   },
+  // A message sent while the reply runs waits in view; 停止 puts it back in the composer.
+  async queued() {
+    await page.evaluate(() => window.ancora.startChat({ text: '#啰嗦慢', backendId: 'mock' }))
+    await page.click('.sidebar :text("#啰嗦慢")')
+    await page.waitForSelector('.send-btn.stop', { timeout: 15000 })
+    await page.fill('.composer textarea', '顺便把结论整理成表格')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.msg-queued', { timeout: 5000 })
+    await wait(400)
+    await shot('130-queued')
+    await page.click('.send-btn.stop')
+    await page.waitForFunction(() => document.querySelector('.composer textarea')?.value.includes('整理成表格'), null, { timeout: 5000 })
+    await wait(300)
+    await shot('131-queued-returned')
+  },
   async project() {
     await page.click('.nav-item:has-text("项目")')
     await page.click('.page-head .btn')

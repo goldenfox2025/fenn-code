@@ -27,6 +27,8 @@ export type AgentEvent =
   | { kind: 'commands'; names: string[]; commands?: { name: string; description?: string }[] }
   /** A command the agent runs through the app started or ended (shown as background work). */
   | { kind: 'background'; id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null }
+  /** The user made this folder the working folder of a session that had none. */
+  | { kind: 'folder'; path: string }
   /** The agent compacted the session's context (ACP compaction_update, completed). */
   | { kind: 'compacted' }
   /** How full the context window is, and what the session has cost so far (cumulative), as the backend reports. */
@@ -235,6 +237,8 @@ export interface BackendHost {
   resourcesDir: string
   /** Command that runs a Node.js script without requiring Node to be installed. */
   nodeCommand: { command: string; env: Record<string, string> }
+  /** Whether the user may make this folder a conversation's working folder. */
+  canWorkIn?(path: string): boolean
 }
 
 /** A setting a plugin needs from the user, e.g. an API key. */

@@ -68,6 +68,7 @@ export class Store {
       // A turn that was running when the app last quit was cut off.
       if (c.status === 'working') this.interrupted.push(c.id)
       if (c.status === 'working' || (c.status === 'waiting' && c.kind !== 'thread')) c.status = 'idle'
+      delete c.queued
     }
   }
 

@@ -76,7 +76,7 @@ flowchart TB
 | Backends | `src/main/backends/` | ACP adapter plus one plugin file per backend (see the README) |
 | Renderer state | `src/renderer/src/store.ts` | Applies AppEvents; `toast`, `toastError` |
 | Shared renderer actions | `src/renderer/src/actions.ts`, `routes.ts` | Deleting chats and projects, where a conversation opens |
-| Styles | `src/renderer/src/tokens.css`, `styles.css` → `styles/NN-area.css` | Files load in cascade order; values come from tokens |
+| Styles | `src/renderer/src/tokens.css`, `styles.css` → `styles/NN-area.css` | Files load in cascade order; values come from tokens. Motion: `--ease` and `--dur-1/2/3`, entrances in `19-motion.css` |
 | Strings | `src/shared/i18n/` | `node scripts/i18n-add.mjs '{"中文":"English"}'` |
 
 ## Adding an API method
@@ -98,6 +98,10 @@ Put a tool family in `src/main/core/tools/<family>.ts`. It is a function `(deps,
 Register the family in `Orchestrator.baseTools`, or in AppCore's `extraTools` when the core owns its data.
 
 A thread's tool list counts against `test/prompt-size.test.ts`. That test measures the real `tools/list` the agent receives, so keep descriptions short. List a tool only where it can work: for example, computer control's tools appear only while it is turned on.
+
+## Working folders
+
+A chat with no folder works in a private scratch folder (`ChatService.scratchPath`), where the agent reads, writes and runs commands freely. Anything outside the working folder goes through a permission prompt (`backends/workspace.ts`); in a chat with no folder of its own, that prompt also offers 「设为工作文件夹」 for the folder involved (its nearest `.git` project, when there is one). Choosing it sets the chat's folder; the next turn's session starts there and the scratch files move in without replacing the user's. A mode that trusts the agent (bypassPermissions, full-access) is not asked. A chat that only made files in scratch gets `Documents/Ancora/<title>` after its turn (`AppCore.placeChat`).
 
 ## Per-conversation state
 

@@ -11,7 +11,7 @@
   background: var(--bg-input);
   box-shadow: var(--shadow);
   padding: var(--space-6) var(--space-6) var(--space-4) var(--space-7);
-  transition: border-color 0.15s;
+  transition: border-color var(--dur-2) var(--ease);
 }
 .composer:focus-within {
   border-color: rgba(31, 30, 29, 0.3);

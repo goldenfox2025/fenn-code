@@ -12,7 +12,7 @@
   box-shadow: var(--shadow-pop);
   padding: 5px;
   outline: none;
-  animation: menu-in 0.08s ease-out;
+  animation: menu-in var(--dur-2) var(--ease);
 }
 @keyframes menu-in {
   from {

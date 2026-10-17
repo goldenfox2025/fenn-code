@@ -97,6 +97,12 @@ export interface Message {
 export type ConversationKind = 'chat' | 'project' | 'thread'
 export type WorkStatus = 'idle' | 'working' | 'waiting' | 'done' | 'error'
 
+/** A message waiting behind the running reply. */
+export interface QueuedMessage {
+  text: string
+  attachments?: Attachment[]
+}
+
 export interface Conversation {
   id: string
   kind: ConversationKind
@@ -141,6 +147,8 @@ export interface Conversation {
   agentCommands?: { name: string; description?: string }[]
   /** Commands the agent ran through the app, newest last (the last few kept), shown under 后台. */
   background?: BackgroundCommand[]
+  /** Messages the user sent while a reply runs, waiting their turn (not kept across a restart). */
+  queued?: QueuedMessage[]
   resolved?: boolean
   pinned?: boolean
   /** Messages the user has not seen yet. */
@@ -520,7 +528,8 @@ export interface AncoraApi {
   editMessage(conversationId: string, messageId: string, text: string): Promise<void>
   /** Shows version `index` of an edited or regenerated turn. */
   switchVariant(conversationId: string, group: string, index: number): Promise<void>
-  cancel(conversationId: string): Promise<void>
+  /** Stops the reply; messages still waiting come back, for the composer. */
+  cancel(conversationId: string): Promise<QueuedMessage[]>
   setModel(conversationId: string, modelId: string): Promise<void>
   /** Sets a session option (e.g. the mode) for one conversation. */
   setOption(conversationId: string, optionId: string, value: string): Promise<void>

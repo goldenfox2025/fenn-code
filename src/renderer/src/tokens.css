@@ -4,6 +4,12 @@
  * styles.css builds on these; see test/style-tokens.test.ts.
  */
 :root {
+  /* Motion: every transition and entrance takes its timing from here (test/style-tokens.test.ts).
+     One curve that starts quickly and settles softly, as Claude's interface moves. */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-1: 120ms; /* hover, press, fades */
+  --dur-2: 180ms; /* menus, chevrons, small moves */
+  --dur-3: 260ms; /* panes, dialogs, the look changing */
   /* Pane widths (the user can drag them; see ResizeHandle). */
   --sidebar-w: 284px;
   --resize-hit: 8px;

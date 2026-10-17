@@ -156,7 +156,7 @@
   background: var(--border-strong);
   position: relative;
   flex: none;
-  transition: background 0.15s;
+  transition: background var(--dur-2) var(--ease);
 }
 .switch::after {
   content: '';
@@ -167,7 +167,7 @@
   left: 2px;
   border-radius: 50%;
   background: white;
-  transition: transform 0.15s;
+  transition: transform var(--dur-2) var(--ease);
 }
 .switch.on {
   background: var(--accent);

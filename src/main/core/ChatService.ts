@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, TurnResult } from '../../shared/contract'
 import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
-import type { AppEvent, Attachment, Block, Conversation, Message } from '../../shared/model'
+import type { AppEvent, Attachment, Block, Conversation, Message, QueuedMessage } from '../../shared/model'
 import { addTurn, emptyTotals, type MessageUsage, type UsageTotals } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
@@ -54,6 +54,8 @@ export interface TurnHooks {
   standIn?(conv: Conversation): string | undefined
   /** Called after each turn finishes. */
   afterTurn?(conv: Conversation, reply: Message, result: TurnResult): void
+  /** The user made a folder the working folder from a permission prompt. */
+  adoptFolder?(conversationId: string, folder: string): void
 }
 
 interface Live {
@@ -185,7 +187,23 @@ export class ChatService {
     const i = q.findIndex((x) => x.opts.tag === tag)
     if (i < 0) return false
     q.splice(i, 1)[0].resolve()
+    this.showQueue(conversationId)
     return true
+  }
+
+  /** What the user typed and is still waiting: everything queued that the transcript would show as theirs. */
+  private visibleQueue(conversationId: string): QueuedMessage[] {
+    return (this.queues.get(conversationId) ?? [])
+      .filter((x) => !x.opts.hidden && !x.opts.housekeeping && (x.opts.role ?? 'user') === 'user')
+      .map((x) => ({ text: x.text, ...(x.opts.attachments?.length ? { attachments: x.opts.attachments } : {}) }))
+  }
+
+  /** The conversation shows the messages waiting behind the running reply. */
+  private showQueue(conversationId: string): void {
+    const queued = this.visibleQueue(conversationId)
+    const had = this.store.conversation(conversationId)?.queued
+    if (!queued.length && !had?.length) return
+    this.patchConversation(conversationId, { queued: queued.length ? queued : undefined })
   }
 
   /** The tag of the turn running now (see SendOptions.tag). */
@@ -208,6 +226,8 @@ export class ChatService {
       q.push({ text, opts, resolve })
       this.queues.set(conversationId, q)
       void this.pump(conversationId)
+      // pump took it at once when nothing was running; otherwise it waits in view.
+      this.showQueue(conversationId)
     })
   }
 
@@ -217,6 +237,7 @@ export class ChatService {
     const next = q?.shift()
     if (!next) return
     this.running.add(conversationId)
+    this.showQueue(conversationId)
     if (next.opts.unattended) this.unattendedTurns.add(conversationId)
     if (next.opts.tag) this.tags.set(conversationId, next.opts.tag)
     for (const fn of this.turnStartListeners) fn(conversationId, next.opts.tag)
@@ -224,7 +245,7 @@ export class ChatService {
       await this.runTurn(conversationId, next.text, next.opts)
     } finally {
       this.running.delete(conversationId)
-      if (this.toolsStale.delete(conversationId)) this.forgetSession(conversationId)
+      if (this.renewAfterTurn.delete(conversationId)) this.forgetSession(conversationId)
       this.unattendedTurns.delete(conversationId)
       this.tags.delete(conversationId)
       for (const fn of this.turnEndListeners) fn(conversationId)
@@ -398,6 +419,12 @@ export class ChatService {
     this.ensureSession(conv).catch(() => undefined)
   }
 
+  /** Opens the conversation's agent session now, without prompting (e.g. to switch its model). */
+  async open(conversationId: string): Promise<void> {
+    const conv = this.store.conversation(conversationId)
+    if (conv) await this.ensureSession(conv)
+  }
+
   private async ensureSession(conv: Conversation): Promise<{ live: Live; fresh: boolean }> {
     const existing = this.live.get(conv.id)
     if (existing && existing.backendId === conv.backendId) return { live: existing, fresh: existing.unprompted?.fresh ?? false }
@@ -461,28 +488,34 @@ export class ChatService {
     this.bySession.set(`${conv.backendId}:${info.sessionId}`, conv.id)
     // A new session's offered options replace the previous session's capabilities.
     if (!standIn) this.patchConversation(conv.id, { sessionOptions: info.options ?? [] })
+    // What the user picked while the session was opening counts, not what it was when opening began.
+    const latest = this.store.conversation(conv.id)
+    const wantModel = standIn ? undefined : (latest?.modelId ?? conv.modelId)
+    const wantOptions = standIn ? undefined : (latest?.optionValues ?? conv.optionValues)
     let modelId = info.currentModelId
-    if (conv.modelId && conv.modelId !== info.currentModelId && info.models?.some((m) => m.id === conv.modelId)) {
-      try { await this.backends.setModel(conv.backendId, info.sessionId, conv.modelId) }
+    if (wantModel && wantModel !== info.currentModelId && info.models?.some((m) => m.id === wantModel)) {
+      try { await this.backends.setModel(conv.backendId, info.sessionId, wantModel) }
       catch (error) { this.forgetSession(conv.id); throw error }
       stale()
-      modelId = conv.modelId
+      modelId = wantModel
     }
     // The conversation's own choices win; a new conversation starts with the backend's defaults.
     let options = this.store.conversation(conv.id)?.sessionOptions ?? info.options
     // A mode is never a default for new chats (an earlier version could save one); other choices are.
     const defaults = sessionOptionDefaults(this.store.settings, conv.backendId, modelId ?? conv.modelId)
     for (const o of options ?? []) {
-      const v = conv.optionValues?.[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id])
+      const v = wantOptions?.[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id])
       if (!v || v === o.current || !o.choices.some((c) => c.value === v)) continue
       try {
         options = (await this.backends.setOption(conv.backendId, info.sessionId, o.id, v)) ?? options?.map((x) => (x.id === o.id ? { ...x, current: v } : x))
       } catch (error) { this.forgetSession(conv.id); throw error }
     }
     stale()
+    // A model picked after `latest` went to this live session directly; it stands.
+    const now = this.store.conversation(conv.id)?.modelId
     this.patchConversation(conv.id, standIn ? { sessionRef: live } : {
       models: info.models ?? conv.models,
-      modelId: modelId ?? conv.modelId,
+      modelId: now !== latest?.modelId ? now : (modelId ?? conv.modelId),
       sessionOptions: options ?? [],
       sessionRef: live
     })
@@ -500,14 +533,17 @@ export class ChatService {
     this.publish({ type: 'settings', settings: this.store.patchSettings({ backendModels: { ...all, [backendId]: next } }) })
   }
 
-  async cancel(conversationId: string): Promise<void> {
-    // Turns still queued are dropped; whoever waits on them is let go.
+  async cancel(conversationId: string): Promise<QueuedMessage[]> {
+    // Turns still queued are not sent: the user's own go back to them (the composer), whoever waits is let go.
+    const back = this.visibleQueue(conversationId)
     for (const q of this.queues.get(conversationId) ?? []) q.resolve()
     this.queues.delete(conversationId)
+    this.showQueue(conversationId)
     const live = this.live.get(conversationId)
     if (live && this.running.has(conversationId)) await this.backends.cancel(live.backendId, live.sessionId)
     // Dismiss any permission prompt this turn is waiting on.
     for (const [rid, cid] of this.pendingPermissions) if (cid === conversationId) this.respondPermission(rid, null)
+    return back
   }
 
   /**
@@ -532,6 +568,12 @@ export class ChatService {
   }
 
   async setModel(conversationId: string, modelId: string): Promise<void> {
+    // A session still opening takes the pick when it is ready (see openSession).
+    const opening = this.connecting.get(conversationId)
+    if (opening && !this.live.get(conversationId)) {
+      this.patchConversation(conversationId, { modelId })
+      await opening.catch(() => undefined)
+    }
     const live = this.live.get(conversationId)
     if (live && this.running.has(conversationId)) this.defer(conversationId).model = modelId
     else if (live) await this.backends.setModel(live.backendId, live.sessionId, modelId)
@@ -629,15 +671,15 @@ export class ChatService {
     this.recount(conversationId)
   }
 
-  /** Drops the live session so the next turn starts fresh (e.g. after a backend switch). */
-  private toolsStale = new Set<string>()
+  // Running conversations whose session is dropped once their turn ends (see renewSession).
+  private renewAfterTurn = new Set<string>()
 
   /** Deletes a conversation: stops its turn, forgets its session and everything kept for it, then tells the rest of the app. */
   async removeConversation(conversationId: string): Promise<void> {
     await this.cancel(conversationId).catch(() => {})
     this.forgetSession(conversationId)
     for (const m of [this.meters, this.tags, this.epochs, this.current]) m.delete(conversationId)
-    for (const s of [this.toolsStale, this.unattendedTurns]) s.delete(conversationId)
+    for (const s of [this.renewAfterTurn, this.unattendedTurns]) s.delete(conversationId)
     clearTimeout(this.emitTimers.get(conversationId))
     this.emitTimers.delete(conversationId)
     this.store.removeConversation(conversationId)
@@ -659,10 +701,13 @@ export class ChatService {
    * before its next turn, or after the turn it is in.
    */
   refreshTools(): void {
-    for (const id of [...this.live.keys()]) {
-      if (this.running.has(id)) this.toolsStale.add(id)
-      else this.forgetSession(id)
-    }
+    for (const id of [...this.live.keys()]) this.renewSession(id)
+  }
+
+  /** The next turn opens a new session (with the conversation so far); a running one finishes first. */
+  renewSession(conversationId: string): void {
+    if (this.running.has(conversationId)) this.renewAfterTurn.add(conversationId)
+    else this.forgetSession(conversationId)
   }
 
   forgetSession(conversationId: string): void {
@@ -771,6 +816,10 @@ export class ChatService {
       if (event.state === 'running' && i < 0) list.push({ id: event.id, command: event.command.slice(0, 500), startedAt: Date.now() })
       else if (event.state === 'exited' && i >= 0) list[i] = { ...list[i], endedAt: Date.now(), exitCode: event.exitCode }
       this.patchConversation(conversationId, { background: list.slice(-BACKGROUND_KEPT) })
+      return
+    }
+    if (event.kind === 'folder') {
+      this.hooks.adoptFolder?.(conversationId, event.path)
       return
     }
     if (event.kind === 'compacted') {

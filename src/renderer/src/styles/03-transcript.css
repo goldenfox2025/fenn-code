@@ -32,6 +32,15 @@
   flex-direction: column;
   align-items: flex-end;
 }
+/* A message waiting behind the running reply. */
+.msg-queued .bubble {
+  opacity: 0.6;
+}
+.queued-note {
+  margin-top: var(--space-1);
+  font-size: var(--font-xs);
+  color: var(--text-3);
+}
 .bubble {
   background: var(--bg-user);
   /* Glass draws a hairline here; every look keeps its width so nothing moves when glass is switched. */
@@ -205,7 +214,7 @@
   color: var(--text-2);
 }
 .steps-chevron {
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-2) var(--ease);
 }
 .steps.open .steps-chevron {
   transform: rotate(90deg);
@@ -345,7 +354,7 @@
   height: var(--turn-row);
   gap: var(--space-1);
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-1) var(--ease);
   position: absolute;
   left: calc(-1 * var(--space-2));
   bottom: calc(-1 * var(--turn-space));
@@ -443,7 +452,7 @@
   font-size: var(--font-xs);
 }
 .peer-card .chev {
-  transition: transform 0.15s;
+  transition: transform var(--dur-2) var(--ease);
 }
 .peer-card .chev.open {
   transform: rotate(90deg);

@@ -1,7 +1,7 @@
 /* Sidebar folder groups: the 「+」 shows on hover, as in Claude. */
 .folder-head .icon-btn {
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-1) var(--ease);
 }
 .folder-head:hover .icon-btn,
 .folder-head .icon-btn:focus-visible {
@@ -147,7 +147,7 @@
   pointer-events: none;
   opacity: 0;
   transform: translateY(2px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  transition: opacity var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .tooltip.below {
   transform: translateY(-2px);

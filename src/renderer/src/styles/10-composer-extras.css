@@ -402,7 +402,7 @@
   margin: var(--space-3) 0 var(--space-1);
 }
 .thread-group-head .chev {
-  transition: transform 0.15s;
+  transition: transform var(--dur-2) var(--ease);
 }
 .thread-group-head .chev.closed {
   transform: rotate(-90deg);

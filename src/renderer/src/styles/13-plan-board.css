@@ -44,7 +44,7 @@
 }
 .plan-line .chev {
   flex: none;
-  transition: transform 0.15s;
+  transition: transform var(--dur-2) var(--ease);
 }
 .plan-line.open .chev {
   transform: rotate(90deg);
@@ -192,7 +192,7 @@
   height: 100%;
   background: var(--accent);
   border-radius: 2px;
-  transition: width 0.2s;
+  transition: width var(--dur-2) var(--ease);
 }
 .progress-group {
   padding: var(--space-2) 0;
@@ -296,7 +296,7 @@
   font-size: 13px;
   color: var(--text-2);
 }
-.section-toggle .chev { transition: transform 0.15s; }
+.section-toggle .chev { transition: transform var(--dur-2) var(--ease); }
 .section-toggle .chev.closed { transform: rotate(-90deg); }
 .card.archived { opacity: 0.75; }
 .card .progress-bar { margin: 0 0 var(--space-4); }

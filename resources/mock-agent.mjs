@@ -677,6 +677,13 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     await stream(sessionId, r.terminalId ? `已在后台运行：${bg[1].trim()}` : `没能运行：${r.error}`, abort);
     return;
   }
+  // 「在 文件夹 运行 命令」 runs a command in a given folder through the app's terminal.
+  const runIn = text.match(/在\s*(\S+)\s*运行\s*(.+)/);
+  if (runIn) {
+    const r = await requestClient("terminal/create", { sessionId, command: runIn[2].trim(), cwd: runIn[1] }).catch((e) => ({ error: e?.message ?? String(e) }));
+    await stream(sessionId, r.terminalId ? `已运行：${runIn[2].trim()}` : `没能运行：${r.error}`, abort);
+    return;
+  }
   // 「写文件 名字」 writes a file in the working folder, as a coding agent does; 「在哪里工作」 says where that is.
   const write = text.match(/写文件\s*(\S+)/);
   if (write) {

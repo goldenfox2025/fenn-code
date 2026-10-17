@@ -92,8 +92,9 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (next.length) setFiles((cur) => [...cur, ...next])
   }
 
-  const submit = () => {
-    if (selecting) return
+  const submit = async () => {
+    // A model or option still switching: the message goes once it has, with the new choice.
+    if (selection.current) await selection.current
     const t = text.trim()
     // A picked command goes even without text: /compact needs none; /子对话 says what's missing.
     if (picked && conversation) {
@@ -186,7 +187,14 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const remembered = settings.backendModels?.[bid]
   const savedModel = settings.backendModelDefaults?.[bid]
   const models = session?.models?.length ? session.models : (remembered?.models ?? [])
-  const wanted = (conversation ? session?.modelId : modelId) ?? savedModel ?? remembered?.current
+  // A model just picked shows at once, while the agent switches to it.
+  const [shownModel, setShownModel] = useState<string>()
+  const actualModel = conversation ? session?.modelId : modelId
+  useEffect(() => setShownModel(undefined), [conversation?.id, bid])
+  useEffect(() => {
+    if (shownModel && actualModel === shownModel) setShownModel(undefined)
+  }, [shownModel, actualModel])
+  const wanted = shownModel ?? actualModel ?? savedModel ?? remembered?.current
   const currentModel = models.find((m) => m.id === wanted) ?? models.find((m) => m.id === remembered?.current) ?? models[0]
   // The session's other choices (mode, thinking level); before a session, the backend's last list and the defaults.
   const defaults = sessionOptionDefaults(settings, bid, currentModel?.id)
@@ -242,23 +250,38 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
 
   // One choice at a time; the message waits until it has been applied.
   const [selecting, setSelecting] = useState(false)
-  const canSend = !selecting && (!!text.trim() || files.length > 0 || !!picked)
-  const choose = async (op: () => Promise<unknown>) => {
-    if (selecting) return
-    setSelecting(true)
-    try {
-      await op()
-    } catch (e) {
-      toastError(e)
-    } finally {
-      setSelecting(false)
+  // A picked app command (/子对话) needs words after it; an agent command (/compact) goes as it is.
+  const canSend = !!text.trim() || files.length > 0 || (!!picked && !picked.app)
+  // Choices run one at a time; a click while one is still switching is kept, and the latest one wins.
+  const selection = useRef<Promise<void> | null>(null)
+  const nextChoice = useRef<(() => Promise<unknown>) | null>(null)
+  const choose = (op: () => Promise<unknown>) => {
+    if (selection.current) {
+      nextChoice.current = op
+      return
     }
+    setSelecting(true)
+    selection.current = (async () => {
+      for (let run: (() => Promise<unknown>) | null = op; run; ) {
+        try {
+          await run()
+        } catch (e) {
+          setShownModel(undefined)
+          toastError(e)
+        }
+        run = nextChoice.current
+        nextChoice.current = null
+      }
+    })().finally(() => {
+      selection.current = null
+      setSelecting(false)
+    })
   }
 
   const setOptionValue = (o: SessionOption, value: string) => {
     if (!conversation && o.category === 'mode') return setPending((p) => ({ ...p, [o.id]: value }))
     // A thinking level carries over to new chats (the app remembers it); a mode stays with this conversation.
-    void choose(() => (session ? api().setOption(session.id, o.id, value) : api().setOptionDefault(bid, o.id, value)))
+    choose(() => (session ? api().setOption(session.id, o.id, value) : api().setOptionDefault(bid, o.id, value)))
   }
 
   const canPick = !!(conversation || onModelChange)
@@ -282,7 +305,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     const usable = backends.filter((b) => b.id === bid || backendAvailable(b, accounts[b.id]))
     const pick = (id: string) => {
       if (id === bid) return
-      if (conversation) void choose(() => api().updateConversation(conversation.id, { backendId: id }))
+      if (conversation) choose(() => api().updateConversation(conversation.id, { backendId: id }))
       else onBackendChange?.(id)
     }
     const [top, rest] = firstFew(usable, (b) => b.id === bid)
@@ -303,12 +326,14 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       if (loadingModels) items.push({ label: t('正在加载模型…'), info: true })
       else if (catalog.error) items.push({ label: t('无法加载模型列表'), hint: t('重试'), onClick: () => setRetry((n) => n + 1) })
     }
-    const setModel = (id: string) =>
-      void choose(async () => {
+    const setModel = (id: string) => {
+      setShownModel(id)
+      choose(async () => {
         if (session) return api().setModel(session.id, id)
         await api().setModelDefault(bid, id)
         onModelChange?.(id)
       })
+    }
     const [top, rest] = firstFew(models, (m) => m.id === currentModel?.id)
     // Mid-reply a model change waits for the next turn; the reply keeps going.
     const later = (id: string) => (busy && session && id !== currentModel?.id ? t('下一轮生效') : undefined)
@@ -424,6 +449,15 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       </button>
     </div>
   )
+  // Stopping hands back what was still waiting, so nothing the user typed is lost.
+  const stop = async () => {
+    if (!conversation) return
+    const back = await api().cancel(conversation.id).catch((e) => (toastError(e), []))
+    if (!back.length) return
+    setText((cur) => [...back.map((q) => q.text), cur].filter((x) => x.trim()).join('\n\n'))
+    const files = back.flatMap((q) => q.attachments ?? [])
+    if (files.length) setFiles((cur) => [...files, ...cur])
+  }
   const attachButton = (
     <button className="icon-btn" data-tip={t('添加文件或图片')} onClick={(e) => (e.stopPropagation(), picker.current?.click())}>
       <Plus size={18} />
@@ -431,7 +465,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   )
   const sendButton =
     busy && !canSend ? (
-      <button className="send-btn stop" data-tip={t('停止')} onClick={() => conversation && api().cancel(conversation.id)}>
+      <button className="send-btn stop" data-tip={t('停止')} onClick={stop}>
         <Square size={12} fill="currentColor" />
       </button>
     ) : (

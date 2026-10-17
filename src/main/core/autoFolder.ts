@@ -22,11 +22,13 @@ export function uniqueDir(root: string, name: string): string {
 }
 
 /** Moves everything in `from` into `to` (created if needed); copies across drives. */
-export function moveContents(from: string, to: string): void {
+export function moveContents(from: string, to: string, opts: { keepExisting?: boolean } = {}): void {
   mkdirSync(to, { recursive: true })
   for (const entry of readdirSync(from)) {
     const src = join(from, entry)
     const dest = join(to, entry)
+    // Into a folder the user already has: a name taken there stays theirs, and the agent's copy stays behind.
+    if (opts.keepExisting && existsSync(dest)) continue
     try {
       renameSync(src, dest)
     } catch {

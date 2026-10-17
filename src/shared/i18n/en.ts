@@ -918,4 +918,9 @@ export const en: Record<string, string> = {
   "下一条消息起换成这个": "Takes over from your next message",
   "下一条消息起换成 {0}": "{0} takes over from your next message",
   "角色": "Agent",
+  "设为工作文件夹：{0}": "Use as working folder: {0}",
+  "在工作文件夹之外运行命令": "Run a command outside the working folder",
+  "等待发送": "Waiting to send",
+  "等待发送 · {0} 个附件": "Waiting to send · {0} attachments",
+  "刚刚开始": "Started just now",
 }

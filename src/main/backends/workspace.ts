@@ -4,7 +4,7 @@
  * needs the user's say-so first. Protocol-neutral; adapters call into it.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { lstatSync, promises as fs, readlinkSync } from 'node:fs'
+import { existsSync, lstatSync, promises as fs, readlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { t, tk } from '../../shared/i18n'
 
@@ -98,20 +98,60 @@ export function isReallyInside(root: string, path: string): boolean {
   return isInside(realResolve(root), realResolve(path, root))
 }
 
+/** The user's answer about work outside the folder: once, never, or make that folder the working folder. */
+export type AccessDecision = 'allow' | 'adopt' | 'reject'
+
+export interface WorkspaceHooks {
+  /** The user decides about work outside the folder; `adopt` is a folder that could become the working folder. */
+  ask(sessionId: string, title: string, detail: string, adopt?: string): Promise<AccessDecision>
+  /** The session's permission mode lets the agent work anywhere without asking. */
+  trusted?(sessionId: string): boolean
+  /** A folder the user may make a conversation's working folder (not home, a drive root or the app's data). */
+  canWorkIn?(path: string): boolean
+  /** The user made `folder` the working folder of a session that had none. */
+  adopted?(sessionId: string, folder: string): void
+  /** A command started or ended (the app lists running ones as background work). */
+  onTerminal?(sessionId: string, e: { id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null }): void
+}
+
 export class Workspaces {
-  private roots = new Map<string, string>() // sessionId → working folder
+  private roots = new Map<string, string>() // sessionId → where the agent works freely
+  // Sessions whose root is the app's private scratch folder: the conversation has no folder of its own yet.
+  private scratch = new Set<string>()
   private terminals = new Map<string, Terminal>()
   private nextId = 1
 
-  /** ask: the user decides about access outside the folder (title, detail) → allowed. */
-  constructor(
-    private readonly ask: (sessionId: string, title: string, detail: string) => Promise<boolean>,
-    /** A command started or ended (the app lists running ones as background work). */
-    private readonly onTerminal?: (sessionId: string, e: { id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null }) => void
-  ) {}
+  constructor(private readonly hooks: WorkspaceHooks) {}
 
-  setRoot(sessionId: string, root: string | undefined): void {
+  /** folder: the user's working folder; without one the agent works freely in its private `scratch` folder. */
+  setRoot(sessionId: string, folder: string | undefined, scratch?: string): void {
+    const root = folder ?? scratch
     if (root) this.roots.set(sessionId, resolve(root))
+    if (!folder && scratch) this.scratch.add(sessionId)
+    else this.scratch.delete(sessionId)
+  }
+
+  /** The folder the user could adopt for work at `path`: its project (nearest .git), else the folder itself. */
+  private adoptable(sessionId: string, path: string): string | undefined {
+    if (!this.scratch.has(sessionId) || !this.hooks.canWorkIn) return
+    for (let dir = path; dirname(dir) !== dir; dir = dirname(dir)) {
+      if (!this.hooks.canWorkIn(dir)) break
+      if (existsSync(join(dir, '.git'))) return dir
+    }
+    return this.hooks.canWorkIn(path) ? path : undefined
+  }
+
+  /** Asks about work outside the root unless the mode trusts the agent; adopting makes that folder the root. */
+  private async askOutside(sessionId: string, title: string, detail: string, folder: string): Promise<boolean> {
+    if (this.hooks.trusted?.(sessionId)) return true
+    const adopt = this.adoptable(sessionId, folder)
+    const d = await this.hooks.ask(sessionId, title, detail, adopt)
+    if (d === 'adopt' && adopt) {
+      this.roots.set(sessionId, resolve(adopt))
+      this.scratch.delete(sessionId)
+      this.hooks.adopted?.(sessionId, adopt)
+    }
+    return d !== 'reject'
   }
 
   rootOf(sessionId: string): string | undefined {
@@ -124,8 +164,8 @@ export class Workspaces {
     // link inside the folder may point anywhere. Work on that real path.
     const full = realResolve(path, root)
     if (root && isInside(realResolve(root), full)) return full
-    const ok = await this.ask(sessionId, t(root ? tk('{0}工作文件夹之外的文件') : tk('{0}文件'), t(what)), full)
-    if (!ok) throw new Error(`用户没有允许${what}这个文件：${full}`)
+    const title = t(root && !this.scratch.has(sessionId) ? tk('{0}工作文件夹之外的文件') : tk('{0}文件'), t(what))
+    if (!(await this.askOutside(sessionId, title, full, dirname(full)))) throw new Error(`用户没有允许${what}这个文件：${full}`)
     return full
   }
 
@@ -154,7 +194,9 @@ export class Workspaces {
     const root = this.roots.get(sessionId)
     if (!root) throw new Error('这个对话没有工作文件夹，不能运行命令。请先在输入框下方选择一个文件夹。')
     const cwd = req.cwd ? realResolve(req.cwd, root) : realResolve(root)
-    if (!isInside(realResolve(root), cwd)) throw new Error(`命令只能在工作文件夹里运行：${root}`)
+    const line = [req.command, ...(req.args ?? [])].join(' ')
+    if (!isInside(realResolve(root), cwd) && !(await this.askOutside(sessionId, t('在工作文件夹之外运行命令'), `${cwd}\n${line}`, cwd)))
+      throw new Error(`用户没有允许在这里运行命令：${cwd}`)
     const env = { ...process.env }
     for (const v of req.env ?? []) env[v.name] = v.value
     // No args: a shell command line, as agents usually send.
@@ -162,7 +204,7 @@ export class Workspaces {
       ? spawn(req.command, req.args, { cwd, env, windowsHide: true, detached: !WINDOWS })
       : spawn(req.command, { cwd, env, shell: true, windowsHide: true, detached: !WINDOWS })
     const id = `term-${this.nextId++}`
-    const t: Terminal = {
+    const term: Terminal = {
       sessionId,
       proc,
       output: '',
@@ -170,30 +212,29 @@ export class Workspaces {
       limit: req.outputByteLimit ?? DEFAULT_OUTPUT_LIMIT,
       exited: new Promise((done) => {
         proc.on('error', (e) => {
-          t.output += `\n${e.message}\n`
-          t.exit = { exitCode: 127, signal: null }
-          done(t.exit)
+          term.output += `\n${e.message}\n`
+          term.exit = { exitCode: 127, signal: null }
+          done(term.exit)
         })
         proc.on('close', (code, signal) => {
-          t.exit ??= { exitCode: code, signal: signal ?? null }
-          done(t.exit)
+          term.exit ??= { exitCode: code, signal: signal ?? null }
+          done(term.exit)
         })
       })
     }
     const add = (chunk: Buffer) => {
-      t.output += chunk.toString('utf8')
+      term.output += chunk.toString('utf8')
       // Keep the end: the latest output matters most.
-      while (Buffer.byteLength(t.output) > t.limit) {
-        t.output = t.output.slice(Math.ceil(t.output.length / 10))
-        t.truncated = true
+      while (Buffer.byteLength(term.output) > term.limit) {
+        term.output = term.output.slice(Math.ceil(term.output.length / 10))
+        term.truncated = true
       }
     }
     proc.stdout?.on('data', add)
     proc.stderr?.on('data', add)
-    this.terminals.set(id, t)
-    const command = [req.command, ...(req.args ?? [])].join(' ')
-    this.onTerminal?.(sessionId, { id, command, state: 'running' })
-    void t.exited.then((x) => this.onTerminal?.(sessionId, { id, command, state: 'exited', exitCode: x.exitCode }))
+    this.terminals.set(id, term)
+    this.hooks.onTerminal?.(sessionId, { id, command: line, state: 'running' })
+    void term.exited.then((x) => this.hooks.onTerminal?.(sessionId, { id, command: line, state: 'exited', exitCode: x.exitCode }))
     return id
   }
 
@@ -241,5 +282,6 @@ export class Workspaces {
   close(sessionId: string): void {
     for (const [id, t] of this.terminals) if (t.sessionId === sessionId) this.release(id)
     this.roots.delete(sessionId)
+    this.scratch.delete(sessionId)
   }
 }

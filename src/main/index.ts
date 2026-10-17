@@ -186,6 +186,7 @@ const backends = new BackendManager({
   },
   // Sessions with no folder of their own (model probes, titles) run in the app's scratch space, never the home folder.
   defaultCwd: (mkdirSync(join(dataDir, "workspaces", "_app"), { recursive: true }), join(dataDir, "workspaces", "_app")),
+  canWorkIn: (path) => !!core && !core.unsafeFolder(path),
   emit: (e) => {
     if (e.type === "permission")
       core.chat.routePermission(e.backendId, e.request);

@@ -50,7 +50,9 @@ describe('per-agent model and reasoning preferences', () => {
       expect(store.conversation(c.id)?.sessionOptions?.find((o) => o.id === 'effort')?.current).toBe('high')
       await core.setOption(c.id, 'effort', 'low')
       expect(store.conversation(c.id)).toMatchObject({ modelId: 'mock-smart', optionValues: { effort: 'low' } })
-      expect(store.conversation(c.id)?.sessionRef).toBeUndefined()
+      // Picking the model opened the chat's own session (no throwaway one), still without a prompt.
+      expect(store.conversation(c.id)?.sessionRef?.backendId).toBe('cold')
+      expect(catalog).toHaveBeenCalledTimes(1)
       expect(store.messagesOf(c.id).map((m) => m.id)).toEqual(history)
       expect(prompt).not.toHaveBeenCalled()
       await core.send(c.id, 'continue')
@@ -143,8 +145,12 @@ describe('per-agent model and reasoning preferences', () => {
     const { core, store, dispose } = await makeCore(undefined, { MOCK_DYNAMIC_EFFORT: '1' })
     try {
       expect((await core.backendModels('mock')).options?.some((o) => o.id === 'effort')).toBe(false)
+      // The pick answers at once; the model's own choices arrive once the user stops picking.
       await core.setModelDefault('mock', 'mock-smart')
-      expect((await core.backendModels('mock')).options?.find((o) => o.id === 'effort')?.choices.some((c) => c.value === 'none')).toBe(true)
+      expect(store.settings.backendModelDefaults?.mock).toBe('mock-smart')
+      const effort = () => store.settings.backendModels?.mock?.options?.find((o) => o.id === 'effort')
+      await until(() => effort(), 8000)
+      expect(effort()?.choices.some((c) => c.value === 'none')).toBe(true)
       const c = await core.startChat({ backendId: 'mock', text: 'hello dynamic options' })
       await until(() => store.conversation(c.id)?.status === 'idle')
       await core.setOption(c.id, 'effort', 'none')

@@ -35,6 +35,8 @@ import { classifyError } from '../../shared/errors'
 
 /** An unanswered request to control the computer gives up after this long. */
 const ASK_TIMEOUT_MS = 3 * 60_000
+// A model picked before a chat starts: its own choices are read once the user has stopped picking for this long.
+const PROBE_SETTLE_MS = 1500
 
 export class AppCore {
   readonly chat: ChatService
@@ -145,6 +147,7 @@ export class AppCore {
       // Titled first, so a folder made for the chat carries its real name.
       void this.autoAssigner.consider(conv, reply).catch(() => {}).then(() => this.placeChat(conv.id, reply.id)).catch(() => {})
     }
+    this.chat.hooks.adoptFolder = (id, folder) => this.adoptFolder(id, folder)
     this.chat.hooks.standIn = (conv) => {
       const id = conv.projectId || conv.routineId ? this.standIns.get(conv.backendId) : undefined
       return id && this.backends.has(id) ? id : undefined
@@ -169,6 +172,19 @@ export class AppCore {
   /** Set by the Electron shell: the user's Documents folder. */
   documentsDir = join(homedir(), 'Documents')
   private movedNotes = new Map<string, string>()
+  // Chats whose folder the user picked from a permission prompt while the agent worked in its scratch folder.
+  private adopted = new Set<string>()
+
+  /** 「设为工作文件夹」 on a permission prompt: the chat works in that folder from now on. */
+  private adoptFolder(conversationId: string, folder: string): void {
+    const conv = this.store.conversation(conversationId)
+    if (!conv || conv.kind !== 'chat' || this.chat.folderOf(conv) || this.unsafeFolder(folder)) return
+    this.chat.patchConversation(conversationId, { cwd: folder, autoFolder: undefined })
+    this.rememberFolder(folder)
+    this.adopted.add(conversationId)
+    // The agent started in its scratch folder; the next turn opens a session in the chosen one.
+    this.chat.renewSession(conversationId)
+  }
 
   /** Where chats that made files get their own folder (Settings → 通用). */
   autoFolderRoot(): string {
@@ -182,10 +198,18 @@ export class AppCore {
    */
   async placeChat(conversationId: string, replyId?: string): Promise<string | undefined> {
     const conv = this.store.conversation(conversationId)
-    if (!conv || conv.kind !== 'chat' || conv.routineId || this.chat.folderOf(conv) || this.chat.isBusy(conv.id)) return
+    if (!conv || conv.kind !== 'chat' || conv.routineId || this.chat.isBusy(conv.id)) return
     const scratch = this.chat.scratchPath(conv.id)
     // Only files a person would see count: an agent's hidden config or cache alone doesn't make a folder.
     if (!existsSync(scratch) || !readdirSync(scratch).some((name) => !name.startsWith('.'))) return
+    const own = this.chat.folderOf(conv)
+    if (own) {
+      // The user made a folder the working folder mid-reply: what the agent made before joins it, never over the user's files.
+      if (!this.adopted.delete(conv.id)) return
+      moveContents(scratch, own, { keepExisting: true })
+      this.movedNotes.set(conv.id, t('（应用说明：这个对话的文件已从 {0} 移到 {1}，之后请在 {1} 里工作。）', scratch, own))
+      return own
+    }
     const root = this.autoFolderRoot()
     mkdirSync(root, { recursive: true })
     const target = uniqueDir(root, folderSafeName(conv.title, t('新对话')))
@@ -293,7 +317,6 @@ export class AppCore {
     }
   }
 
-  /** Chats an earlier version filed under the home folder (or a drive root) go back to having no folder. */
   /** Commands still listed as running when the app last quit ended with it. */
   endStaleCommands(): void {
     for (const c of this.store.conversations) {
@@ -302,9 +325,13 @@ export class AppCore {
     }
   }
 
+  /**
+   * Chats an earlier version filed under the home folder (or a drive root) go back to having no folder.
+   * So do a project's own conversations (its chat, its threads): they would otherwise keep working there.
+   */
   leaveUnsafeFolders(): void {
     for (const c of this.store.conversations)
-      if (c.kind === 'chat' && this.unsafeFolder(c.cwd)) this.chat.patchConversation(c.id, { cwd: undefined, autoFolder: undefined })
+      if (this.unsafeFolder(c.cwd)) this.chat.patchConversation(c.id, { cwd: undefined, autoFolder: undefined })
     // A project there loses the folder too (its files pane then offers to make or pick one).
     for (const p of this.store.projects)
       if (this.unsafeFolder(p.cwd)) {
@@ -510,11 +537,14 @@ export class AppCore {
 
   async setModel(conversationId: string, modelId: string): Promise<void> {
     const before = this.store.conversation(conversationId)
-    if (before && !this.chat.sessionLoad(conversationId)) {
-      const catalog = await this.backendModels(before.backendId, modelId)
+    if (!before) return
+    // With no session yet, the conversation opens its own now: it tells this model's choices (thinking levels)
+    // and the next message uses it, instead of a throwaway session now and another one at send.
+    if (!this.chat.sessionLoad(conversationId) && this.backends.has(before.backendId)) {
+      await this.chat.open(conversationId)
       if (this.store.conversation(conversationId)?.backendId !== before.backendId) return
-      if (!catalog.models.some((m) => m.id === modelId)) throw new Error(t('无法加载模型：{0}', modelId))
-      this.chat.patchConversation(conversationId, { models: catalog.models, sessionOptions: catalog.options ?? [] })
+      const offered = this.store.conversation(conversationId)?.models
+      if (offered?.length && !offered.some((m) => m.id === modelId)) throw new Error(t('无法加载模型：{0}', modelId))
     }
     await this.chat.setModel(conversationId, modelId)
     const conv = this.store.conversation(conversationId)
@@ -571,7 +601,25 @@ export class AppCore {
 
   backendModels(backendId: string, modelId = this.store.settings.backendModelDefaults?.[backendId]): Promise<BackendModelCatalog> {
     const cached = this.store.settings.backendModels?.[backendId]
-    if (cached?.models.length && (!modelId || cached.current === modelId || !cached.models.some((m) => m.id === modelId))) return Promise.resolve(cached)
+    if (cached?.models.length) {
+      // Another known model answers at once. Its own choices (e.g. its thinking levels) are read behind the
+      // scenes once the user stops picking: asking means starting a session of the agent, which takes seconds.
+      if (modelId && cached.current !== modelId && cached.models.some((m) => m.id === modelId)) {
+        clearTimeout(this.probeTimers.get(backendId))
+        this.probeTimers.set(backendId, setTimeout(() => {
+          this.probeTimers.delete(backendId)
+          this.probeModels(backendId, modelId).catch(() => undefined)
+        }, PROBE_SETTLE_MS).unref())
+      }
+      return Promise.resolve(cached)
+    }
+    return this.probeModels(backendId, modelId)
+  }
+
+  private probeTimers = new Map<string, NodeJS.Timeout>()
+
+  /** Starts a session of the agent (no prompt) to read its models and choices; one at a time per model. */
+  private probeModels(backendId: string, modelId: string | undefined): Promise<BackendModelCatalog> {
     const key = `${backendId}\0${modelId ?? ''}`
     const pending = this.modelProbes.get(key)
     if (pending) return pending

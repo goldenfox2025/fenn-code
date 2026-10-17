@@ -62,7 +62,7 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
   useLayoutEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [messages, conversation.id, compact])
+  }, [messages, conversation.id, conversation.queued, compact])
 
   const visible = (messages ?? []).filter((m) => !m.hidden)
   let lastDay = ''
@@ -106,6 +106,13 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
             </div>
           )
         })}
+        {/* Sent while the reply runs: shown dimmed until its turn comes; 停止 hands them back to the composer. */}
+        {conversation.queued?.map((q, i) => (
+          <div key={'queued-' + i} className="msg msg-user msg-queued">
+            {q.text && <div className="bubble">{q.text}</div>}
+            <div className="queued-note">{q.attachments?.length ? t('等待发送 · {0} 个附件', q.attachments.length) : t('等待发送')}</div>
+          </div>
+        ))}
       </div>
     </div>
   )

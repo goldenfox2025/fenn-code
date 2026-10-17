@@ -1,0 +1,65 @@
+/* ---------- motion ----------
+   How things move, in one place. Timing comes from tokens.css (--ease, --dur-*).
+   Hover states fade instead of snapping; surfaces arrive with a short fade and
+   a few pixels of travel; nothing moves for people who ask for less motion. */
+
+/* Hover and press: colors fade. A rule with its own transition (chevrons, tooltips) keeps it. */
+button,
+a,
+.nav-item,
+.list-row,
+.tree-row,
+.chip {
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease),
+    opacity var(--dur-1) var(--ease);
+}
+/* Keyboard and pointer moves through a menu stay instant, as in Claude. */
+.menu-item {
+  transition: none;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(12px); }
+}
+
+.overlay {
+  animation: fade-in var(--dur-2) var(--ease);
+}
+.overlay > * {
+  animation: rise-in var(--dur-3) var(--ease);
+}
+.toast {
+  animation: rise-in var(--dur-2) var(--ease);
+}
+.panel,
+.side-pane {
+  animation: slide-in var(--dur-3) var(--ease);
+}
+/* Dragging a pane wider or narrower follows the pointer exactly. */
+body.resizing * {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}

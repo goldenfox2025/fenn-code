@@ -9,11 +9,11 @@ import { tap } from './debugLog'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { Workspaces } from '../workspace'
 import { t } from '../../../shared/i18n'
 import { classifyError } from '../../../shared/errors'
-import { visibleSessionOptions } from '../../../shared/sessionOptions'
+import { trustsAgent, visibleSessionOptions } from '../../../shared/sessionOptions'
 import { resolveModelAliases, resolveOptionAliases } from '../../../shared/aliases'
 import { findOnPath } from '../install'
 
@@ -112,18 +112,25 @@ export class AcpBackend implements AgentBackend {
     private readonly host: BackendHost,
     private readonly quirks: AcpQuirks = {}
   ) {
-    this.workspaces = new Workspaces(async (sessionId, title, detail) => {
-      const d = await this.host.requestPermission({
-        sessionId,
-        title,
-        detail,
-        options: [
-          { id: 'allow', label: t('允许'), kind: 'allow_once' },
-          { id: 'reject', label: t('拒绝'), kind: 'reject_once' }
-        ]
-      })
-      return d === 'allow'
-    }, (sessionId, e) => this.host.emit(sessionId, { kind: 'background', ...e }))
+    this.workspaces = new Workspaces({
+      ask: async (sessionId, title, detail, adopt) => {
+        const d = await this.host.requestPermission({
+          sessionId,
+          title,
+          detail,
+          options: [
+            { id: 'allow', label: t('允许'), kind: 'allow_once' },
+            ...(adopt ? [{ id: 'adopt', label: t('设为工作文件夹：{0}', basename(adopt) || adopt), kind: 'allow_always' as const }] : []),
+            { id: 'reject', label: t('拒绝'), kind: 'reject_once' }
+          ]
+        })
+        return d === 'allow' || d === 'adopt' ? d : 'reject'
+      },
+      trusted: (sessionId) => trustsAgent(this.sessionOptions.get(sessionId)),
+      canWorkIn: (path) => !!this.host.canWorkIn?.(path),
+      adopted: (sessionId, folder) => this.host.emit(sessionId, { kind: 'folder', path: folder }),
+      onTerminal: (sessionId, e) => this.host.emit(sessionId, { kind: 'background', ...e })
+    })
   }
 
   start(): Promise<void> {
@@ -320,7 +327,7 @@ export class AcpBackend implements AgentBackend {
 
   async resumeSession({ cwd, folder, tools, sessionId, system }: NewSessionOptions & { sessionId: string }): Promise<SessionInfo | null> {
     await this.start()
-    this.workspaces.setRoot(sessionId, folder)
+    this.workspaces.setRoot(sessionId, folder, cwd)
     const mcpServers = this.mcpServers(tools)
     let res: { configOptions?: unknown; models?: unknown; _meta?: Record<string, unknown> | null } | undefined
     try {
@@ -369,7 +376,7 @@ export class AcpBackend implements AgentBackend {
       }
       throw new Error(msg)
     }
-    this.workspaces.setRoot(res.sessionId, folder)
+    this.workspaces.setRoot(res.sessionId, folder, cwd)
     const meta = (res as { _meta?: Record<string, unknown> })._meta
     this.captureModels(res.sessionId, res.configOptions, meta?.modelState ?? (res as { models?: unknown }).models)
     this.captureOptions(res.sessionId, res.configOptions, (res as { modes?: unknown }).modes)

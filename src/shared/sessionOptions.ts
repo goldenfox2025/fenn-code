@@ -14,3 +14,9 @@ export function visibleSessionOptions(options: SessionOption[], policy?: Session
     ? { ...option, choices: option.choices.filter((choice) => choice.value.toLowerCase() !== 'none') } : option)
     .filter((option) => option.choices.length > 1)
 }
+
+/** The session runs in a mode that lets the agent work anywhere without asking (bypassPermissions, full-access, yolo). */
+export function trustsAgent(options: SessionOption[] | undefined): boolean {
+  const mode = options?.find((o) => o.category === 'mode' || o.id === 'mode')
+  return !!mode?.current && /bypass|full[-_ ]?access|yolo|danger/i.test(mode.current)
+}

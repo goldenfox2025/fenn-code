@@ -39,6 +39,8 @@ export interface ManagerOptions {
   nodeCommand: { command: string; env: Record<string, string> }
   defaultCwd: string
   emit(e: HostEvent): void
+  /** Whether the user may make this folder a conversation's working folder. */
+  canWorkIn?(path: string): boolean
 }
 
 export class BackendManager {
@@ -163,6 +165,7 @@ export class BackendManager {
       config: this.opts.settings.get(backendId),
       resourcesDir: this.opts.resourcesDir,
       nodeCommand: this.opts.nodeCommand,
+      canWorkIn: (path) => !!this.opts.canWorkIn?.(path),
       emit: (sessionId, event) => {
         for (const fn of this.agentListeners) fn(backendId, sessionId, event)
         this.opts.emit({ type: 'agent', backendId, sessionId, event })
