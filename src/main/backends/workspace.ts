@@ -31,6 +31,12 @@ const WINDOWS = process.platform === 'win32'
  * children, and killing only the shell leaves them running (and the command
  * never ends). Elsewhere each command leads its own process group.
  */
+/** Stops an agent's program; on Windows with the programs it started (Antigravity's server starts a second one). */
+export function stopAgentProcess(proc: ChildProcess): void {
+  if (WINDOWS && proc.pid && proc.exitCode === null) killTree(proc)
+  else proc.kill()
+}
+
 function killTree(proc: ChildProcess): void {
   if (!proc.pid) return
   try {

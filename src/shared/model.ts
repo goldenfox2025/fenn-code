@@ -671,4 +671,9 @@ export interface BackgroundCommand {
   startedAt: number
   endedAt?: number
   exitCode?: number | null
+  /** What it is for, in the agent's words. */
+  title?: string
+  /** The agent's own background task: it runs and stops it, the app only shows it. */
+  managed?: boolean
+  monitor?: boolean
 }

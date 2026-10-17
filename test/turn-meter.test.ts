@@ -28,15 +28,22 @@ describe('observed streaming timings', () => {
     expect(m.finish({ output: 10 }, 'error')?.tpotMs).toBeUndefined()
     expect(m.finish({ output: 10 }, 'end_turn', false)?.tpotMs).toBeUndefined()
   })
-  it('rejects tool turns and approval waits instead of dividing their latency by output tokens', () => {
-    for (const permission of [false, true]) {
-      const { m, chunk } = meter()
-      chunk(100)
-      if (permission) m.interrupt()
-      else m.observe({ kind: 'tool.start', toolId: 't', title: 'tool', status: 'running' })
-      chunk(20000)
-      expect(m.finish({ output: 10 }, 'end_turn')).toEqual({ firstResponseMs: 100 })
-    }
+  it('leaves out the time tools run, and gives no speed for waits it cannot account for', () => {
+    const { m, chunk } = meter()
+    chunk(100)
+    // A tool runs from 1000 to 9000 (an approval inside it included): only the model's own time counts.
+    chunk(1000)
+    m.observe({ kind: 'tool.start', toolId: 't', title: 'tool', status: 'running' })
+    m.interrupt()
+    chunk(9000, '')
+    m.observe({ kind: 'tool.update', toolId: 't', status: 'completed' })
+    chunk(9500)
+    expect(m.finish({ output: 15 }, 'end_turn')).toEqual({ firstResponseMs: 100, streamMs: 1400, outputTokens: 15, tpotMs: 100 })
+    const waited = meter()
+    waited.chunk(100)
+    waited.m.interrupt()
+    waited.chunk(20000)
+    expect(waited.m.finish({ output: 10 }, 'end_turn')).toEqual({ firstResponseMs: 100 })
   })
   it('persists reply timings separately from token totals and restores them across restart', async () => {
     const first = await makeCore(undefined, { MOCK_SIMPLE_STREAM: '1' })

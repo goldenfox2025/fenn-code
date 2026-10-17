@@ -55,7 +55,7 @@ export default acpPlugin({
   // Signed in when it has a key, or the Google sign-in it stores after 「登录」.
   accountState: (config) => {
     if (!findAgy(config)) return { installed: false }
-    if (config.GEMINI_API_KEY) return { installed: true, signedIn: true, detail: 'Gemini API Key' }
+    if (config.GEMINI_API_KEY || process.env.GEMINI_API_KEY) return { installed: true, signedIn: true, detail: 'Gemini API Key' }
     return existsSync(AGY_TOKEN) ? { installed: true, signedIn: true, detail: tk('Google 账号') } : { installed: true, signedIn: false }
   },
   quirks: {

@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { acpPlugin } from '../acp'
@@ -14,18 +14,29 @@ const EXE = process.platform === 'win32' ? '.exe' : ''
  * ~/.grok/bin, or a `grok` on PATH. Ancora never downloads it by itself; when
  * neither exists Grok shows as not installed, and Settings offers to install it.
  */
-export function findGrok(env = process.env): string | undefined {
-  let grokHome = env.GROK_HOME
-  if (!grokHome) {
-    try {
-      grokHome = join(realpathSync(homedir()), '.grok')
-    } catch {
-      grokHome = join(homedir(), '.grok')
-    }
+function grokHome(env = process.env): string {
+  if (env.GROK_HOME) return env.GROK_HOME
+  try {
+    return join(realpathSync(homedir()), '.grok')
+  } catch {
+    return join(homedir(), '.grok')
   }
-  const own = join(grokHome, 'bin', `grok${EXE}`)
+}
+
+export function findGrok(env = process.env): string | undefined {
+  const own = join(grokHome(env), 'bin', `grok${EXE}`)
   if (existsSync(own)) return own
   return findOnPath('grok', env)
+}
+
+/** Whether Grok keeps a grok.com sign-in (its auth.json holds at least one account). */
+export function grokSignedIn(env = process.env): boolean {
+  try {
+    const auth = JSON.parse(readFileSync(join(grokHome(env), 'auth.json'), 'utf8')) as Record<string, unknown>
+    return Object.keys(auth).length > 0
+  } catch {
+    return false
+  }
 }
 
 const MISSING = tk('找不到 Grok 程序。请在 设置 → Agent 后端 → Grok 里点「安装」，或在终端运行 npm install -g @xai-official/grok，然后重试。')
@@ -73,13 +84,14 @@ export default acpPlugin({
     // `_x.ai/session_notification`; they show as a notice, the plan card, and steps.
     translateExt: grokExt
   },
-  // `grok --version` tells whether it's installed; signing in is checked when a session starts.
-  account: () => ({
+  // `grok --version` tells whether it's installed; a key or the grok.com sign-in it keeps in
+  // ~/.grok/auth.json says signed in. Without either it's left unknown: a session start finds out.
+  account: (config) => ({
     command: findGrok() ?? 'grok',
     args: ['--version'],
     parse: (out) => {
       const version = /\d+\.\d+\.\d+/.exec(out)?.[0]
-      return { installed: true, version, detail: version ? `grok ${version}` : undefined }
+      return { installed: true, signedIn: config.XAI_API_KEY || process.env.XAI_API_KEY || grokSignedIn() ? true : undefined, version, detail: version ? `grok ${version}` : undefined }
     }
   }),
   upgrade: {
@@ -95,6 +107,22 @@ export default acpPlugin({
 })
 
 type PlanStatus = 'pending' | 'in_progress' | 'completed'
+
+/** One of Grok's background tasks (from task_backgrounded, task_completed or the background_tasks list). */
+function backgroundTask(task: Record<string, unknown>, state: 'running' | 'exited'): AgentEvent {
+  const text = (v: unknown) => (typeof v === 'string' ? v : '')
+  const exit = task.exit_code
+  return {
+    kind: 'background',
+    id: `grok-task:${text(task.task_id)}`,
+    command: text(task.display_command) || text(task.command),
+    state,
+    exitCode: typeof exit === 'number' ? exit : task.status === 'failed' ? 1 : state === 'exited' && task.status === 'completed' ? 0 : null,
+    title: text(task.description) || undefined,
+    managed: true,
+    monitor: task.kind === 'monitor' || !!text(task.monitor_description) || undefined
+  }
+}
 const compacting = new Map<string, string>()
 let compactions = 0
 
@@ -148,6 +176,19 @@ export function grokExt(method: string, params: Record<string, unknown>): { sess
       events.push({ kind: 'tool.update', toolId: `grok-subagent:${id}`, status: ok ? 'completed' : 'failed', output: str(u.output).slice(0, 4000) || undefined })
       break
     }
+    // Its own background commands and monitors, shown in the background pane (Grok runs and stops them).
+    case 'task_backgrounded':
+      if (str(u.task_id)) events.push(backgroundTask(u, 'running'))
+      break
+    case 'task_completed': {
+      const snap = u.task_snapshot as Record<string, unknown> | undefined
+      if (snap && str(snap.task_id)) events.push(backgroundTask(snap, 'exited'))
+      break
+    }
+    case 'background_tasks':
+      for (const task of Array.isArray(u.tasks) ? (u.tasks as Record<string, unknown>[]) : [])
+        if (str(task.task_id)) events.push(backgroundTask(task, task.status === 'running' ? 'running' : 'exited'))
+      break
     case 'auto_compact_started': {
       const toolId = `grok-compact:${++compactions}`
       compacting.set(sessionId, toolId)

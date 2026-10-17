@@ -47,3 +47,32 @@ describe('Grok vendor notifications', () => {
     expect(grokExt('_other/x', { sessionId: 's1', update: { sessionUpdate: 'retry_state' } })).toBeNull()
   })
 })
+
+describe('Grok background tasks', () => {
+  it('lists its background commands and monitors, which Grok runs and stops itself', () => {
+    const started = note({ sessionUpdate: 'task_backgrounded', task_id: 'call-1', command: 'python run.py', description: 'Run the collector' })
+    expect(started?.events[0]).toEqual({
+      kind: 'background',
+      id: 'grok-task:call-1',
+      command: 'python run.py',
+      state: 'running',
+      exitCode: null,
+      title: 'Run the collector',
+      managed: true,
+      monitor: undefined
+    })
+    const done = note({ sessionUpdate: 'task_completed', task_snapshot: { task_id: 'call-1', command: 'python run.py', exit_code: 1, completed: true } })
+    expect(done?.events[0]).toMatchObject({ id: 'grok-task:call-1', state: 'exited', exitCode: 1 })
+    const list = note({
+      sessionUpdate: 'background_tasks',
+      tasks: [
+        { task_id: 'm-1', command: 'powershell watch.ps1', display_command: '[monitor] Wait for the tick', kind: 'monitor', status: 'running' },
+        { task_id: 'call-2', command: 'ping', kind: 'bash', status: 'completed', exit_code: 0 }
+      ]
+    })
+    expect(list?.events).toMatchObject([
+      { id: 'grok-task:m-1', command: '[monitor] Wait for the tick', state: 'running', monitor: true },
+      { id: 'grok-task:call-2', state: 'exited', exitCode: 0 }
+    ])
+  })
+})

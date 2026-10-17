@@ -885,7 +885,15 @@ export class ChatService {
       if (!c) return
       const list = [...(c.background ?? [])]
       const i = list.findIndex((b) => b.id === event.id && !b.endedAt)
-      if (event.state === 'running' && i < 0) list.push({ id: event.id, command: event.command.slice(0, 500), startedAt: Date.now() })
+      if (event.state === 'running' && i < 0)
+        list.push({
+          id: event.id,
+          command: event.command.slice(0, 500),
+          startedAt: Date.now(),
+          ...(event.title ? { title: event.title.slice(0, 200) } : {}),
+          ...(event.managed ? { managed: true } : {}),
+          ...(event.monitor ? { monitor: true } : {})
+        })
       else if (event.state === 'exited' && i >= 0) list[i] = { ...list[i], endedAt: Date.now(), exitCode: event.exitCode }
       this.patchConversation(conversationId, { background: list.slice(-BACKGROUND_KEPT) })
       return

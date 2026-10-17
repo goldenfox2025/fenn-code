@@ -158,6 +158,10 @@
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+  white-space: nowrap;
+}
+.usage-section .usage-head {
+  margin-bottom: var(--space-2);
 }
 .usage-note {
   color: var(--text-3);

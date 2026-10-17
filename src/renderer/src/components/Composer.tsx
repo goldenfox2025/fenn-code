@@ -219,7 +219,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     return undefined
   }
   const accountHint = (id: string): string | undefined =>
-    accountState(id) ?? (id === catalogFor.current.id && catalogFor.current.needsLogin ? t('未登录') : undefined)
+    // The account check knows best: a probe that failed earlier says nothing once it says signed in.
+    accountState(id) ?? (accounts[id]?.signedIn !== true && id === catalogFor.current.id && catalogFor.current.needsLogin ? t('未登录') : undefined)
 
   // Connect to the agent while the user reads or types, so pressing Enter only sends (no prompt is sent here).
   const ready = !!conversation && !!currentBackend && !accountHint(bid)

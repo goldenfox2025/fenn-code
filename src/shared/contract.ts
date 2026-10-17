@@ -26,7 +26,19 @@ export type AgentEvent =
   /** The slash commands the agent offers now (ACP available_commands_update), without the slash. */
   | { kind: 'commands'; names: string[]; commands?: { name: string; description?: string }[] }
   /** A command the agent runs through the app started or ended (shown as background work). */
-  | { kind: 'background'; id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null }
+  | {
+      kind: 'background'
+      id: string
+      command: string
+      state: 'running' | 'exited'
+      exitCode?: number | null
+      /** What it is for, in the agent's words. */
+      title?: string
+      /** The agent runs and stops it itself (its own background task), not through the app's terminal. */
+      managed?: boolean
+      /** It watches for something rather than doing a job (Grok's monitors). */
+      monitor?: boolean
+    }
   /** The user made this folder the working folder of a session that had none. */
   | { kind: 'folder'; path: string }
   /** The agent compacted the session's context (ACP compaction_update, completed). */

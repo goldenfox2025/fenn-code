@@ -15,6 +15,7 @@ import {
   Notification,
   safeStorage,
   screen,
+  session,
   shell,
   Tray,
 } from "electron";
@@ -565,7 +566,31 @@ const PAGE_CSP =
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", showWindow);
 
+/**
+ * Programs the app starts (npm, curl, the agents) take a proxy from the environment, not from
+ * the system's proxy settings. When the environment names none, pass on the system's, so
+ * installs and agents work the same whether Ancora was started from a terminal or a shortcut.
+ */
+async function adoptSystemProxy(): Promise<void> {
+  if (["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"].some((k) => process.env[k])) return;
+  try {
+    const rule = await session.defaultSession.resolveProxy("https://registry.npmjs.org");
+    const m = /^(PROXY|HTTPS)\s+([^;\s]+)/.exec(rule.trim());
+    if (!m) return;
+    const url = `${m[1] === "HTTPS" ? "https" : "http"}://${m[2]}`;
+    process.env.HTTPS_PROXY = url;
+    process.env.HTTP_PROXY = url;
+    // The app's own tool server and bridges are on this computer.
+    process.env.NO_PROXY ??= "localhost,127.0.0.1,::1";
+    // Node programs (npm, ACP adapters) read these variables only when told to.
+    process.env.NODE_USE_ENV_PROXY ??= "1";
+  } catch {
+    // No proxy settings to read: leave the environment as it is.
+  }
+}
+
 app.whenReady().then(async () => {
+  await adoptSystemProxy();
   // Menus, notifications and the app's own messages follow the UI language.
   const applyLanguage = (s: AppSettings) => setLang(resolveLang(s.language, app.getLocale()));
   applyLanguage(store.settings);

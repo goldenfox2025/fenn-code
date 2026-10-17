@@ -34,7 +34,8 @@ const seconds = (ms: number) => (ms < 1000 ? t('{0} 毫秒', Math.round(ms)) : t
 function timingLine(timing: GenerationTiming): string {
   const parts = [t('首个回复 {0}', seconds(timing.firstResponseMs))]
   const speed = tokensPerSecond(timing)
-  if (speed !== undefined) parts.push(t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1)))
+  if (speed !== undefined) parts.push(rate(speed))
+  if (timing.tpotMs !== undefined) parts.push(t('每个 token {0}', seconds(timing.tpotMs)))
   return parts.join(' · ')
 }
 
@@ -46,7 +47,8 @@ export function MessageUsageLabel({ m }: { m: Message }) {
   const backendId = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.backendId)
   const credits = useApp(usesCredits(backendId))
   if (credits || !m.usage) return null
-  const line = usageLine(m.usage)
+  const speed = tokensPerSecond(m.timing)
+  const line = [usageLine(m.usage), speed !== undefined ? rate(speed) : ''].filter(Boolean).join(' · ')
   if (!line) return null
   const title = [...detailLines(m.usage), m.usage.cost && m.usage.cost.amount > 0 ? t('费用 {0}', formatCost(m.usage.cost)) : '', m.timing ? timingLine(m.timing) : '']
   return (
@@ -87,6 +89,9 @@ const SOURCE: Record<string, string> = {
   log: tk('读取自 agent 的会话日志'),
   table: tk('窗口大小来自模型上限表')
 }
+
+/** "58 tok/s": whole numbers from 100 up. */
+const rate = (speed: number) => t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1))
 
 /** Output tokens per second over the last uninterrupted stream, when the agent reported its output. */
 export function tokensPerSecond(timing?: GenerationTiming): number | undefined {
@@ -178,11 +183,17 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
           </div>
         )
       )}
-      {((u.cost && u.cost.amount > 0) || timing) && (
+      {u.cost && u.cost.amount > 0 && (
         <div className="usage-section">
-          {u.cost && u.cost.amount > 0 && <Row label={t('费用')} note={t('按标价估算')} value={formatCost(u.cost)} tip={t('订阅账号不实际扣费')} />}
-          {speed !== undefined && <Row label={t('输出速度')} note={t('最近一次回复')} value={t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1))} />}
-          {timing && <Row label={t('首个回复')} note={t('最近一次回复')} value={seconds(timing.firstResponseMs)} />}
+          <Row label={t('费用')} note={t('按标价估算')} value={formatCost(u.cost)} tip={t('订阅账号不实际扣费')} />
+        </div>
+      )}
+      {timing && (
+        <div className="usage-section">
+          <div className="usage-head">{t('最近一次回复')}</div>
+          <Row label={t('首个回复')} value={seconds(timing.firstResponseMs)} />
+          {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Ancora 看到的输出时间计算，不含工具运行的时间')} />}
+          {timing.tpotMs !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs)} />}
         </div>
       )}
       {(u.unreported > 0 && u.turns > 0) || u.costSkipped ? (

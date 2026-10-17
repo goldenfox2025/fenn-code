@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import { basename, join } from 'node:path'
-import { Workspaces } from '../workspace'
+import { Workspaces, stopAgentProcess } from '../workspace'
 import { t } from '../../../shared/i18n'
 import { classifyError } from '../../../shared/errors'
 import { trustsAgent, visibleSessionOptions } from '../../../shared/sessionOptions'
@@ -681,7 +681,7 @@ export class AcpBackend implements AgentBackend {
     const p = this.proc
     if (p && reason) this.stopReasons.set(p, reason)
     this.proc = undefined
-    p?.kill()
+    if (p) stopAgentProcess(p)
     this.workspaces.closeAll()
     this.conn = undefined
     this.warmed = undefined

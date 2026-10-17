@@ -1,5 +1,5 @@
 import { useShallow } from 'zustand/react/shallow'
-import { GitBranch, Loader2, Square, SquareTerminal, X } from 'lucide-react'
+import { Eye, GitBranch, Loader2, Square, SquareTerminal, X } from 'lucide-react'
 import type { Conversation } from '@shared/model'
 import { api, useApp, toastError } from '../store'
 import { t } from '../i18n'
@@ -65,7 +65,7 @@ function BackgroundList({ conv }: { conv: Conversation }) {
     return (
       <div className="empty">
         <div>{t('没有后台任务')}</div>
-        <div className="small">{t('子对话，以及 agent 通过 Ancora 运行的命令，会显示在这里。输入「/」可以开子对话。')}</div>
+        <div className="small">{t('子对话，以及 agent 在后台运行的命令，会显示在这里。输入「/」可以开子对话。')}</div>
       </div>
     )
   const owner = (id: string) => (top?.background?.some((b) => b.id === id) ? top.id : conv.id)
@@ -86,9 +86,18 @@ function BackgroundList({ conv }: { conv: Conversation }) {
       {commands.map((b) => (
         <div key={b.id + b.startedAt} className="thread-item bg-command">
           <div className="row1">
-            {b.endedAt ? <SquareTerminal size={14} className="muted" /> : <Loader2 size={14} className="spin muted" />}
-            <code className="title">{b.command}</code>
-            {!b.endedAt ? (
+            {!b.endedAt ? <Loader2 size={14} className="spin muted" /> : b.monitor ? <Eye size={14} className="muted" /> : <SquareTerminal size={14} className="muted" />}
+            {b.title ? (
+              <span className="title" data-tip={b.command}>
+                {b.title}
+              </span>
+            ) : (
+              <code className="title">{b.command}</code>
+            )}
+            {/* The agent's own background tasks are its to stop; Ancora can only stop what runs in its terminal. */}
+            {!b.endedAt && b.managed ? (
+              <span className="status-chip">{b.monitor ? t('监视中') : t('运行中')}</span>
+            ) : !b.endedAt ? (
               <button
                 className="icon-btn sm"
                 data-tip={t('停止')}
