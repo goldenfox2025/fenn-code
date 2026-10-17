@@ -102,7 +102,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
         )}
       </div>
       <div className="field">
-        <label>{t('Agent 后端')}</label>
+        <label>{t('后端')}</label>
         <Dropdown value={f.backendId} onChange={(v) => setF({ ...f, backendId: v })} options={usable.length ? usable.map(backendOption) : [{ value: '', label: t('还没有可用的 Agent 后端，请在设置里安装或登录') }]} />
       </div>
       <div className="modal-actions">
@@ -239,7 +239,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
       </div>
       {!target && (
         <div className="field">
-          <label>{t('Agent 后端')}</label>
+          <label>{t('后端')}</label>
           <Dropdown value={shownBackend} onChange={setBackendId} options={usableForRoutine.map(backendOption)} />
         </div>
       )}
@@ -803,7 +803,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
           {state?.detail && <span className="muted account-detail" data-tip={state.detail}>{state.detail}</span>}
           {upgrade && !missing && latest === undefined && (
             <button className="text-link" disabled={checking} onClick={() => void checkLatest()}>
-              {checking ? t('正在检查…') : t('检查更新')}
+              {checking ? <span className="shimmer">{t('正在检查…')}</span> : t('检查更新')}
             </button>
           )}
           {upgrade && latest && !missing && (
@@ -812,7 +812,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
           {upgrade && latest === null && !missing && <span className="muted">{t('查不到最新版本')}</span>}
           {upgrade && (missing || failed || (latest !== undefined && (newer || !latest || !state?.version))) && (
             <button className="text-link" disabled={!!running} onClick={() => void run()}>
-              {running === 'install' ? t('正在安装…') : running ? t('正在升级…') : missing ? t('安装') : t('升级')}
+              {running ? <span className="shimmer">{running === 'install' ? t('正在安装…') : t('正在升级…')}</span> : missing ? t('安装') : t('升级')}
             </button>
           )}
         </div>

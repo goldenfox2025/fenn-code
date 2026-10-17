@@ -32,6 +32,8 @@ export type AgentEvent =
       command: string
       state: 'running' | 'exited'
       exitCode?: number | null
+      /** It failed without an exit code to say how (an agent's own task). */
+      failed?: boolean
       /** What it is for, in the agent's words. */
       title?: string
       /** The agent runs and stops it itself (its own background task), not through the app's terminal. */

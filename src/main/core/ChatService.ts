@@ -108,6 +108,8 @@ export class ChatService {
   /** Called after every turn, visible or not, once the conversation is free again. */
   readonly turnEndListeners = new Set<(conversationId: string) => void>()
   /** Called once a conversation is deleted, so every part of the app can drop what it kept for it. */
+  /** Called when earlier messages leave the transcript or come back (an edit, a regenerated reply, another variant). */
+  readonly rewrittenListeners = new Set<(conversationId: string) => void>()
   readonly removedListeners = new Set<(conversationId: string) => void>()
   private emitTimers = new Map<string, NodeJS.Timeout>()
   private pendingPermissions = new Map<string, string>() // requestId → conversationId
@@ -695,6 +697,7 @@ export class ChatService {
     const keep = lastUser?.id === fromMessageId && this.live.has(conversationId)
     const { removed, variant } = this.store.archiveFrom(conversationId, fromMessageId)
     for (const m of removed) this.publish({ type: 'message-removed', conversationId, id: m.id })
+    for (const fn of this.rewrittenListeners) fn(conversationId)
     if (keep) this.withdrawn.add(conversationId)
     else this.restartSession(conversationId)
     return variant
@@ -764,6 +767,7 @@ export class ChatService {
     if (!r) return
     for (const m of r.removed) this.publish({ type: 'message-removed', conversationId, id: m.id })
     for (const m of r.restored) this.publish({ type: 'message', message: m })
+    for (const fn of this.rewrittenListeners) fn(conversationId)
     this.restartSession(conversationId)
   }
 
@@ -937,7 +941,7 @@ export class ChatService {
       else if (event.state === 'exited' && i >= 0) {
         // A command that ended within its own reply was a step of it (shown there), not background work.
         if (!list[i].managed && !list[i].detached && this.running.has(conversationId)) list.splice(i, 1)
-        else list[i] = { ...list[i], endedAt: Date.now(), exitCode: event.exitCode, ...(event.output ? { output: event.output.slice(-16_000) } : {}) }
+        else list[i] = { ...list[i], endedAt: Date.now(), exitCode: event.exitCode, ...(event.failed ? { failed: true } : {}), ...(event.output ? { output: event.output.slice(-16_000) } : {}) }
       }
       this.patchConversation(conversationId, { background: list.slice(-BACKGROUND_KEPT) })
       return

@@ -32,19 +32,23 @@ function useTurnKey(conversationId: string): string {
   })
 }
 
-/** Rows the app adds: what this conversation is waiting on, which ACP has no status for. */
-function useWaiting(conv: Conversation): string[] {
+/** Rows the app adds: what this conversation is waiting on, which ACP has no status for; `live` is work under way. */
+function useWaiting(conv: Conversation): { rows: string[]; live: Set<string> } {
   const peers = useApp((s) => s.peerMessages)
   const conversations = useApp((s) => s.conversations)
   const outgoing = peers
     .filter((m) => m.fromId === conv.id && m.state === 'pending')
     .map((m) => ({ deliver: m.deliver, to: conversations.find((c) => c.id === m.toId)?.title ?? '' }))
   const rows: string[] = []
+  const live = new Set<string>()
   if (conv.needsUser?.kind === 'decision') rows.push(t('等您决定：{0}', conv.needsUser.text ?? ''))
   if (conv.needsUser?.kind === 'permission') rows.push(t('等您确认一个操作'))
-  for (const o of outgoing)
-    rows.push(o.deliver === 'when_idle' ? t('等「{0}」空闲后交接', o.to) : o.deliver === 'now' ? t('正在交给「{0}」', o.to) : t('等「{0}」完成后交接', o.to))
-  return rows
+  for (const o of outgoing) {
+    const row = o.deliver === 'when_idle' ? t('等「{0}」空闲后交接', o.to) : o.deliver === 'now' ? t('正在交给「{0}」', o.to) : t('等「{0}」完成后交接', o.to)
+    rows.push(row)
+    if (o.deliver === 'now') live.add(row)
+  }
+  return { rows, live }
 }
 
 function StepIcon({ status, live }: { status: PlanEntry['status']; live: boolean }) {
@@ -76,7 +80,7 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
   const acp = useAcpPlan(conv.id)
   const turn = useTurnKey(conv.id)
   const waiting = useWaiting(conv)
-  const entries = planEntries({ checklist: conv.checklist, acp, waiting })
+  const entries = planEntries({ checklist: conv.checklist, acp, waiting: waiting.rows })
   const blocker = currentBlocker(conv)
   const past = (conv.blockers ?? []).filter((b) => b !== blocker).reverse()
   const working = conv.status === 'working'
@@ -127,7 +131,7 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
               {entries.map((e, i) => (
                 <li key={i} className={'plan-step ' + e.status}>
                   <StepIcon status={e.status} live={working} />
-                  <span className="plan-step-text">{e.text}</span>
+                  <span className={'plan-step-text' + (e.app && waiting.live.has(e.text) ? ' shimmer' : '')}>{e.text}</span>
                   {e.status === 'doing' && working && Date.now() - since(e) >= 1000 && <span className="plan-step-time">{duration(Date.now() - since(e))}</span>}
                 </li>
               ))}

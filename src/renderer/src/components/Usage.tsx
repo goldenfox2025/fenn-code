@@ -113,8 +113,7 @@ function Row({ label, value, note, tip }: { label: ReactNode; value?: ReactNode;
 
 /**
  * A conversation's usage, laid out as Claude's usage popover: how full the
- * context is, where this conversation's tokens went (cache, new input,
- * output) on one stacked bar, then cost and speed. Only reported figures.
+ * context is, then cost and the speed of the latest reply. Only reported figures.
  */
 function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timing?: GenerationTiming }) {
   const hasCtx = u?.contextUsed !== undefined

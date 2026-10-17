@@ -32,14 +32,12 @@ import { routineTools } from './tools/routineTools'
 import { applyPatch, removeItem } from './progress'
 import { FolderFinder, foldersInText, matchingFolders, rankFolders } from './folders'
 import { getLang, localeTag, t } from '../../shared/i18n'
-import type { BackendModelCatalog } from '../../shared/model'
+import { MODEL_PROBE_TIMEOUT_MS, type BackendModelCatalog } from '../../shared/model'
 import { classifyError } from '../../shared/errors'
 
 /** An unanswered request to control the computer gives up after this long. */
 const ASK_TIMEOUT_MS = 3 * 60_000
 // A model picked before a chat starts: its own choices are read once the user has stopped picking for this long.
-/** How long the model picker waits for an agent that is still starting (Antigravity takes 15–25 s on Windows). */
-const PROBE_TIMEOUT_MS = 90_000
 const PROBE_SETTLE_MS = 1500
 
 export class AppCore {
@@ -76,6 +74,8 @@ export class AppCore {
     this.memory = new ProjectMemory(store.dir)
     this.calendar = new UsageCalendar(store)
     this.chat.turnEndListeners.add((id) => this.calendar.add(store.messagesOf(id).findLast((m) => m.role === 'assistant')))
+    // Replies gone (a deleted chat, a regenerated reply) are counted afresh.
+    this.chat.rewrittenListeners.add(() => this.calendar.reset())
     this.memory.onChange = (projectId) => this.publish({ type: 'memory-changed', projectId })
     this.files = new ProjectFiles(store.dir)
     this.artifacts = new Artifacts(store.dir)
@@ -91,6 +91,7 @@ export class AppCore {
     ]
     // What the app keeps per conversation goes with it.
     this.chat.removedListeners.add((id) => {
+      this.calendar.reset()
       this.tools.revoke(id)
       this.computer?.forget(id)
       this.peers.removed(id)
@@ -679,7 +680,7 @@ export class AppCore {
     if (waiting) return waiting
     let timer: NodeJS.Timeout | undefined
     const late = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(t('{0} 启动太久了，还没给出模型列表。', this.backends.nameOf(backendId)))), PROBE_TIMEOUT_MS)
+      timer = setTimeout(() => reject(new Error(t('{0} 启动太久了，还没给出模型列表。', this.backends.nameOf(backendId)))), MODEL_PROBE_TIMEOUT_MS)
       timer.unref()
     })
     const wait = Promise.race([probe, late]).finally(() => {

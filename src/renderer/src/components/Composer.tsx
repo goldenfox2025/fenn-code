@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { errorText } from '@shared/errors'
 import { ArrowLeftRight, ArrowUp, ChevronDown, CornerDownRight, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
-import type { Attachment, Conversation, FolderCandidate, QueuedMessage } from '@shared/model'
+import { MODEL_PROBE_TIMEOUT_MS, type Attachment, type Conversation, type FolderCandidate, type QueuedMessage } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp, toastError } from '../store'
 import { useMenu, type MenuItem } from './Menu'
@@ -9,7 +9,8 @@ import { lang, t } from '../i18n'
 import { tk } from '@shared/i18n'
 const tr = t
 const NEED_TEXT = tk('请在命令后面写上要做的事')
-const NO_COMMAND = tk('{0} 没有 /{1} 这个命令。输入「/」可以看它有哪些命令。')
+const NO_COMMAND = tk('{0} 的命令里没有 /{1}。要照原样发出去，再按一次 Enter。')
+const NEED_NAME = tk('请在 /rename 后面写上新名字')
 import { choiceLabel, optionLabel } from './sessionOptionLabels'
 import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
@@ -93,6 +94,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (next.length) setFiles((cur) => [...cur, ...next])
   }
 
+  /** The text last held back as a command the agent doesn't list: sent as is if submitted again. */
+  const warned = useRef<string | undefined>(undefined)
   const submit = async () => {
     // A model or option still switching: the message goes once it has, with the new choice.
     if (selection.current) await selection.current
@@ -117,17 +120,23 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       void api().runCommand(conversation.id, app.command, app.text).catch(toastError)
       return
     }
-    // A / command the agent doesn't have would reach it as an ordinary message (「/compact」 to an agent
-    // without one): say so instead, once its session has said which commands it has.
-    const unknown = conversation && !target && !files.length ? missingCommand(t, conversation) : undefined
-    if (unknown?.toLowerCase() === 'rename' && t.slice(8).trim()) {
-      // Renaming is the app's to do when the agent has no /rename of its own.
+    // Renaming is the app's to do when the agent has no /rename of its own (or hasn't said yet).
+    if (conversation && !target && !files.length && /^\/rename(\s|$)/i.test(t) && !slashCommands(conversation).some((c) => c.name.toLowerCase() === 'rename')) {
+      const name = t.slice(7).trim()
+      if (!name) return toast(tr(NEED_NAME), 'error')
       setText('')
       sessionStorage.removeItem(draftKey)
-      void api().updateConversation(conversation!.id, { title: t.slice(8).trim().slice(0, 120) }).catch(toastError)
+      void api().updateConversation(conversation.id, { title: name.slice(0, 120) }).catch(toastError)
       return
     }
-    if (unknown) return toast(tr(NO_COMMAND, currentBackend?.name ?? conversation!.backendId, unknown), 'error')
+    // A / command the agent doesn't list would reach it as an ordinary message (「/compact」 to an agent
+    // without one): say so first. Enter again sends it as written (a path, or a command it accepts unlisted).
+    const unknown = conversation && !target && !files.length ? missingCommand(t, conversation) : undefined
+    if (unknown && warned.current !== t) {
+      warned.current = t
+      return toast(tr(NO_COMMAND, currentBackend?.name ?? conversation!.backendId, unknown), 'error')
+    }
+    warned.current = undefined
     setText('')
     setFiles([])
     sessionStorage.removeItem(draftKey)
@@ -247,18 +256,19 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   }, [bid, warmable])
 
   // The models a backend offers, read from a fresh session before the first message (no prompt is sent).
-  const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string; needsLogin?: boolean }>({ for: '', loading: false })
+  const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string; needsLogin?: boolean; stillStarting?: boolean }>({ for: '', loading: false })
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     let live = true
     const known = models.length > 0 && (!wanted || remembered?.current === wanted || !!conversation?.sessionRef)
     if (!bid || busy || accountState(bid) || known) return setCatalog({ for: bid, loading: false })
     setCatalog({ for: bid, loading: true })
+    const started = Date.now()
     api()
       .backendModels(bid, wanted)
       .then(
         (c) => live && setCatalog({ for: bid, loading: false, needsLogin: c.needsLogin }),
-        (e) => live && setCatalog({ for: bid, loading: false, error: errorText(e) })
+        (e) => live && setCatalog({ for: bid, loading: false, error: errorText(e), stillStarting: Date.now() - started >= MODEL_PROBE_TIMEOUT_MS - 1000 })
       )
     return () => {
       live = false
@@ -352,7 +362,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     else if (!models.length) {
       if (loadingModels)
         items.push(slowStart ? { label: t('正在启动 {0}…', currentBackend?.name ?? bid), sub: t('第一次可能要半分钟'), info: true, busy: true } : { label: t('正在加载模型…'), info: true, busy: true })
-      else if (catalog.error) items.push({ label: t('无法加载模型列表'), hint: t('重试'), onClick: () => setRetry((n) => n + 1) })
+      else if (catalog.error)
+        items.push({ label: catalog.stillStarting ? t('{0} 还在启动', currentBackend?.name ?? bid) : t('无法加载模型列表'), hint: t('重试'), onClick: () => setRetry((n) => n + 1) })
     }
     const setModel = (id: string) => {
       setShownModel(id)
@@ -393,7 +404,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const modelButton = (
     <span className="model-group">
       {canSwitch && (
-        <button className="footer-chip backend-chip" aria-haspopup="menu" data-tip={staged ? t('下一条消息起换成 {0}', currentBackend?.name ?? '') : t('Agent 后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
+        <button className="footer-chip backend-chip" aria-haspopup="menu" data-tip={staged ? t('下一条消息起换成 {0}', currentBackend?.name ?? '') : t('后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
           {currentBackend?.name ?? t('选择后端')}
           <ChevronDown size={12} className="chip-caret" />
         </button>
@@ -802,7 +813,7 @@ function HousekeepingTimer({ conversationId }: { conversationId: string }) {
   return (
     <div className="working-timer">
       <span className="dot working" />
-      {t('正在整理项目记忆')} {s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}
+      <span className="shimmer">{t('正在整理项目记忆')}</span> {s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}
     </div>
   )
 }

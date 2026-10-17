@@ -32,4 +32,16 @@ describe('the usage calendar', () => {
     // Replies without a recorded model count under the chat's backend.
     expect(models).toEqual([{ backendId: 'mock', tokens: 186, replies: 3 }])
   })
+  it('counts afresh once replies go away', async () => {
+    const store = new Store(mkdtempSync(join(tmpdir(), 'cal-')))
+    const now = new Date(2026, 9, 17, 12).getTime()
+    for (const id of ['c', 'e']) store.putConversation({ id, kind: 'chat', title: id, backendId: 'mock', status: 'idle', createdAt: now, updatedAt: now } as never)
+    store.putMessage(reply('a', now, 100, 20))
+    store.putMessage({ ...reply('b', now, 50, 5), conversationId: 'e' })
+    const cal = new UsageCalendar(store)
+    expect((await cal.summary()).days[0].tokens).toBe(175)
+    store.removeConversation('e')
+    cal.reset()
+    expect((await cal.summary()).days).toEqual([{ day: dayKey(now), tokens: 120, replies: 1 }])
+  })
 })

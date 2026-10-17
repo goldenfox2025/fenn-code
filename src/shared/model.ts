@@ -52,6 +52,9 @@ export type Block =
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+/** How long the model picker waits for an agent that is still starting (Antigravity takes 15–25 s on Windows). */
+export const MODEL_PROBE_TIMEOUT_MS = 90_000
+
 /** Whether a search query is long enough to run (a single CJK character counts). */
 export const searchable = (q: string): boolean => {
   const t = q.trim()
@@ -705,6 +708,8 @@ export interface BackgroundCommand {
   startedAt: number
   endedAt?: number
   exitCode?: number | null
+  /** Ended in failure with no exit code to show. */
+  failed?: boolean
   /** What it is for, in the agent's words. */
   title?: string
   /** The agent's own background task: it runs and stops it, the app only shows it. */

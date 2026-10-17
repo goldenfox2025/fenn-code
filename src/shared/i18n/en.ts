@@ -979,7 +979,6 @@ export const en: Record<string, string> = {
   "多": "More",
   "{0}：{1} tokens · {2} 条回复": "{0}: {1} tokens · {2} {2:reply|replies}",
   "{0}：没有用量": "{0}: no usage",
-  "{0} 没有 /{1} 这个命令。输入「/」可以看它有哪些命令。": "{0} has no /{1} command. Type / to see the ones it has.",
   "过去一年": "Past year",
   "有用量的天数": "Active days",
   "{0} 天": "{0} {0:day|days}",
@@ -998,4 +997,9 @@ export const en: Record<string, string> = {
   "添加小组件": "Add widget",
   "恢复默认小组件": "Restore default widgets",
   "移除小组件": "Remove widget",
+  "{0} 的命令里没有 /{1}。要照原样发出去，再按一次 Enter。": "{0} has no /{1} command. Press Enter again to send it as written.",
+  "请在 /rename 后面写上新名字": "Write the new name after /rename",
+  "失败": "Failed",
+  "{0} 还在启动": "{0} is still starting",
+  "后端": "Backend",
 }

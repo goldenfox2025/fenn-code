@@ -566,7 +566,7 @@ await check('/ lists the commands; /子对话 hands the text to a new sub-chat w
   await page.locator('.center .day-divider:has-text("已压缩上下文")').waitFor({ timeout: 8000 })
   if ((await page.locator('.center .bubble .cmd-token:has-text("/compact")').count()) !== bubbles) throw new Error('the button sent a /compact message')
 })
-await check('a / command the agent does not have is not sent; it says so', async () => {
+await check('a / command the agent does not list is held back once; Enter again sends it', async () => {
   const before = await page.locator('.center .msg-user').count()
   await page.fill('.composer textarea', '/frobnicate now')
   await page.keyboard.press('Escape')
@@ -574,7 +574,10 @@ await check('a / command the agent does not have is not sent; it says so', async
   await page.locator('.toast:has-text("/frobnicate")').waitFor({ timeout: 3000 })
   if ((await page.locator('.center .msg-user').count()) !== before) throw new Error('the unknown command was sent')
   if ((await page.inputValue('.composer textarea')) !== '/frobnicate now') throw new Error('the text was cleared')
-  await page.fill('.composer textarea', '')
+  // Asked again, it goes as written: a path, or a command the agent takes without listing it.
+  await page.click('.composer .send-btn')
+  await page.waitForFunction((n) => document.querySelectorAll('.center .msg-user').length === n + 1, before, { timeout: 5000 })
+  await page.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
 })
 await check('/rename renames the conversation too', async () => {
   const id = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.find((c) => !c.parentId && !c.projectId)?.id)

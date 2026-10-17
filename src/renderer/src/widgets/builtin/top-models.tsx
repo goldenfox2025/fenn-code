@@ -35,11 +35,14 @@ function TopModels() {
           <span className="top-model-bar" aria-hidden="true">
             <i style={{ width: `${Math.max(2, share(r.tokens) * 100)}%` }} />
           </span>
-          <span className="top-model-share">{Math.round(share(r.tokens) * 100)}%</span>
+          <span className="top-model-share">{percent(share(r.tokens))}</span>
         </div>
       ))}
     </WidgetCard>
   )
 }
+
+/** A share as a whole percentage; a sliver reads <1%, not 0%. */
+const percent = (x: number) => (x > 0 && x < 0.005 ? '<1%' : `${Math.round(x * 100)}%`)
 
 export default { id: 'top-models', title: t('常用模型'), size: 'half', order: 30, Component: TopModels } satisfies Widget

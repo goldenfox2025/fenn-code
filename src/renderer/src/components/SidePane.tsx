@@ -144,7 +144,7 @@ function CommandEntry({ command: b, owner }: { command: BackgroundCommand; owner
           </button>
         ) : (
           <span className={'status-chip ' + (b.exitCode === 0 ? 'done' : b.exitCode == null ? '' : 'error')}>
-            {b.exitCode === 0 ? t('完成') : b.exitCode == null ? t('已结束') : t('退出码 {0}', b.exitCode)}
+            {b.exitCode === 0 ? t('完成') : b.failed ? t('失败') : b.exitCode == null ? t('已结束') : t('退出码 {0}', b.exitCode)}
           </span>
         )}
         <ChevronRight size={14} className="muted bg-chevron" />

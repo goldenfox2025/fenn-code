@@ -34,6 +34,9 @@ export function findAgy(config: Record<string, string> = {}, env = process.env):
   return findOnPath(EXE, env) ?? findOnPath('agy_acp_server', env)
 }
 
+/** Executables already checked for leftovers since the app started. */
+const reaped = new Set<string>()
+
 /**
  * Ends servers a crash or a forced quit left running (their parent is gone). The server doesn't
  * exit when its input closes, so these stay, and keep its files locked against a reinstall.
@@ -91,7 +94,12 @@ export default acpPlugin({
       }
     : undefined,
   launch: async ({ config }) => {
-    await reapOrphans(findAgy(config))
+    // Leftovers can only come from an earlier run of the app, so one look per app start is enough.
+    const exe = findAgy(config)
+    if (exe && !reaped.has(exe)) {
+      reaped.add(exe)
+      await reapOrphans(exe)
+    }
     return {
       command: findAgy(config) ?? EXE,
       // The registry's Linux entry passes an empty --uid.

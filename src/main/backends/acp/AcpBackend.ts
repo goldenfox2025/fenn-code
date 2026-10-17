@@ -851,7 +851,8 @@ export function turnUsage(res: unknown, inputIncludesCache = false): TurnUsage |
 
 /** Whether a turn's input counts its cache reads: input + output make the total, rather than input + cache + output. */
 function includesCache(u: TurnUsage, fallback: boolean): boolean {
-  if (u.total === undefined || u.output === undefined) return fallback
+  // Input smaller than its cache reads can't contain them, whatever the plugin says.
+  if (u.total === undefined || u.output === undefined) return fallback && u.input! >= (u.cachedRead ?? 0)
   const plain = u.input! + u.output
   const split = plain + (u.cachedRead ?? 0) + (u.cachedWrite ?? 0)
   if (Math.abs(u.total - plain) <= Math.abs(u.total - split)) return u.input! >= (u.cachedRead ?? 0)

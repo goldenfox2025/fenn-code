@@ -251,7 +251,8 @@ body.resizing .sidebar {
   overflow: hidden;
 }
 .nav-item:hover .trail,
-.nav-item:focus-within .trail {
+.nav-item:focus-within .trail,
+.nav-item .trail:has([aria-expanded='true']) {
   max-width: 80px;
   overflow: visible;
 }
