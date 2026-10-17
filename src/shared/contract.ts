@@ -15,13 +15,18 @@ export type ToolStatus = 'pending' | 'running' | 'completed' | 'failed'
 export type AgentEvent =
   | { kind: 'message.delta'; text: string }
   | { kind: 'thought.delta'; text: string }
-  | { kind: 'tool.start'; toolId: string; title: string; toolKind?: string; status: ToolStatus; input?: string }
-  | { kind: 'tool.update'; toolId: string; title?: string; status?: ToolStatus; output?: string }
+  /** `paths`: the files the call works on (ACP locations and diffs). */
+  | { kind: 'tool.start'; toolId: string; title: string; toolKind?: string; status: ToolStatus; input?: string; paths?: string[] }
+  | { kind: 'tool.update'; toolId: string; title?: string; status?: ToolStatus; output?: string; toolKind?: string; paths?: string[] }
   | { kind: 'plan'; entries: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] }
   /** The session's other choices changed (e.g. the agent switched its own mode). */
   | { kind: 'options'; options: SessionOption[] }
   /** A status note; a later notice with the same key replaces it (e.g. retry progress). */
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string; key?: string }
+  /** The slash commands the agent offers now (ACP available_commands_update), without the slash. */
+  | { kind: 'commands'; names: string[]; commands?: { name: string; description?: string }[] }
+  /** A command the agent runs through the app started or ended (shown as background work). */
+  | { kind: 'background'; id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null }
   /** The agent compacted the session's context (ACP compaction_update, completed). */
   | { kind: 'compacted' }
   /** How full the context window is, and what the session has cost so far (cumulative), as the backend reports. */
@@ -193,6 +198,8 @@ export interface AgentBackend {
   /** Runs one turn. Events stream through BackendHost.emit until it resolves. */
   prompt(sessionId: string, parts: PromptPart[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>
+  /** Stops a command the agent started through the app. */
+  stopCommand?(sessionId: string, id: string): Promise<boolean>
   setModel?(sessionId: string, modelId: string): Promise<void>
   /** Sets one of the session's options; resolves with the options as they are now. */
   setOption?(sessionId: string, optionId: string, value: string): Promise<SessionOption[] | undefined>

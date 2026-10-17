@@ -58,6 +58,11 @@ export interface AcpQuirks {
    * Grok). Anthropic-style input (Claude Code) does not.
    */
   inputIncludesCache?: boolean
+  /**
+   * The `session/new` `_meta` field that appends to the agent's system prompt, for
+   * agents that take one there instead of ACP sessionCapabilities.systemPrompt (Grok: `rules`).
+   */
+  systemPromptMeta?: string
 }
 
 interface ModelSelector {
@@ -118,7 +123,8 @@ export class AcpBackend implements AgentBackend {
         ]
       })
       return d === 'allow'
-    })}
+    }, (sessionId, e) => this.host.emit(sessionId, { kind: 'background', ...e }))
+  }
 
   start(): Promise<void> {
     this.starting ??= this.launch().catch((err) => {
@@ -205,7 +211,13 @@ export class AcpBackend implements AgentBackend {
         if (this.replaying.has(sessionId)) return
         const ev = translateUpdate(update)
         if (ev) this.host.emit(sessionId, ev)
-        if (update.sessionUpdate === 'compaction_update') {
+        if (update.sessionUpdate === 'available_commands_update') {
+          const list = (update as { availableCommands?: { name?: string; description?: string }[] }).availableCommands ?? []
+          const commands = list
+            .map((c) => ({ name: String(c.name ?? '').replace(/^\//, ''), description: typeof c.description === 'string' ? c.description.slice(0, 200) : undefined }))
+            .filter((c) => c.name)
+          this.host.emit(sessionId, { kind: 'commands', names: commands.map((c) => c.name), commands })
+        } else if (update.sessionUpdate === 'compaction_update') {
           // Shown as a step in the reply, as the agent shows it to clients that don't ask for these updates.
           const c = update as { compactionId: string; status?: string }
           const status: ToolStatus = c.status === 'completed' ? 'completed' : c.status === 'in_progress' ? 'running' : 'failed'
@@ -333,11 +345,13 @@ export class AcpBackend implements AgentBackend {
 
   /** The agent accepts a client system prompt (ACP sessionCapabilities.systemPrompt), which survives its compaction. */
   private takesSystemPrompt(system?: string): boolean {
-    return !!system && !!(this.caps?.sessionCapabilities as { systemPrompt?: unknown } | undefined)?.systemPrompt
+    return !!system && (!!this.quirks.systemPromptMeta || !!(this.caps?.sessionCapabilities as { systemPrompt?: unknown } | undefined)?.systemPrompt)
   }
 
-  private systemPrompt(system?: string): { systemPrompt?: { mode: 'append'; content: { type: 'text'; text: string }[] } } {
-    return this.takesSystemPrompt(system) ? { systemPrompt: { mode: 'append', content: [{ type: 'text', text: system! }] } } : {}
+  private systemPrompt(system?: string): Record<string, unknown> {
+    if (!this.takesSystemPrompt(system)) return {}
+    if (this.quirks.systemPromptMeta) return { _meta: { [this.quirks.systemPromptMeta]: system } }
+    return { systemPrompt: { mode: 'append', content: [{ type: 'text', text: system! }] } }
   }
 
   async newSession({ cwd, folder, tools, system }: NewSessionOptions): Promise<SessionInfo> {
@@ -409,6 +423,10 @@ export class AcpBackend implements AgentBackend {
 
   async cancel(sessionId: string): Promise<void> {
     await this.conn?.cancel({ sessionId })
+  }
+
+  async stopCommand(sessionId: string, id: string): Promise<boolean> {
+    return this.workspaces.stop(sessionId, id)
   }
 
   async setModel(sessionId: string, modelId: string): Promise<void> {
@@ -510,6 +528,7 @@ export class AcpBackend implements AgentBackend {
     if (p && reason) this.stopReasons.set(p, reason)
     this.proc = undefined
     p?.kill()
+    this.workspaces.closeAll()
     this.conn = undefined
     this.starting = undefined
   }
@@ -552,6 +571,14 @@ export function windowsSafe(command: string, args: string[]): { command: string;
   return { command: q(command), args: args.map(q), shell: true }
 }
 
+/** The files a tool call works on: its locations and the files its diffs change. */
+function toolPaths(u: { locations?: { path: string }[] | null; content?: acp.ToolCallContent[] | null }): string[] | undefined {
+  const paths = new Set<string>()
+  for (const l of u.locations ?? []) if (l?.path) paths.add(l.path)
+  for (const c of u.content ?? []) if (c.type === 'diff' && c.path) paths.add(c.path)
+  return paths.size ? [...paths] : undefined
+}
+
 function translateUpdate(u: acp.SessionNotification['update']): AgentEvent | null {
   switch (u.sessionUpdate) {
     case 'agent_message_chunk':
@@ -565,7 +592,8 @@ function translateUpdate(u: acp.SessionNotification['update']): AgentEvent | nul
         title: u.title,
         toolKind: u.kind ?? undefined,
         status: TOOL_STATUS[u.status ?? 'pending'] ?? 'pending',
-        input: stringify(u.rawInput)
+        input: stringify(u.rawInput),
+        paths: toolPaths(u)
       }
     case 'tool_call_update':
       return {
@@ -573,7 +601,9 @@ function translateUpdate(u: acp.SessionNotification['update']): AgentEvent | nul
         toolId: u.toolCallId,
         title: u.title ?? undefined,
         status: u.status ? TOOL_STATUS[u.status] : undefined,
-        output: toolOutput(u.content) ?? stringify(u.rawOutput)
+        output: toolOutput(u.content) ?? stringify(u.rawOutput),
+        toolKind: u.kind ?? undefined,
+        paths: toolPaths(u)
       }
     case 'plan':
       return {

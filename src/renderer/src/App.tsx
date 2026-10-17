@@ -5,6 +5,7 @@ import { ConfirmHost } from './components/Modal'
 import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
 import { PagePanel } from './components/PagePanel'
+import { ChatSidePane } from './components/SidePane'
 import { usePaneFit } from './components/ResizeHandle'
 import { Sidebar } from './components/Sidebar'
 import { api, toast, useApp } from './store'
@@ -76,7 +77,7 @@ export function App() {
         </div>
         <div className="workspace">
           <div className="center">{view}</div>
-          {page && <PagePanel id={page.id} version={page.version} />}
+          {page ? <PagePanel id={page.id} version={page.version} /> : route.view === 'chat' && <ChatSidePane conversationId={route.conversationId} />}
         </div>
       </main>
       <Dialogs />

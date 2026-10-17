@@ -40,6 +40,8 @@ import { api, toast, useApp } from '../store'
 import { duration, relTime, STATUS_LABEL, threadState } from '../util'
 import { EditableTitle } from './ChatView'
 import { locale, t } from '../i18n'
+import { tk } from '@shared/i18n'
+import { FilesPane } from '../components/FilesPane'
 import { confirmDialog, EscLayer } from '../components/Modal'
 import { UsageButton, usageLine } from '../components/Usage'
 import { sumTotals } from '@shared/usage'
@@ -68,6 +70,15 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
   const floating = squeezed && showPanel
   const panelRef = useRef<HTMLElement>(null)
   // The floating panel closes like a popover: Esc, or a click on the conversation behind it.
+  // Esc leaves full screen (a menu or dialog open on top keeps it).
+  useEffect(() => {
+    if (!wide) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.menu, .overlay')) setWide(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [wide])
   useEffect(() => {
     if (!floating) return
     const busy = () => !!document.querySelector('.menu, .overlay')
@@ -161,7 +172,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
       </div>
 
       {showPanel && (
-        <aside ref={panelRef} className={'panel' + (wide ? ' wide' : '') + (panelWidth && !wide ? ' sized' : '') + (squeezed ? ' floating' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
+        <aside ref={panelRef} className={'panel' + (wide ? ' maximized' : '') + (panelWidth && !wide ? ' sized' : '') + (squeezed ? ' floating' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
           <ResizeHandle pane="panel" edge="left" onResize={() => setWide(false)} />
           {threadId ? (
             <ThreadView threadId={threadId} onBack={() => go({})} wide={wide} setWide={setWide} />
@@ -234,7 +245,9 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
 }) {
   const threads = useThreads(project.id)
   const routines = useApp(useShallow((s) => s.routines.filter((r) => r.target.projectId === project.id)))
-  const [tab, setTab] = useState<'threads' | 'progress' | 'outputs' | 'memory' | 'files' | 'routines'>('threads')
+  const [tab, setTab] = useState<PanelTab>('threads')
+  const [moreMenu, openMore] = useMenu({ align: 'left', compact: true })
+  const extra = MORE.find((m) => m.id === tab)
   const [q, setQ] = useState<string | null>(null)
   const shown = threads.filter((t) => !q || t.title.toLowerCase().includes(q.toLowerCase()))
   const waiting = shown.filter((x) => !x.resolved && ['waiting', 'error'].includes(threadState(x)))
@@ -249,39 +262,42 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
   return (
     <>
       <div className="panel-head">
-        <button className={'tab' + (tab === 'threads' ? ' active' : '')} onClick={() => setTab('threads')}>
-          <MessagesSquare size={15} />
-          {t('讨论串')}</button>
-        {/* Threads are the milestones; the separate board stays only for projects that already use it. */}
-        {(!!project.progress?.length || tab === 'progress') && (
-          <button className={'tab' + (tab === 'progress' ? ' active' : '')} data-tip={t('进度')} onClick={() => setTab('progress')}>
-            <Milestone size={15} />
+        <div className="tabs" role="tablist">
+          <button role="tab" data-tab="threads" aria-selected={tab === 'threads'} className={'tab' + (tab === 'threads' ? ' active' : '')} onClick={() => setTab('threads')}>
+            {t('讨论串')}
           </button>
-        )}
-        <button className={'tab' + (tab === 'outputs' ? ' active' : '')} data-tip={t('成果')} onClick={() => setTab('outputs')}>
-          <PackageOpen size={15} />
-        </button>
-        <button className={'tab' + (tab === 'memory' ? ' active' : '')} data-tip={t('项目记忆')} onClick={() => setTab('memory')}>
-          <NotebookText size={15} />
-        </button>
-        <button className={'tab' + (tab === 'files' ? ' active' : '')} data-tip={t('项目文件')} onClick={() => setTab('files')}>
-          <Paperclip size={15} />
-        </button>
-        <button className={'tab' + (tab === 'routines' ? ' active' : '')} data-tip={t('定时任务')} onClick={() => setTab('routines')}>
-          <Clock size={15} />
-        </button>
+          <button role="tab" data-tab="library" aria-selected={tab === 'library'} className={'tab' + (tab === 'library' ? ' active' : '')} onClick={() => setTab('library')}>
+            {t('库')}
+          </button>
+          {extra && (
+            <button role="tab" data-tab={tab} aria-selected className="tab active">
+              {t(extra.label)}
+            </button>
+          )}
+          <button
+            className="icon-btn"
+            data-more
+            data-tip={t('更多')}
+            aria-label={t('更多')}
+            onClick={(e) => openMore(e.currentTarget, MORE.filter((m) => m.id !== 'progress' || !!project.progress?.length).map((m) => ({ icon: m.icon, label: t(m.label), checked: tab === m.id, onClick: () => setTab(m.id) })))}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {moreMenu}
+        </div>
         <span className="spacer" />
-        {q != null ? (
-          <input className="input" style={{ width: 160, height: 30 }} autoFocus placeholder={t('搜索讨论串')} value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => !q && setQ(null)} />
-        ) : (
-          <button className="icon-btn" onClick={() => setQ('')}>
-            <Search size={15} />
-          </button>
-        )}
-        <button className="icon-btn" onClick={() => setWide(!wide)}>
+        {tab === 'threads' &&
+          (q != null ? (
+            <input className="input panel-search" autoFocus placeholder={t('搜索讨论串')} value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => !q && setQ(null)} />
+          ) : (
+            <button className="icon-btn" data-tip={t('搜索讨论串')} aria-label={t('搜索讨论串')} onClick={() => setQ('')}>
+              <Search size={15} />
+            </button>
+          ))}
+        <button className="icon-btn" data-tip={wide ? t('退出全屏') : t('全屏')} aria-label={wide ? t('退出全屏') : t('全屏')} onClick={() => setWide(!wide)}>
           {wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </button>
-        <button className="icon-btn" onClick={onClose}>
+        <button className="icon-btn" data-tip={t('关闭')} aria-label={t('关闭')} onClick={onClose}>
           <X size={16} />
         </button>
       </div>
@@ -328,11 +344,20 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
           </>
         )}
         {tab === 'progress' && <ProgressPanel project={project} />}
+        {tab === 'library' && <FilesPane id={project.id} />}
         {tab === 'outputs' && <OutputsPanel project={project} />}
         {tab === 'memory' && <MemoryPanel projectId={project.id} />}
         {tab === 'files' && <FilesPanel projectId={project.id} />}
         {tab === 'routines' && (
           <div className="thread-list">
+            <div className="list-head">
+              <span className="muted small">{t('按时间自动在这个项目里运行的任务。')}</span>
+              <span className="spacer" />
+              <button className="btn sm" onClick={() => useApp.getState().set({ settingsOpen: `routine:new:${project.id}` })}>
+                <Plus size={14} />
+                {t('新建定时任务')}
+              </button>
+            </div>
             {routines.length === 0 && <div className="empty">{t('此项目还没有定时任务。')}</div>}
             {routines.map((r) => (
               <div key={r.id} className="thread-item">
@@ -344,17 +369,23 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
                 {r.nextRunAt && <div className="preview">{t('下次运行：')}{new Date(r.nextRunAt).toLocaleString(locale)}</div>}
               </div>
             ))}
-            <div style={{ padding: 8 }}>
-              <button className="btn" onClick={() => useApp.getState().set({ settingsOpen: `routine:new:${project.id}` })}>
-                <Plus size={14} />
-                {t('新建定时任务')}</button>
-            </div>
           </div>
         )}
       </div>
     </>
   )
 }
+
+type PanelTab = 'threads' | 'library' | 'progress' | 'outputs' | 'memory' | 'files' | 'routines'
+
+/** The project panel's other views, under 更多: the two tabs are 讨论串 and 库, as in Claude. */
+const MORE: { id: PanelTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'outputs', label: tk('成果'), icon: <PackageOpen size={15} /> },
+  { id: 'files', label: tk('项目资料'), icon: <Paperclip size={15} /> },
+  { id: 'memory', label: tk('项目记忆'), icon: <NotebookText size={15} /> },
+  { id: 'routines', label: tk('定时任务'), icon: <Clock size={15} /> },
+  { id: 'progress', label: tk('里程碑'), icon: <Milestone size={15} /> }
+]
 
 function FilesPanel({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<{ name: string; size: number; updatedAt: number }[] | null>(null)
@@ -561,7 +592,12 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
         </span>
         <span className="spacer" />
         <UsageButton usage={th.usage} timing={th.timing} backendId={th.backendId} scope={t('本讨论串用量')} creditsOnly />
-        <button className="icon-btn" onClick={() => setWide(!wide)}>
+        {wide && (
+          <button className="icon-btn" data-tip={th.resolved ? t('重新打开') : t('标记为已解决')} onClick={() => void api().updateConversation(th.id, { resolved: !th.resolved })}>
+            <CheckCircle2 size={15} />
+          </button>
+        )}
+        <button className="icon-btn" data-tip={wide ? t('退出全屏') : t('全屏')} onClick={() => setWide(!wide)}>
           {wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </button>
         <button
@@ -593,6 +629,11 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
         >
           <MoreHorizontal size={16} />
         </button>
+        {wide && (
+          <button className="icon-btn" data-tip={t('关闭讨论串')} onClick={() => (setWide(false), onBack())}>
+            <X size={16} />
+          </button>
+        )}
         {menu}
       </div>
       <PlanLine conv={th} defaultOpen={st === 'working'} />

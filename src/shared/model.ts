@@ -22,7 +22,7 @@ export type Block =
   | { type: 'attachment'; attachment: Attachment }
   /** startedAt/ms: when thinking began and how long it took, for 「思考了 4 秒」. */
   | { type: 'thought'; text: string; startedAt?: number; ms?: number }
-  | { type: 'tool'; toolId: string; title: string; toolKind?: string; status: ToolStatus; input?: string; output?: string }
+  | { type: 'tool'; toolId: string; title: string; toolKind?: string; status: ToolStatus; input?: string; output?: string; paths?: string[] }
   | { type: 'plan'; entries: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string; key?: string }
   /** The chat was given this folder because the agent made files (「已放在 …」). */
@@ -133,6 +133,12 @@ export interface Conversation {
   progressSuggested?: boolean
   /** The checklist was written by the app because the agent never called update_status. */
   checklistAuto?: boolean
+  /** The agent's own command for compacting its context (e.g. compact), when it offers one. */
+  compactCommand?: string
+  /** The slash commands the agent offers now (without the slash), for the / menu. */
+  agentCommands?: { name: string; description?: string }[]
+  /** Commands the agent ran through the app, newest last (the last few kept), shown under 后台. */
+  background?: BackgroundCommand[]
   resolved?: boolean
   pinned?: boolean
   /** Messages the user has not seen yet. */
@@ -371,6 +377,7 @@ export interface AppSettings {
   runInBackground?: boolean
   /** Lets agents see the screen and use the mouse and keyboard (asks per conversation). */
   computerUse?: boolean
+  /** Before 0.1.2: a suggested folder. Folded into autoFolderRoot at startup. */
   defaultCwd?: string
   /** The first-run guide has been finished or skipped. */
   onboarded?: boolean
@@ -499,6 +506,8 @@ export interface AncoraApi {
 
   startChat(opts: NewChatOptions): Promise<Conversation>
   send(conversationId: string, text: string, attachments?: Attachment[]): Promise<void>
+  /** The app's own / commands (/子对话 in a chat, /讨论串 in a project); returns the new conversation's id. */
+  runCommand(conversationId: string, command: 'subchat' | 'thread', text: string): Promise<string>
   /** From the project chat: hands the user's message straight to one of its threads (@ in the composer). */
   sendToThread(projectConversationId: string, threadId: string, text: string, attachments?: Attachment[]): Promise<void>
   /** Drops the last reply and asks again. */
@@ -550,6 +559,9 @@ export interface AncoraApi {
   artifactSource(id: string, version?: number): Promise<string | null>
   /** Withdraws a message one thread left for another, while it still waits. */
   cancelPeerMessage(id: string): Promise<void>
+  compactContext(conversationId: string): Promise<void>
+  /** Stops a command the conversation's agent runs through the app (listed under 后台). */
+  stopCommand(conversationId: string, id: string): Promise<void>
   /** Answers a decision card: records the choice and sends it to the agent. */
   chooseDecision(conversationId: string, messageId: string, blockIndex: number, option: number): Promise<void>
   listConnectors(): Promise<ConnectorView[]>
@@ -570,6 +582,20 @@ export interface AncoraApi {
   /** Opens a terminal running the backend's sign-in command (e.g. `qodercli login`). */
   backendTerminalLogin(backendId: string): Promise<void>
   listProjectFiles(projectId: string): Promise<{ name: string; size: number; updatedAt: number }[]>
+  /**
+   * The files panel (a project's 库): one folder of the working folder of a
+   * project or conversation (`id` is either; rel '' is the top). Undefined when
+   * it has no folder or rel is not a folder in it.
+   */
+  listLibrary(id: string, rel?: string): Promise<{ root: string; entries: LibraryEntry[]; truncated: boolean } | undefined>
+  /** Files the agents changed in that folder (a project's conversations, or a chat and its sub-conversations), newest first. */
+  libraryChanges(id: string): Promise<LibraryChange[]>
+  /** A text file of that folder for the preview (undefined: not text, or too big). */
+  readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined>
+  /** Opens a file of that folder with its app (folders and safe files), or shows it in its folder. */
+  openLibraryPath(id: string, rel: string, reveal?: boolean): Promise<{ ok: boolean; error?: string }>
+  /** Copies files into a folder of it; names already taken get a number. */
+  addToLibrary(id: string, rel: string, files: { name: string; data: string }[]): Promise<void>
   /** data is base64. */
   addProjectFiles(projectId: string, files: { name: string; data: string }[]): Promise<void>
   deleteProjectFile(projectId: string, name: string): Promise<void>
@@ -596,4 +622,32 @@ export interface AncoraApi {
 /** Glass used to be a theme of its own (always dark); it is now a switch over light or dark. */
 export function normalizeTheme<T extends Partial<Pick<AppSettings, 'theme' | 'glass'>>>(s: T): T {
   return s.theme === 'glass' ? { ...s, theme: 'dark', glass: true } : s
+}
+
+/** One file or folder in a project's library. `path` is relative to the project's folder, with / between parts. */
+export interface LibraryEntry {
+  name: string
+  path: string
+  dir: boolean
+  size?: number
+  updatedAt: number
+}
+
+/** A file an agent changed in the project's folder. */
+export interface LibraryChange {
+  path: string
+  kind: 'edit' | 'delete' | 'move'
+  changedAt: number
+  conversationId: string
+  exists?: boolean
+  size?: number
+}
+
+/** A command an agent ran through the app's terminal. */
+export interface BackgroundCommand {
+  id: string
+  command: string
+  startedAt: number
+  endedAt?: number
+  exitCode?: number | null
 }

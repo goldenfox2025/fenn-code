@@ -1,10 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp, ChevronDown, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, MessagesSquare, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Plus, Slash, Square, X } from 'lucide-react'
 import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp } from '../store'
 import { useMenu, type MenuItem } from './Menu'
-import { t } from '../i18n'
+import { lang, t } from '../i18n'
+import { tk } from '@shared/i18n'
+const tr = t
+const NEED_TEXT = tk('请在命令后面写上要做的事')
 import { choiceLabel, optionLabel } from './sessionOptionLabels'
 import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
@@ -60,9 +63,16 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (autoFocus) ta.current?.focus()
   }, [draftKey, autoFocus])
 
+  // Where the caret goes once a picked command is in the box (before anything else is typed).
+  const caretTo = useRef<number | null>(null)
   useLayoutEffect(() => {
     const el = ta.current
     if (!el) return
+    if (caretTo.current !== null) {
+      el.focus()
+      el.setSelectionRange(caretTo.current, caretTo.current)
+      caretTo.current = null
+    }
     el.style.height = 'auto'
     el.style.height = Math.min(el.scrollHeight, 260) + 'px'
   }, [text])
@@ -83,6 +93,14 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (selecting) return
     const t = text.trim()
     if (!t && !files.length) return
+    const app = conversation && !target && appCommand(t, conversation)
+    if (app) {
+      if (!app.text) return toast(tr(NEED_TEXT), 'error')
+      setText('')
+      sessionStorage.removeItem(draftKey)
+      void api().runCommand(conversation.id, app.command, app.text).catch((e) => toast(String(e instanceof Error ? e.message : e), 'error'))
+      return
+    }
     setText('')
     setFiles([])
     sessionStorage.removeItem(draftKey)
@@ -123,6 +141,21 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       ta.current?.focus()
       ta.current?.setSelectionRange(mention.start, mention.start)
     })
+  }
+
+  // / opens the commands: the app's own (a sub-conversation, a thread) and the agent's.
+  const slashQuery = conversation && !target ? /^\/(\S*)$/.exec(text)?.[1] : undefined
+  const [slashAt, setSlashAt] = useState(0)
+  const [slashClosed, setSlashClosed] = useState(false)
+  useEffect(() => setSlashClosed(false), [slashQuery === undefined])
+  const commands = conversation ? slashCommands(conversation).filter((c) => c.name.toLowerCase().includes((slashQuery ?? '').toLowerCase())).slice(0, 12) : []
+  const slashOpen = slashQuery !== undefined && !slashClosed && commands.length > 0
+  const pickCommand = (c: SlashCommand) => {
+    const next = `/${c.name} `
+    setText(next)
+    sessionStorage.setItem(draftKey, next)
+    setSlashAt(0)
+    caretTo.current = next.length
   }
 
   const bid = conversation?.backendId ?? backendId ?? ''
@@ -307,7 +340,12 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
         <EffortPicker option={effortOpt} value={valueOf(effortOpt)} onChange={(v) => setOptionValue(effortOpt, v)} />
       )}
       {conversation ? (
-        <ContextRing usage={conversation.usage} timing={conversation.timing} scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')} />
+        <ContextRing
+          usage={conversation.usage}
+          timing={conversation.timing}
+          scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')}
+          onCompact={conversation.compactCommand && !busy ? () => void api().compactContext(conversation.id).catch((e) => toast(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')) : undefined}
+        />
       ) : null}
     </span>
   )
@@ -408,6 +446,25 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             ))}
           </div>
         )}
+        {slashOpen && (
+          <div className="menu compact mention-menu slash-menu" role="listbox" aria-label={t('命令')}>
+            {commands.map((c, i) => (
+              <button
+                key={c.key}
+                role="option"
+                aria-selected={i === slashAt}
+                className={'menu-item' + (i === slashAt ? ' active' : '')}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setSlashAt(i)}
+                onClick={() => pickCommand(c)}
+              >
+                {c.app ? c.app === 'thread' ? <MessagesSquare size={15} className="muted" /> : <GitBranch size={15} className="muted" /> : <Slash size={15} className="muted" />}
+                <span className="menu-text">/{c.name}</span>
+                {c.hint && <span className="menu-hint">{c.hint}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         {mention && conversation?.kind === 'project' && (
           <div className="menu compact mention-menu" role="listbox" aria-label={t('转给讨论串')}>
             {mentionable.length ? (
@@ -460,6 +517,18 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
               }
             }}
             onKeyDown={(e) => {
+              if (slashOpen && !e.nativeEvent.isComposing) {
+                if (e.key === 'Escape') return (e.preventDefault(), setSlashClosed(true))
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  const n = commands.length
+                  return setSlashAt((i) => (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n)
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault()
+                  return pickCommand(commands[Math.min(slashAt, commands.length - 1)])
+                }
+              }
               if (mention && !e.nativeEvent.isComposing) {
                 if (e.key === 'Escape') return (e.preventDefault(), setMention(null))
                 if (mentionable.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -507,6 +576,35 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     </div>
   )
 }
+
+interface SlashCommand {
+  key: string
+  name: string
+  hint?: string
+  /** The app's own command (handled by the app, not sent to the agent). */
+  app?: 'subchat' | 'thread'
+}
+
+/** The / commands of a conversation: the app's own first, then the agent's. */
+function slashCommands(conv: Conversation): SlashCommand[] {
+  const list: SlashCommand[] = []
+  if (conv.kind === 'chat' && !conv.parentId && !conv.routineId) list.push({ key: 'app:subchat', name: lang === 'en' ? 'subchat' : '子对话', hint: t('交给一个新的子对话去做'), app: 'subchat' }) // i18n-ignore
+  if (conv.kind === 'project') list.push({ key: 'app:thread', name: lang === 'en' ? 'thread' : '讨论串', hint: t('开一个讨论串去做'), app: 'thread' }) // i18n-ignore
+  for (const c of conv.agentCommands ?? []) list.push({ key: 'agent:' + c.name, name: c.name, hint: c.description?.split('\n')[0] })
+  return list
+}
+
+/** "/子对话 …" or "/讨论串 …" (or their English names): the app's command and the text after it. */
+function appCommand(text: string, conv: Conversation): { command: 'subchat' | 'thread'; text: string } | undefined {
+  for (const c of slashCommands(conv)) {
+    if (!c.app) continue
+    const m = new RegExp(`^/(${escapeRe(c.name)}|${c.app})(?:\\s+([\\s\\S]*))?$`, 'i').exec(text)
+    if (m) return { command: c.app, text: (m[2] ?? '').trim() }
+  }
+  return undefined
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** Time since the current reply started, like Claude's "Working… 12s". */
 /** A hidden turn (saving project memory before a handoff) has no message to show its working mark in. */
@@ -586,8 +684,7 @@ const baseName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ||
 export function FolderChip({ folder, onChange, hint = '' }: { folder: string; onChange: (folder: string) => void; hint?: string }) {
   const [menu, openMenu] = useMenu({ placement: 'auto' })
   const recent = useApp((s) => {
-    // The folder set in Settings comes first, as a suggestion only.
-    const seen = new Set<string>(s.settings.defaultCwd ? [s.settings.defaultCwd] : [])
+    const seen = new Set<string>()
     for (const f of s.settings.recentFolders ?? []) seen.add(f)
     for (const c of [...s.conversations].sort((a, b) => b.updatedAt - a.updatedAt)) if (c.cwd) seen.add(c.cwd)
     for (const p of s.projects) if (p.cwd) seen.add(p.cwd)

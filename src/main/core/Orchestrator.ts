@@ -284,6 +284,7 @@ export class Orchestrator {
       if (fresh && (!fresh.checklist || fresh.checklistAuto))
         this.chat.patchConversation(conv.id, { checklist: `${fresh.title}\n\n✱ ${t('正在处理')}`, checklistAuto: true })
     }
+    if (conv.kind === 'chat' && !conv.parentId) return this.childDigest(conv)
     if (conv.kind !== 'project' || !conv.projectId) return ''
     // The coordinator gets the list of threads as it is now, only when it changed since it last
     // saw it, with the results that came in meanwhile: one snapshot, not a pile of notices.
@@ -296,12 +297,32 @@ export class Orchestrator {
     return index
   }
 
+  /** A chat's sub-conversations as they are now, before its turn, only when that changed (the same snapshot rule as threads). */
+  private childDigest(conv: Conversation): string {
+    const children = this.childrenOf(conv.id)
+    if (!children.length) return ''
+    const seen = this.store.conversation(conv.id)?.threadsSeenAt ?? 0
+    const index = this.listIndex(children, seen, 'subconversations', '子对话')
+    const states = statesOf(index)
+    this.chat.patchConversation(conv.id, { threadsSeenAt: Date.now() })
+    if (states === this.lastIndex.get(conv.id)) return ''
+    this.lastIndex.set(conv.id, states)
+    return index
+  }
+
+  private childrenOf(id: string): Conversation[] {
+    return this.store.conversations.filter((c) => c.parentId === id).sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
   /** What the coordinator was last shown, so an unchanged list isn't repeated (memory only). */
   private lastIndex = new Map<string, string>()
 
   /** Each thread's state in a line; threads that changed since `since` also carry their latest result. */
   private threadIndex(projectId: string, since = Infinity): string {
-    const all = this.threadsOf(projectId)
+    return this.listIndex(this.threadsOf(projectId), since, 'threads', '讨论串')
+  }
+
+  private listIndex(all: Conversation[], since: number, tag: string, noun: string): string {
     if (!all.length) return ''
     const open = all.filter((t) => !t.resolved)
     const done = all.filter((t) => t.resolved).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5)
@@ -325,10 +346,10 @@ export class Orchestrator {
       return `${line}\n  最新结果：${result}`
     }
     return [
-      `<threads>`,
-      open.length ? `未解决的讨论串：\n${open.map(row).join('\n')}` : '没有未解决的讨论串。',
+      `<${tag}>`,
+      open.length ? `未解决的${noun}：\n${open.map(row).join('\n')}` : `没有未解决的${noun}。`,
       done.length ? `最近解决的：\n${done.map(row).join('\n')}` : '',
-      `</threads>`
+      `</${tag}>`
     ].filter(Boolean).join('\n')
   }
 
@@ -767,7 +788,7 @@ export class Orchestrator {
       common.push({
         name: 'start_subconversation',
         description:
-          '对话推进到需要专门处理的一块旁支工作时（例如一个独立的排查、重构或调研），把它交给一个新的子对话：同一个文件夹、同一个 agent，并立刻开始做。这是交接：之后用户直接到子对话里和它沟通，子对话不会向这里汇报，你也不能再给它发消息。task 要写清楚目标、限制和怎样算完成；context 放子对话需要知道的背景（它看不到这里的对话）。子对话里不能再开子对话。',
+          '对话推进到需要专门处理的一块旁支工作时（例如一个独立的排查、重构或调研），或用户要求开子对话时，把它交给一个新的子对话：同一个文件夹、同一个 agent，并立刻开始做。之后用户直接到子对话里和它沟通，你不能给它发消息；它的最新状态会在你下一轮开头以 <subconversations> 给你，也可以用 check_subconversations 查看。task 要写清楚目标、限制和怎样算完成；context 放子对话需要知道的背景（它看不到这里的对话）。子对话里不能再开子对话。',
         inputSchema: obj(
           {
             title: { type: 'string', description: '子对话的标题，几个字' },
@@ -784,6 +805,13 @@ export class Orchestrator {
           const child = this.startSubconversation(now, typeof title === 'string' ? title : '', str(task, 'task'), typeof context === 'string' ? context : undefined)
           return `已开启子对话「${child.title}」，它已经开始工作。用户会直接在那里和它沟通。`
         }
+      })
+    if (conv.kind === 'chat' && !conv.parentId && this.childrenOf(conversationId).length)
+      common.push({
+        name: 'check_subconversations',
+        description: '查看这个对话开出的子对话现在的状态和最新结果（只读，不会打扰它们）。',
+        inputSchema: obj({}, []),
+        run: () => this.listIndex(this.childrenOf(conversationId), 0, 'subconversations', '子对话') || '没有子对话。'
       })
     common.push({
       name: 'ask_decision',

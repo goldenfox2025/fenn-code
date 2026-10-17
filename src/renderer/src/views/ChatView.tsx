@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, CornerUpLeft, Download, MoreHorizontal, Pin, PinOff, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, CornerUpLeft, Download, FolderOpen, MoreHorizontal, Pin, PinOff, Trash2 } from 'lucide-react'
 import type { Conversation } from '@shared/model'
 import { Composer } from '../components/Composer'
 import { useMenu } from '../components/Menu'
@@ -10,6 +10,7 @@ import { t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
 import { PlanLine } from '../components/PlanLine'
 import { UsageButton } from '../components/Usage'
+import { useRunning } from '../components/SidePane'
 
 export function ChatView({ conversationId }: { conversationId: string }) {
   const conv = useApp((s) => s.conversations.find((c) => c.id === conversationId))
@@ -37,6 +38,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
         )}
         <span className="spacer" />
         <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} creditsOnly />
+        <SidePaneButton conv={conv} />
         <button
           className="icon-btn"
           data-tip={t('更多对话操作')}
@@ -72,6 +74,24 @@ export function ChatView({ conversationId }: { conversationId: string }) {
       <PermissionPrompts conversationId={conv.id} />
       <Composer conversation={conv} autoFocus />
     </div>
+  )
+}
+
+/** Opens the files and background pane beside the chat (a dot while something runs in the background). */
+function SidePaneButton({ conv }: { conv: Conversation }) {
+  const open = useApp((s) => s.sidePane)
+  const running = useRunning(conv)
+  return (
+    <button
+      className={'icon-btn side-pane-toggle' + (open ? ' on' : '')}
+      data-tip={running ? t('文件与后台（{0} 个在运行）', running) : t('文件与后台')}
+      aria-label={t('文件与后台')}
+      aria-pressed={!!open}
+      onClick={() => useApp.getState().set({ sidePane: open ? null : running ? 'background' : 'files', page: null })}
+    >
+      <FolderOpen size={16} />
+      {running > 0 && <span className="run-dot" />}
+    </button>
   )
 }
 

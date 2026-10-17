@@ -45,6 +45,11 @@ if (process.env.UI_THEME) {
   await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), process.env.UI_THEME)
   await page.waitForTimeout(300)
 }
+/** Opens one of the project panel's views under 「…」 (成果, 项目资料, 项目记忆, 定时任务, 里程碑). */
+const panelView = async (label) => {
+  await page.click('.panel-head [data-more]')
+  await page.click(`.menu .menu-item:has-text("${label}")`)
+}
 const shot = (name) => page.screenshot({ path: join(out, name + '.png') })
 const wait = (ms) => page.waitForTimeout(ms)
 
@@ -112,6 +117,10 @@ const scenarios = {
     await page.click('.panel .plan-summary')
     await wait(300)
     await shot('plan-opened')
+    // Full screen, as Claude opens a thread.
+    await page.click('.panel .panel-head .icon-btn[data-tip="全屏"]')
+    await wait(400)
+    await shot('thread-fullscreen')
   },
   // MOCK_AUTH=1: the agent is installed but signed out; the picker says so instead of failing.
   async signedout() {
@@ -265,7 +274,7 @@ const scenarios = {
     await page.click('.sidebar .nav-item:has-text("项目")')
     await page.click('.page :text("竞品调研")')
     await wait(500)
-    await page.click('.panel-head .tab[data-tip="成果"]')
+    await panelView('成果')
     await wait(400)
     await shot('121-outputs-library')
   },
@@ -385,7 +394,7 @@ const scenarios = {
       return p.id
     })
     await page.click(`.sidebar .nav-item:has-text("发布 Ancora")`)
-    await page.click('.panel-head .tab[data-tip="进度"]')
+    await panelView('里程碑')
     await wait(300)
     await shot('90-progress')
     await page.click('.panel-head .tab:has-text("讨论串")')
@@ -569,6 +578,62 @@ const scenarios = {
     await wait(300)
     await shot('10-project')
   },
+  // The files and background pane beside a chat, and the / menu.
+  async sidepane() {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    const dir = join(mkdtempSync(join(tmpdir(), 'work-')), 'text-adventure')
+    mkdirSync(join(dir, 'src'), { recursive: true })
+    mkdirSync(join(dir, 'tests'))
+    writeFileSync(join(dir, 'README.md'), '# Text adventure\n\nA small engine for branching stories.\n\n- Scenes are plain Markdown\n- Choices link scenes\n')
+    writeFileSync(join(dir, 'src', 'engine.ts'), 'export function next(scene: string, choice: number): string {\n  return `${scene}.${choice}`\n}\n')
+    writeFileSync(join(dir, 'pyproject.toml'), '[project]\nname = "text-adventure"\n')
+    const c = await page.evaluate((cwd) => window.ancora.startChat({ text: '写文件 计划.md', backendId: 'mock', cwd }), dir)
+    await wait(1500)
+    await page.click(`.sidebar .nav-item:has-text("写文件")`)
+    await page.waitForSelector('.side-pane-toggle')
+    await page.evaluate((id) => window.ancora.send(id, '后台运行 sleep 60'), c.id)
+    await wait(1200)
+    await page.click('.side-pane-toggle')
+    await page.waitForSelector('.side-pane')
+    await wait(300)
+    await shot('side-background')
+    await page.click('.side-pane .tab:has-text("文件")')
+    await page.waitForSelector('.tree-row')
+    await page.click('.tree-row:has-text("README.md")')
+    await wait(400)
+    await shot('side-files')
+    if (await page.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').count()) await page.click('.preview-head .icon-btn[aria-label="返回文件列表"]')
+    await page.click('.tree-row:has-text("src")')
+    await page.click('.files-tools .chip')
+    await wait(300)
+    await shot('side-changes')
+    await page.click('.side-pane .icon-btn[aria-label="关闭"]')
+    await page.fill('.composer textarea', '/')
+    await wait(200)
+    await shot('slash-menu')
+  },
+  // The project panel at an ordinary laptop width: tabs, the library and routines.
+  async panel() {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.click('.nav-item:has-text("项目")')
+    await page.click('.page-head .btn')
+    await page.fill('.modal input', '测试项目')
+    await page.click('.modal-actions .btn.primary')
+    await page.waitForSelector('.panel')
+    await wait(400)
+    await shot('panel-threads')
+    await page.click('.panel-head .tab[data-tab="library"]')
+    await wait(300)
+    await shot('panel-library')
+    await page.click('.panel-head [data-more]')
+    await shot('panel-more')
+    await page.click('.menu .menu-item:has-text("定时任务")')
+    await wait(300)
+    await shot('panel-routines')
+    await page.fill('.composer textarea', '/')
+    await wait(200)
+    await shot('panel-slash')
+  },
   async routines() {
     await page.click('.nav-item:has-text("定时任务")')
     await page.click('.page-head .btn')
@@ -615,7 +680,7 @@ const scenarios = {
     await shot('08-edited')
   },
   async files() {
-    await page.click('.panel-head .tab[data-tip="项目文件"]')
+    await panelView('项目资料')
     // A non-ASCII name, as users' files often have.
     await page.setInputFiles('.panel input[type=file]', {
       name: '产品规格.md',

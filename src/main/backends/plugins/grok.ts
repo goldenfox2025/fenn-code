@@ -48,6 +48,8 @@ export default acpPlugin({
   ],
   quirks: {
     inputIncludesCache: true,
+    // Grok appends `_meta.rules` on session/new to its system prompt (its ACP docs, "Session _meta options").
+    systemPromptMeta: 'rules',
     authHint: tk('请在 设置 → Agent 后端 → Grok 填写 xAI API Key，或点「登录」用 grok.com 账号登录。'),
     missingHint: MISSING,
     // Grok reports retries through its own `_x.ai/session_notification`; surface them as notices.

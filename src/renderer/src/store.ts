@@ -48,6 +48,8 @@ interface State {
   search: string
   /** The published page open beside the conversation. */
   page: { id: string; version?: number } | null
+  /** The files / background pane beside a chat, if open (stays open from chat to chat). */
+  sidePane: 'files' | 'background' | null
   /** A message to scroll to and flash once its conversation is shown (from search). */
   focusMessage: string | null
 
@@ -81,6 +83,7 @@ export const useApp = create<State>((set, get) => ({
   settingsOpen: false,
   search: '',
   page: null,
+  sidePane: null,
   focusMessage: null,
 
   async init() {

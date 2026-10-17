@@ -78,7 +78,7 @@ const handlers = {
     signedIn = true;
     return {};
   },
-  "session/new": ({ cwd, mcpServers, systemPrompt }) => {
+  "session/new": ({ cwd, mcpServers, systemPrompt, _meta }) => {
     if (process.env.MOCK_SESSION_FILE_ERROR === '1')
       throw Object.assign(new Error('Failed to read authentication state'), {
         code: -32603,
@@ -98,7 +98,8 @@ const handlers = {
       .filter((m) => m !== mcp)
       .map((m) => ({ mcp: m, mcpReady: null, tools: null }));
     sessions.set(sessionId, {
-      system: systemPrompt?.content?.map((c) => c.text).join("\n") ?? "",
+      // A client system prompt, or Grok's way of appending to its own (_meta.rules).
+      system: systemPrompt?.content?.map((c) => c.text).join("\n") ?? _meta?.rules ?? "",
       cwd,
       model: FIRST_MODEL,
       turns: 0,
@@ -115,6 +116,8 @@ const handlers = {
         configOptions: configOptions(FIRST_MODEL, sessions.get(sessionId)).filter((o) => o.id === "model"),
         modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] },
       };
+    // Like Claude Code, offers /compact (sent once the session exists).
+    setTimeout(() => notify(sessionId, { sessionUpdate: "available_commands_update", availableCommands: [{ name: "compact", description: "Compact the conversation" }] }), 50);
     return { sessionId, configOptions: configOptions(FIRST_MODEL, sessions.get(sessionId)) };
   },
   "session/resume": ({ sessionId, cwd }) => {
@@ -147,6 +150,13 @@ const handlers = {
       .filter((p) => p.type === "text")
       .map((p) => p.text)
       .join("\n");
+    // "/compact" alone: the agent's own command. It must arrive first and untouched.
+    if (raw.trim() === "/compact") {
+      notify(sessionId, { sessionUpdate: "compaction_update", compactionId: "m" + s.turns, status: "completed" });
+      s.context = 1000;
+      await stream(sessionId, "上下文已压缩。", abort);
+      return { stopReason: "end_turn" };
+    }
     // "#压缩": compacts the context the way agents report it (ACP compaction_update).
     if (raw.includes("#压缩")) {
       notify(sessionId, { sessionUpdate: "compaction_update", compactionId: "c" + s.turns, status: "in_progress" });
@@ -228,6 +238,9 @@ const handlers = {
     if (mode === "none") return { stopReason: abort.aborted ? "cancelled" : "end_turn" };
     s.cost = (s.cost ?? 0) + (input + output) * 0.00001;
     s.context = (s.context ?? 0) + input + output;
+    // "#大上下文" fills the context; "#静默压缩" compacts it without announcing it (as Qoder does).
+    if (raw.includes("#大上下文")) s.context += 50000;
+    if (raw.includes("#静默压缩")) s.context = 1000;
     notify(sessionId, { sessionUpdate: "usage_update", used: s.context, size: 200000,
       ...(mode === 'no-cost' ? {} : { cost: { amount: s.cost, currency: "USD" } }) });
     return {
@@ -651,12 +664,19 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     await stream(sessionId, `我在 ${s.cwd} 里工作。`, abort);
     return;
   }
+  // 「后台运行 命令」 starts a command through the app's terminal and leaves it running (background work).
+  const bg = text.match(/后台运行\s*(.+)/);
+  if (bg) {
+    const r = await requestClient("terminal/create", { sessionId, command: bg[1].trim() }).catch((e) => ({ error: e?.message ?? String(e) }));
+    await stream(sessionId, r.terminalId ? `已在后台运行：${bg[1].trim()}` : `没能运行：${r.error}`, abort);
+    return;
+  }
   // 「写文件 名字」 writes a file in the working folder, as a coding agent does; 「在哪里工作」 says where that is.
   const write = text.match(/写文件\s*(\S+)/);
   if (write) {
     const path = join(s.cwd, write[1]);
     writeFileSync(path, `# ${write[1]}\n`);
-    notify(sessionId, { sessionUpdate: "tool_call", toolCallId: `w${Date.now()}`, title: `写入 ${path}`, kind: "edit", status: "completed", rawInput: { path } });
+    notify(sessionId, { sessionUpdate: "tool_call", toolCallId: `w${Date.now()}`, title: `写入 ${path}`, kind: "edit", status: "completed", rawInput: { path }, locations: [{ path }] });
     await stream(sessionId, `写好了 ${write[1]}。`, abort);
     return;
   }

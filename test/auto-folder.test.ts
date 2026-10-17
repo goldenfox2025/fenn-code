@@ -74,3 +74,21 @@ describe('folders for chats', () => {
     expect(uniqueDir(process.cwd(), 'test')).toBe(join(process.cwd(), 'test 2'))
   })
 })
+
+describe('one default folder', () => {
+  it('a new project without a folder gets its own under it; the old 常用文件夹 setting folds into it', async () => {
+    const { core, store, dir, dispose } = await makeCore()
+    try {
+      const p = await core.createProject({ name: '竞品/定价', backendId: 'mock' })
+      expect(p.cwd).toBe(join(dir, 'Documents', 'Ancora', folderSafeName('竞品/定价', '')))
+      expect(existsSync(p.cwd!)).toBe(true)
+      const q = await core.createProject({ name: '竞品/定价', backendId: 'mock' })
+      expect(q.cwd).not.toBe(p.cwd)
+      const mine = mkdtempSync(join(tmpdir(), 'oc-root-'))
+      store.patchSettings({ defaultCwd: mine })
+      core.leaveUnsafeFolders()
+      expect(store.settings).toMatchObject({ autoFolderRoot: mine })
+      expect(store.settings.defaultCwd).toBeUndefined()
+    } finally { await dispose() }
+  })
+})

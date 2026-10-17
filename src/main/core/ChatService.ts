@@ -29,6 +29,8 @@ export interface SendOptions {
   unattended?: boolean
   /** Not shown in the transcript (e.g. a relayed note or system nudge). */
   hidden?: boolean
+  /** Sent to the agent exactly as written: nothing goes before it (a slash command must come first). */
+  raw?: boolean
   role?: 'user' | 'system'
   /** The new version of an edited or regenerated turn. */
   variant?: Message['variant']
@@ -72,6 +74,8 @@ interface Live {
   systemApplied?: boolean
   /** The agent compacted since the last prompt. */
   compacted?: boolean
+  /** The context the agent last reported, to notice a compaction it didn't announce. */
+  contextUsed?: number
 }
 
 interface QueuedTurn {
@@ -276,7 +280,9 @@ export class ChatService {
       if (!session.fresh) await this.applyDeferred(conversationId, live)
       else this.deferred.delete(conversationId)
       let promptText = text
-      if (session.fresh) {
+      if (opts.raw) {
+        // As written; the app's updates wait for the next turn.
+      } else if (session.fresh) {
         // Only a conversation the agent already worked in has history to hand over; a new thread's
         // ack (written by the app) is not a previous session.
         const resumed = prior.some((m) => m.role === 'user')
@@ -569,6 +575,30 @@ export class ChatService {
     return variant
   }
 
+  /**
+   * Runs the agent's own compact command now. Its result stays out of a later replay; afterwards
+   * the app's notes go first in the next message unless they are the session's system prompt.
+   */
+  /** Stops a command the conversation's agent runs through the app. */
+  async stopCommand(conversationId: string, id: string): Promise<void> {
+    const live = this.live.get(conversationId)
+    if (!live || !(await this.backends.stopCommand(live.backendId, live.sessionId, id))) throw new Error(t('这个命令已经结束了'))
+  }
+
+  async compactContext(conversationId: string): Promise<void> {
+    const conv = this.store.conversation(conversationId)
+    const live = this.live.get(conversationId)
+    if (!conv?.compactCommand || !live) throw new Error(t('这个 agent 现在不能手动压缩上下文'))
+    const done = (id: string) => {
+      if (id !== conversationId) return
+      this.turnEndListeners.delete(done)
+      const now = this.live.get(conversationId)
+      if (now) now.compacted = true
+    }
+    this.turnEndListeners.add(done)
+    await this.send(conversationId, '/' + conv.compactCommand, { raw: true, housekeeping: true })
+  }
+
   /** Conversations whose last exchange was withdrawn while keeping the session (see rewind). */
   private withdrawn = new Set<string>()
 
@@ -685,6 +715,24 @@ export class ChatService {
       this.patchConversation(conversationId, { sessionOptions: event.options })
       return
     }
+    if (event.kind === 'commands') {
+      const name = event.names.find((n) => /^(compact|compress|compaction)$/i.test(n))
+      const c = this.store.conversation(conversationId)
+      const agentCommands = event.commands ?? event.names.map((n) => ({ name: n }))
+      if (c && (c.compactCommand !== name || JSON.stringify(c.agentCommands ?? []) !== JSON.stringify(agentCommands)))
+        this.patchConversation(conversationId, { compactCommand: name, agentCommands })
+      return
+    }
+    if (event.kind === 'background') {
+      const c = this.store.conversation(conversationId)
+      if (!c) return
+      const list = [...(c.background ?? [])]
+      const i = list.findIndex((b) => b.id === event.id && !b.endedAt)
+      if (event.state === 'running' && i < 0) list.push({ id: event.id, command: event.command.slice(0, 500), startedAt: Date.now() })
+      else if (event.state === 'exited' && i >= 0) list[i] = { ...list[i], endedAt: Date.now(), exitCode: event.exitCode }
+      this.patchConversation(conversationId, { background: list.slice(-BACKGROUND_KEPT) })
+      return
+    }
     if (event.kind === 'compacted') {
       const live = this.live.get(conversationId)
       if (live) live.compacted = true
@@ -693,6 +741,11 @@ export class ChatService {
     if (event.kind === 'usage') {
       const live = this.live.get(conversationId)
       if (event.cost && live) live.cost = event.cost
+      // Agents that don't announce compaction (Qoder) still show it: the context they report halves at once.
+      if (live && event.contextUsed !== undefined) {
+        if (live.contextUsed !== undefined && live.contextUsed >= COMPACTION_FLOOR && event.contextUsed <= live.contextUsed / 2) live.compacted = true
+        live.contextUsed = event.contextUsed
+      }
       const c = this.store.conversation(conversationId)
       if (c && (event.contextUsed !== undefined || event.contextSize !== undefined)) {
         if (live) live.reported = true
@@ -766,7 +819,7 @@ export function applyEvent(blocks: Block[], e: AgentEvent, now = Date.now()): vo
       } else blocks.push({ type: 'thought', text: e.text, startedAt: now, ms: 0 })
       break
     case 'tool.start':
-      blocks.push({ type: 'tool', toolId: e.toolId, title: e.title, toolKind: e.toolKind, status: e.status, input: e.input })
+      blocks.push({ type: 'tool', toolId: e.toolId, title: e.title, toolKind: e.toolKind, status: e.status, input: e.input, paths: e.paths })
       break
     case 'tool.update': {
       const t = blocks.find((b): b is Extract<Block, { type: 'tool' }> => b.type === 'tool' && b.toolId === e.toolId)
@@ -774,6 +827,8 @@ export function applyEvent(blocks: Block[], e: AgentEvent, now = Date.now()): vo
       if (e.title) t.title = e.title
       if (e.status) t.status = e.status
       if (e.output != null) t.output = e.output
+      if (e.toolKind) t.toolKind = e.toolKind
+      if (e.paths) t.paths = [...new Set([...(t.paths ?? []), ...e.paths])]
       break
     }
     case 'plan': {
@@ -847,6 +902,11 @@ export function linesOf(messages: Message[]): Line[] {
     .map((m): Line => ({ who: m.role === 'user' ? (m.hidden ? '（内部消息）' : '用户') : '助手', text: cutNote(m) }))
     .filter((l) => l.text)
 }
+
+/** Below this many tokens a smaller context is not taken for a compaction. */
+/** Commands kept in a conversation's 后台 list. */
+const BACKGROUND_KEPT = 12
+const COMPACTION_FLOOR = 20_000
 
 const WITHDRAWN =
   '（应用说明：用户撤回了上一条消息和你对它的回答，那一版已作废，用户看不到了。请只按下面这条消息回答，不要提到撤回。）'

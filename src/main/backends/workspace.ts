@@ -24,6 +24,22 @@ interface Terminal {
 }
 
 const DEFAULT_OUTPUT_LIMIT = 1_000_000
+const WINDOWS = process.platform === 'win32'
+
+/**
+ * Stops a command and whatever it started: a shell line runs its programs as
+ * children, and killing only the shell leaves them running (and the command
+ * never ends). Elsewhere each command leads its own process group.
+ */
+function killTree(proc: ChildProcess): void {
+  if (!proc.pid) return
+  try {
+    if (WINDOWS) spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }).on('error', () => proc.kill())
+    else process.kill(-proc.pid, 'SIGTERM')
+  } catch {
+    proc.kill()
+  }
+}
 
 /** True when path is root itself or inside it. */
 export function isInside(root: string, path: string): boolean {
@@ -88,7 +104,11 @@ export class Workspaces {
   private nextId = 1
 
   /** ask: the user decides about access outside the folder (title, detail) → allowed. */
-  constructor(private readonly ask: (sessionId: string, title: string, detail: string) => Promise<boolean>) {}
+  constructor(
+    private readonly ask: (sessionId: string, title: string, detail: string) => Promise<boolean>,
+    /** A command started or ended (the app lists running ones as background work). */
+    private readonly onTerminal?: (sessionId: string, e: { id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null }) => void
+  ) {}
 
   setRoot(sessionId: string, root: string | undefined): void {
     if (root) this.roots.set(sessionId, resolve(root))
@@ -139,8 +159,8 @@ export class Workspaces {
     for (const v of req.env ?? []) env[v.name] = v.value
     // No args: a shell command line, as agents usually send.
     const proc = req.args?.length
-      ? spawn(req.command, req.args, { cwd, env, windowsHide: true })
-      : spawn(req.command, { cwd, env, shell: true, windowsHide: true })
+      ? spawn(req.command, req.args, { cwd, env, windowsHide: true, detached: !WINDOWS })
+      : spawn(req.command, { cwd, env, shell: true, windowsHide: true, detached: !WINDOWS })
     const id = `term-${this.nextId++}`
     const t: Terminal = {
       sessionId,
@@ -171,6 +191,9 @@ export class Workspaces {
     proc.stdout?.on('data', add)
     proc.stderr?.on('data', add)
     this.terminals.set(id, t)
+    const command = [req.command, ...(req.args ?? [])].join(' ')
+    this.onTerminal?.(sessionId, { id, command, state: 'running' })
+    void t.exited.then((x) => this.onTerminal?.(sessionId, { id, command, state: 'exited', exitCode: x.exitCode }))
     return id
   }
 
@@ -191,14 +214,27 @@ export class Workspaces {
 
   kill(id: string): void {
     const t = this.terminal(id)
-    if (!t.exit) t.proc.kill()
+    if (!t.exit) killTree(t.proc)
+  }
+
+  /** Stops a session's command from the app (the user pressed stop); false when it is not that session's. */
+  stop(sessionId: string, id: string): boolean {
+    const t = this.terminals.get(id)
+    if (!t || t.sessionId !== sessionId) return false
+    if (!t.exit) killTree(t.proc)
+    return true
   }
 
   release(id: string): void {
     const t = this.terminals.get(id)
     if (!t) return
-    if (!t.exit) t.proc.kill()
+    if (!t.exit) killTree(t.proc)
     this.terminals.delete(id)
+  }
+
+  /** Ends every command (the agent stopped, or the app quits). */
+  closeAll(): void {
+    for (const id of [...this.terminals.keys()]) this.release(id)
   }
 
   /** Ends a session's commands and forgets its folder. */

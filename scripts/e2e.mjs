@@ -31,6 +31,11 @@ if (!process.env.KEEP_ONBOARDING && (await page.locator('.onboarding').count()))
 let failed = 0
 // E2E_ONLY=<regex> runs only the matching checks (keep the ones they build on).
 const only = process.env.E2E_ONLY && new RegExp(process.env.E2E_ONLY)
+/** Opens one of the project panel's views under 「…」 (成果, 项目资料, 项目记忆, 定时任务, 里程碑). */
+const panelView = async (label) => {
+  await page.click('.panel-head [data-more]')
+  await page.click(`.menu .menu-item:has-text("${label}")`)
+}
 async function check(name, fn) {
   if (only && !only.test(name)) return
   try {
@@ -62,7 +67,7 @@ await check('thanks in a project chat shows the coordinator 👍 on the message'
 
 await check('the sidebar and the thread panel resize from their inner edge, remember it, reset on double-click, and the sidebar folds away when dragged narrow', async () => {
   const width = async (sel) => (await page.locator(sel).boundingBox()).width
-  const drag = async (sel, dx) => {
+  const drag = async (sel, dx, during) => {
     const h = await page.locator(sel).boundingBox()
     const x = h.x + h.width / 2
     const y = h.y + 300
@@ -70,6 +75,8 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
     await page.mouse.down()
     await page.mouse.move(x + dx / 2, y, { steps: 4 })
     await page.mouse.move(x + dx, y, { steps: 4 })
+    // The pane follows the pointer while the button is still down.
+    await during?.()
     await page.mouse.up()
     await page.waitForTimeout(250)
   }
@@ -78,7 +85,7 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   const s0 = await width('.sidebar')
   const rest = async () => (await width('.center .workspace > .center')) + (await width('.panel:visible'))
   const rest0 = await rest()
-  await drag('.sidebar > .resize-handle', 80)
+  await drag('.sidebar > .resize-handle', 80, async () => near(await width('.sidebar'), s0 + 80, 'sidebar while dragging'))
   near(await width('.sidebar'), s0 + 80, 'sidebar after drag')
   near(await rest(), rest0 - 80, 'the rest of the window reflows by the same amount')
   await drag('.sidebar > .resize-handle', 600)
@@ -97,7 +104,7 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   await page.click('.sidebar .nav-item:has-text("端到端"), .sidebar .project-item:has-text("端到端"), .sidebar :text("端到端")')
   await page.waitForSelector('.panel')
   const p0 = await width('.panel:visible')
-  await drag('.panel:visible > .resize-handle', -120)
+  await drag('.panel:visible > .resize-handle', -120, async () => near(await width('.panel:visible'), p0 + 120, 'thread panel while dragging'))
   near(await width('.panel:visible'), p0 + 120, 'thread panel after drag')
   await drag('.panel:visible > .resize-handle', 2000)
   near(await width('.panel:visible'), 360, 'thread panel stops at its minimum')
@@ -252,9 +259,14 @@ await check('one click turns 玻璃效果 on and back off, and the long chat sti
     return worst
   })
   const plain = await scrollTest()
+  // Nothing moves when the look changes: the same boxes before and after.
+  const boxes = () => page.evaluate(() => [...document.querySelectorAll('.bubble, .composer, .chat-header')].slice(-6).map((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)].join('x') }).join(' '))
+  const plainBoxes = await boxes()
   await page.click('.glass-toggle')
   await page.waitForFunction(() => /^glass/.test(document.documentElement.dataset.theme))
   await page.waitForTimeout(200)
+  const glassBoxes = await boxes()
+  if (glassBoxes !== plainBoxes) throw new Error(`glass moves things: ${plainBoxes} → ${glassBoxes}`)
   const glass = await scrollTest()
   console.log(`   slowest scroll frame: ${Math.round(plain)} ms ${before}, ${Math.round(glass)} ms glass (software rendering)`)
   await page.click('.glass-toggle')
@@ -370,7 +382,7 @@ await check('cancelling a sidebar delete puts focus back on its 「…」 button
 
 await check('Esc closes the project memory form', async () => {
   await page.click('.sidebar .nav-item:has-text("端到端")')
-  await page.click('.tab[data-tip="项目记忆"]')
+  await panelView('项目记忆')
   await page.click('.btn:has-text("添加记忆")')
   await page.waitForSelector('textarea.textarea')
   await page.focus('textarea.textarea')
@@ -478,6 +490,52 @@ await check('the home composer has no project picker, and a chat that makes file
   if (!(await page.locator('.composer .folder-chip.on').count())) throw new Error('the composer does not show the new folder')
 })
 
+await check('a chat shows its folder’s files beside it, with the files the agent changed marked', async () => {
+  await page.click('.side-pane-toggle')
+  await page.waitForSelector('.side-pane .files-pane')
+  const row = page.locator('.side-pane .tree-row:has-text("计划.md")')
+  await row.waitFor({ timeout: 5000 })
+  if (!(await row.locator('.tree-mark').count())) throw new Error('the changed file is not marked')
+  await row.click()
+  await page.locator('.side-pane .preview-md h1:has-text("计划.md")').waitFor({ timeout: 3000 })
+  if (await page.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').count()) await page.click('.preview-head .icon-btn[aria-label="返回文件列表"]')
+  await page.click('.side-pane .files-tools .chip')
+  await page.locator('.side-pane .tree-row.change:has-text("计划.md")').waitFor({ timeout: 3000 })
+  await page.click('.side-pane .files-tools .chip')
+})
+
+await check('commands the agent runs through the app show under 后台 and stop from there', async () => {
+  await page.fill('.composer textarea', '后台运行 sleep 30')
+  await page.keyboard.press('Enter')
+  await page.click('.side-pane .tab:has-text("后台")')
+  const row = page.locator('.side-pane .bg-command:has-text("sleep 30")')
+  await row.waitFor({ timeout: 10000 })
+  if (!(await page.locator('.side-pane-toggle .run-dot').count())) throw new Error('no running mark on the pane button')
+  await row.locator('.icon-btn[aria-label="停止"]').click()
+  await row.locator('.status-chip').waitFor({ timeout: 5000 })
+  await page.click('.side-pane .icon-btn[aria-label="关闭"]')
+})
+
+await check('/ lists the commands; /子对话 hands the text to a new sub-chat without asking this chat’s agent', async () => {
+  const before = await page.locator('.center .turn').count()
+  await page.fill('.composer textarea', '/')
+  const menu = page.locator('.slash-menu')
+  await menu.waitFor({ timeout: 3000 })
+  const items = await menu.locator('.menu-text').allInnerTexts()
+  if (items[0] !== '/子对话' || !items.includes('/compact')) throw new Error('menu reads ' + items.join(', '))
+  await page.keyboard.press('Enter')
+  if ((await page.inputValue('.composer textarea')) !== '/子对话 ') throw new Error('picking did not fill the command')
+  await page.keyboard.type('整理一下日志')
+  await page.keyboard.press('Enter')
+  await page.locator('.center .thread-card').last().waitFor({ timeout: 5000 })
+  const child = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.find((c) => c.parentId && c.handoff?.task === '整理一下日志'))
+  if (!child) throw new Error('no sub-chat with that task')
+  await page.waitForTimeout(800)
+  const replies = await page.evaluate(async (id) => (await window.ancora.messages(id)).filter((m) => m.role === 'assistant').length, child.parentId)
+  const turns = await page.locator('.center .turn').count()
+  if (turns > before + 1) throw new Error(`this chat's agent answered too (${before} → ${turns} turns, ${replies} replies)`)
+})
+
 await check('a new project is not pinned and is listed by recent activity', async () => {
   const pinned = await page.locator('.section-head:has-text("已置顶")').count()
   if (pinned) throw new Error('projects went into 已置顶')
@@ -583,12 +641,15 @@ await check('the chats page groups chats by folder, and selects several to delet
 await check('a project keeps a progress board of milestones and tasks, edited by hand', async () => {
   await page.click('.sidebar .recent-projects .nav-item:has-text("端到端")')
   // Threads are the milestones: the board only appears once something is on it (here, a goal the agent recorded).
-  if (await page.locator('.panel-head .tab[data-tip="进度"]').count()) throw new Error('empty progress board shown')
+  await page.click('.panel-head [data-more]')
+  if (await page.locator('.menu .menu-item:has-text("里程碑")').count()) throw new Error('empty progress board offered')
+  await page.keyboard.press('Escape')
   await page.evaluate(async () => {
     const p = (await window.ancora.snapshot()).projects.find((x) => x.name.includes('端到端'))
     await window.ancora.updateProgress(p.id, { title: '第一版上线' })
   })
-  await page.click('.panel-head .tab[data-tip="进度"]')
+  await panelView('里程碑')
+  if (!(await page.locator('.panel-head .tab.active:has-text("里程碑")').count())) throw new Error('the open view is not shown as a tab')
   const ms = page.locator('.progress-row.milestone:has-text("第一版上线")')
   await ms.waitFor({ timeout: 3000 })
   await ms.hover()
@@ -607,6 +668,17 @@ await check('a project keeps a progress board of milestones and tasks, edited by
   if (!(await page.locator('.progress-head').innerText()).includes('已完成 1/1')) throw new Error('summary wrong')
   await page.click('.panel-head .tab:has-text("讨论串")')
   await page.waitForSelector('.progress-summary:has-text("所有里程碑都已完成")', { timeout: 2000 })
+})
+
+await check('a project’s 库 shows its folder, and files added there land in it', async () => {
+  await page.click('.sidebar .recent-projects .nav-item:has-text("端到端")')
+  await page.click('.panel-head .tab[data-tab="library"]')
+  await page.waitForSelector('.panel .files-pane .files-root')
+  const p = await page.evaluate(async () => (await window.ancora.snapshot()).projects.find((x) => x.name.includes('端到端')))
+  await page.evaluate((id) => window.ancora.addToLibrary(id, '', [{ name: '说明.md', data: btoa(unescape(encodeURIComponent('# 说明\n'))) }]), p.id)
+  await page.click('.panel .files-head .icon-btn[aria-label="刷新"]')
+  await page.locator('.panel .tree-row:has-text("说明.md")').waitFor({ timeout: 3000 })
+  await page.click('.panel-head .tab[data-tab="threads"]')
 })
 
 await check('archiving a project hides it from the sidebar until restored', async () => {

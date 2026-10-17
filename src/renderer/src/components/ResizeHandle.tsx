@@ -82,8 +82,14 @@ export function ResizeHandle({ pane, edge, onCollapse, onResize }: { pane: Pane;
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - x0
       raw = edge === 'right' ? start + dx : start - dx
-      target.style.setProperty(prop, `${Math.min(max, Math.max(min, raw))}px`)
+      const w = Math.min(max, Math.max(min, raw))
+      target.style.setProperty(prop, `${w}px`)
       target.classList.add('sized')
+      // The caps follow the drag too, or the pane could only grow once the button is let go.
+      if (pane === 'sidebar') {
+        dragSidebar = w
+        fitPanes(true)
+      }
     }
     const up = () => {
       handle.removeEventListener('pointermove', move)
@@ -91,6 +97,7 @@ export function ResizeHandle({ pane, edge, onCollapse, onResize }: { pane: Pane;
       handle.removeEventListener('pointercancel', up)
       document.body.classList.remove('resizing')
       setDragging(false)
+      dragSidebar = undefined
       if (onCollapse && raw < min - COLLAPSE_SLACK) {
         // Put away at the width it had; the pane opens again as it was.
         const before = storedWidth(pane)
@@ -156,6 +163,8 @@ export function paneStyle(pane: Pane, width: number | undefined): React.CSSPrope
 const PANEL_MARGIN = 16
 const SIDEBAR_DEFAULT = 284
 let squeezed = false
+/** The sidebar's width while its edge is being dragged (not stored yet). */
+let dragSidebar: number | undefined
 const squeezeListeners = new Set<() => void>()
 
 /**
@@ -169,7 +178,7 @@ const squeezeListeners = new Set<() => void>()
  */
 export function fitPanes(sidebarOpen: boolean): void {
   const w = window.innerWidth
-  const s = storedWidth('sidebar') ?? SIDEBAR_DEFAULT
+  const s = dragSidebar ?? storedWidth('sidebar') ?? SIDEBAR_DEFAULT
   const sidebarCap = sidebarOpen ? Math.max(PANE_LIMITS.sidebar.min, Math.min(s, w - MAIN_MIN)) : s
   const panelCap = w - MAIN_MIN - PANEL_MARGIN - (sidebarOpen ? sidebarCap : 0)
   const squeeze = panelCap < PANE_LIMITS.panel.min

@@ -272,7 +272,7 @@ function CreditsButton({ backendId, className, activity }: { backendId: string; 
  * reported (over ACP or in its own log); otherwise a plain grey ring. Click for
  * the usage details.
  */
-export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming }) {
+export function ContextRing({ usage, scope, timing, onCompact }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming; onCompact?: () => void }) {
   const [menu, openMenu] = useMenu({ align: 'right', placement: 'auto', compact: true })
   const size = usage?.contextSize
   const used = usage?.contextUsed
@@ -302,7 +302,8 @@ export function ContextRing({ usage, scope, timing }: { usage?: UsageTotals; sco
         aria-label={title}
         onClick={(e) => {
           e.stopPropagation()
-          openMenu(e.currentTarget, usageMenu(usage, scope, timing))
+          // The agent's own compact command, when it has one, as Claude Code's /compact.
+          openMenu(e.currentTarget, [...usageMenu(usage, scope, timing), ...(onCompact ? [{ separator: true }, { label: t('压缩上下文'), onClick: onCompact }] : [])])
         }}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">

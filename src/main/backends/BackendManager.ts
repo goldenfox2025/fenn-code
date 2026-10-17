@@ -225,6 +225,10 @@ export class BackendManager {
     return this.get(backendId).cancel(sessionId)
   }
 
+  async stopCommand(backendId: string, sessionId: string, id: string): Promise<boolean> {
+    return (await this.get(backendId).stopCommand?.(sessionId, id)) ?? false
+  }
+
   async authMethods(backendId: string): Promise<AuthMethod[]> {
     return (await this.get(backendId).authMethods?.()) ?? []
   }

@@ -550,6 +550,8 @@ body.resizing .sidebar {
 }
 .bubble {
   background: var(--bg-user);
+  /* Glass draws a hairline here; every look keeps its width so nothing moves when glass is switched. */
+  border: 1px solid transparent;
   border-radius: var(--radius-xl);
   padding: var(--space-5) var(--space-7);
   max-width: 82%;
@@ -1300,9 +1302,9 @@ body.resizing .sidebar {
   flex-direction: column;
   overflow: hidden;
 }
-.panel.wide {
-  width: 62%;
-  max-width: var(--panel-cap, none);
+.panel.maximized {
+  width: auto;
+  max-width: none;
 }
 .panel {
   position: relative;
@@ -1311,6 +1313,18 @@ body.resizing .sidebar {
   width: var(--panel-w);
   max-width: var(--panel-cap, none);
 }
+/* Full screen, as Claude opens a thread: the card covers the project chat, the conversation stays at reading width. */
+.panel.maximized {
+  position: absolute;
+  top: var(--space-0);
+  left: var(--space-4);
+  right: var(--space-0);
+  bottom: var(--space-0);
+  z-index: 20;
+  background: var(--bg-floating);
+  box-shadow: var(--shadow);
+}
+.panel.maximized .resize-handle,
 .panel.floating .resize-handle {
   display: none;
 }
@@ -1335,8 +1349,20 @@ body.resizing .sidebar {
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border);
 }
+.panel-head .tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.panel-search {
+  width: 160px;
+  height: 30px;
+}
 .tab {
   display: inline-flex;
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: var(--space-3);
   height: 30px;
@@ -1781,6 +1807,7 @@ button.card:hover {
 .toast {
   background: var(--text);
   color: var(--bg);
+  border: 1px solid transparent;
   border-radius: 10px;
   padding: 9px var(--space-7);
   font-size: 13.5px;
@@ -2576,12 +2603,18 @@ details.advanced > summary {
 /* Frosted surfaces. Only a few large, fixed panels blur; cards in scrolling lists stay plain translucent so long chats scroll smoothly. */
 :root[data-theme='glass'] .sidebar,
 :root[data-theme='glass'] .panel,
+:root[data-theme='glass'] .side-pane,
 :root[data-theme='glass'] .page-panel {
   backdrop-filter: var(--frost);
   box-shadow: var(--hairline-top);
 }
-:root[data-theme='glass'] .panel.floating {
+:root[data-theme='glass'] .panel.floating,
+:root[data-theme='glass'] .panel.maximized {
   box-shadow: var(--shadow);
+}
+/* Full screen covers the project chat: nothing shows through it. */
+:root:is([data-theme='glass'], [data-theme='glass-light']) .panel.maximized {
+  background-color: var(--bg-floating);
 }
 :root[data-theme='glass'] .composer {
   backdrop-filter: var(--frost);
@@ -2682,10 +2715,11 @@ details.advanced > summary {
 :root.no-blur[data-theme='glass'] * {
   backdrop-filter: none !important;
 }
-:root.no-blur[data-theme='glass'] :is(.sidebar, .panel, .page-panel, .composer) {
+:root.no-blur[data-theme='glass'] :is(.sidebar, .panel, .side-pane, .page-panel, .composer) {
   background-color: rgba(18, 20, 30, 0.82);
 }
-:root.no-blur[data-theme='glass'] .panel.floating {
+:root.no-blur[data-theme='glass'] .panel.floating,
+:root.no-blur[data-theme='glass'] .panel.maximized {
   background-color: var(--bg-floating);
 }
 :root.no-blur[data-theme='glass'] :is(.menu, .modal, .onboarding-card, .toast) {
@@ -3460,7 +3494,7 @@ details.advanced > summary {
 :root[data-theme='glass-light'] #root {
   isolation: isolate;
 }
-:root[data-theme='glass-light'] :is(.sidebar, .panel, .page-panel) {
+:root[data-theme='glass-light'] :is(.sidebar, .panel, .side-pane, .page-panel) {
   backdrop-filter: var(--frost);
   box-shadow: var(--hairline-top);
 }
@@ -3539,10 +3573,11 @@ details.advanced > summary {
 :root.no-blur[data-theme='glass-light'] * {
   backdrop-filter: none !important;
 }
-:root.no-blur[data-theme='glass-light'] :is(.sidebar, .panel, .page-panel, .composer) {
+:root.no-blur[data-theme='glass-light'] :is(.sidebar, .panel, .side-pane, .page-panel, .composer) {
   background-color: rgba(250, 251, 255, 0.86);
 }
-:root.no-blur[data-theme='glass-light'] .panel.floating {
+:root.no-blur[data-theme='glass-light'] .panel.floating,
+:root.no-blur[data-theme='glass-light'] .panel.maximized {
   background-color: var(--bg-floating);
 }
 :root.no-blur[data-theme='glass-light'] :is(.menu, .modal, .onboarding-card, .toast, .effort-pop) {
@@ -3905,4 +3940,314 @@ details.advanced > summary {
 .chip-icon {
   flex: none;
   opacity: 0.75;
+}
+
+/* ---------- tab counts, list heads ---------- */
+.tab-count {
+  min-width: 18px;
+  height: 18px;
+  padding: var(--space-0) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--font-2xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4) var(--space-4);
+}
+.btn.sm {
+  height: 28px;
+  padding: var(--space-0) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+}
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+
+/* ---------- the pane beside a chat: files and background ---------- */
+.side-pane {
+  position: relative;
+  flex: none;
+  width: 44%;
+  min-width: 360px;
+  max-width: min(960px, var(--panel-cap, 960px));
+  margin: var(--space-0) var(--space-4) var(--space-4) var(--space-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.side-pane.sized {
+  width: var(--panel-w);
+  max-width: var(--panel-cap, none);
+}
+.side-pane-toggle {
+  position: relative;
+}
+.side-pane-toggle.on {
+  background: var(--bg-active);
+}
+.run-dot {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.bg-command .title {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+
+/* ---------- files (a chat's folder, a project's 库) ---------- */
+.files-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.files-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5) var(--space-2) var(--space-6);
+}
+.files-root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--text-2);
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+.files-root span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.files-tree {
+  flex: none;
+  width: clamp(200px, 38%, 300px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.files-pane.narrow .files-tree {
+  flex: 1;
+  width: auto;
+  border-right: none;
+}
+.files-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-4);
+}
+.files-filter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 30px;
+  padding: var(--space-0) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-3);
+}
+.files-filter:focus-within {
+  border-color: var(--focus-border);
+}
+.files-filter input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+}
+.files-tools .chip {
+  height: 30px;
+  padding: var(--space-0) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  flex: none;
+}
+.files-tools .chip.on {
+  background: var(--bg-active);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.files-rows {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-0) var(--space-3) var(--space-6);
+}
+.tree-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 28px;
+  padding: var(--space-0) var(--space-3) var(--space-0) calc(var(--space-3) + var(--depth, 0) * var(--space-7));
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: var(--font-sm);
+  text-align: left;
+}
+.tree-row:hover {
+  background: var(--bg-hover);
+}
+.tree-row.active {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.tree-caret {
+  flex: none;
+  width: 14px;
+  color: var(--text-4);
+}
+.tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.tree-row.change {
+  height: auto;
+  min-height: 28px;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+}
+.tree-row.change .tree-meta {
+  flex-basis: 100%;
+  padding-left: calc(var(--space-3) * 2 + var(--space-5) + var(--space-1));
+  color: var(--text-4);
+  font-size: var(--font-xs);
+}
+.tree-row.gone .tree-name {
+  text-decoration: line-through;
+  color: var(--text-4);
+}
+.files-note {
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-3);
+  font-size: var(--font-sm);
+}
+.files-preview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.files-preview > .empty {
+  flex: 1;
+  padding: var(--space-9);
+}
+.files-pane > .empty {
+  flex: 1;
+}
+.preview-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border);
+}
+.preview-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.preview-name {
+  font-size: var(--font-md);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.preview-code {
+  margin: var(--space-0);
+  padding: var(--space-6) var(--space-7);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre;
+  tab-size: 2;
+}
+.preview-md {
+  padding: var(--space-6) var(--space-8);
+}
+.preview-image {
+  display: block;
+  max-width: 100%;
+  margin: var(--space-7) auto;
+  border-radius: var(--radius-md);
+}
+
+/* The / menu: the command keeps its name, its description gives way. */
+.menu.mention-menu.slash-menu {
+  min-width: 300px;
+  max-width: min(520px, 90%);
+}
+.menu.slash-menu .menu-text {
+  flex: none;
+}
+.menu.slash-menu .menu-hint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A / command's card under the user's line, at the reply's width. */
+.user-cards {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }

@@ -224,6 +224,12 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
       )}
       {text && <div className="bubble">{text}</div>}
       {m.forwardedTo && <ForwardedNote m={m} />}
+      {/* What a / command started from this message (a sub-chat, a thread). */}
+      {m.blocks.some((b) => b.type === 'thread-card') && (
+        <div className="user-cards">
+          {m.blocks.map((b, i) => (b.type === 'thread-card' ? <ThreadCard key={i} threadId={b.threadId} /> : null))}
+        </div>
+      )}
       {/* The agent's emoji answer to this message (e.g. 👍 for thanks). */}
       {!!m.reactions?.length && (
         <div className="reactions on-user">
@@ -377,7 +383,7 @@ const MarkdownPart = memo(function MarkdownPart({ text }: { text: string }) {
   )
 })
 
-const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="md">
       {markdownParts(text).map((part, i) => (

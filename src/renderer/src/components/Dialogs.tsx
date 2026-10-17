@@ -336,28 +336,7 @@ function GeneralSettings() {
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => api().updateSettings({ userName: name.trim() })} placeholder={t('您的名字')} />
       </div>
       <div className="field">
-        <label>{t('常用文件夹')}</label>
-        <div className="field-row">
-          <input className="input" value={settings.defaultCwd ?? ''} readOnly placeholder={t('未设置')} />
-          <button
-            className="btn"
-            onClick={async () => {
-              const dir = await api().pickFolder()
-              if (dir) void api().updateSettings({ defaultCwd: dir })
-            }}
-          >
-            <FolderOpen size={15} />
-          </button>
-          {settings.defaultCwd && (
-            <button className="btn" data-tip={t('不使用文件夹')} onClick={() => void api().updateSettings({ defaultCwd: '' })}>
-              <X size={15} />
-            </button>
-          )}
-        </div>
-        <div className="small muted">{t('排在输入框文件夹菜单的第一个。新对话默认不带文件夹，选了文件夹，agent 才能读写其中的文件、运行命令。')}</div>
-      </div>
-      <div className="field">
-        <label>{t('自动建的文件夹放在')}</label>
+        <label>{t('默认文件夹')}</label>
         <div className="field-row">
           <input className="input" value={settings.autoFolderRoot ?? ''} readOnly placeholder={t('文档/Ancora')} />
           <button
@@ -375,7 +354,7 @@ function GeneralSettings() {
             </button>
           )}
         </div>
-        <div className="small muted">{t('没选文件夹的对话，agent 一做出文件，就在这里按对话标题建一个文件夹，把文件放进去。只聊天的对话不会建。')}</div>
+        <div className="small muted">{t('新项目和新对话默认放在这里，各自按名字建一个子文件夹：项目在建好时建，对话在 agent 做出文件时建，只聊天的对话不建。单个对话或项目也可以另选文件夹。')}</div>
       </div>
       <div className="field">
         <div className="row-between">

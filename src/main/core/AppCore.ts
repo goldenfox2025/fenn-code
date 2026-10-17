@@ -14,6 +14,7 @@ import type { ToolDef, ToolServer } from '../tools/ToolServer'
 import { nextCron } from './schedule'
 import type { BackendPlugin, BackendSummary, HostToolServer } from '../../shared/contract'
 import { ProjectFiles } from './ProjectFiles'
+import { addFile, changedFiles, inside, listFolder, readPreview } from './Library'
 import { Artifacts } from './Artifacts'
 import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
 import { ChatService, textOf } from './ChatService'
@@ -28,7 +29,7 @@ import { BACKENDS_EXAMPLE, PREFERRED_BACKENDS } from '../backends/registry'
 import { titleFrom } from './titles'
 import { applyPatch, removeItem } from './progress'
 import { FolderFinder, foldersInText, matchingFolders, rankFolders } from './folders'
-import { localeTag, t, tk } from '../../shared/i18n'
+import { getLang, localeTag, t, tk } from '../../shared/i18n'
 import type { BackendModelCatalog } from '../../shared/model'
 import { classifyError } from '../../shared/errors'
 
@@ -79,7 +80,7 @@ export class AppCore {
       store,
       this.chat,
       backends,
-      () => [...new Set([...(store.settings.recentFolders ?? []), ...store.projects.map((p) => p.cwd ?? ''), store.settings.defaultCwd ?? ''])].filter((f) => f && !this.unsafeFolder(f)),
+      () => [...new Set([...(store.settings.recentFolders ?? []), ...store.projects.map((p) => p.cwd ?? '')])].filter((f) => f && !this.unsafeFolder(f)),
       (id, folder) => void this.updateConversation(id, { cwd: folder }).catch(() => {}),
       [join(store.dir, 'workspaces')]
     )
@@ -124,6 +125,7 @@ export class AppCore {
     this.repairBackends()
     this.separateChatsFromProjects()
     this.leaveUnsafeFolders()
+    this.endStaleCommands()
     this.signInRepair = this.repairSignIns().catch(() => undefined)
     const orchestrate = this.chat.hooks.afterTurn
     this.chat.hooks.afterTurn = (conv, reply, result) => {
@@ -248,11 +250,22 @@ export class AppCore {
   }
 
   /** Chats an earlier version filed under the home folder (or a drive root) go back to having no folder. */
+  /** Commands still listed as running when the app last quit ended with it. */
+  endStaleCommands(): void {
+    for (const c of this.store.conversations) {
+      if (!c.background?.some((b) => !b.endedAt)) continue
+      this.chat.patchConversation(c.id, { background: c.background.map((b) => (b.endedAt ? b : { ...b, endedAt: b.startedAt, exitCode: null })) })
+    }
+  }
+
   leaveUnsafeFolders(): void {
     for (const c of this.store.conversations)
       if (c.kind === 'chat' && this.unsafeFolder(c.cwd)) this.chat.patchConversation(c.id, { cwd: undefined, autoFolder: undefined })
     const recent = this.store.settings.recentFolders
     if (recent?.some((f) => this.unsafeFolder(f))) this.store.patchSettings({ recentFolders: recent.filter((f) => !this.unsafeFolder(f)) })
+    // 常用文件夹 and 自动建的文件夹放在 are one setting now, the default folder.
+    const old = this.store.settings.defaultCwd
+    if (old !== undefined) this.store.patchSettings({ defaultCwd: undefined, ...(old && !this.store.settings.autoFolderRoot && !this.unsafeFolder(old) ? { autoFolderRoot: old } : {}) })
   }
 
   repairBackends(): void {
@@ -374,8 +387,34 @@ export class AppCore {
     const conv = this.store.conversation(conversationId)
     // Writing in a resolved thread reopens it, as in Claude Projects.
     if (conv?.resolved) this.chat.patchConversation(conversationId, { resolved: false })
-    void this.chat.send(conversationId, text, { attachments })
+    // The agent's own slash commands go to it as typed, without the app's notes in front.
+    const name = /^\/(\S+)/.exec(text.trim())?.[1]
+    const raw = !!name && !!conv?.agentCommands?.some((c) => c.name === name) && !attachments?.length
+    void this.chat.send(conversationId, text, { attachments, raw: raw || undefined })
     return Promise.resolve()
+  }
+
+  /**
+   * The app's own / commands: /子对话 hands the text to a new sub-conversation of
+   * a chat, /讨论串 starts a thread in a project. The user's line stays in the
+   * conversation with the new card under it; the agent here is not asked.
+   */
+  async runCommand(conversationId: string, command: 'subchat' | 'thread', text: string): Promise<string> {
+    const conv = this.store.conversation(conversationId)
+    const task = text.trim()
+    if (!conv) throw new Error(t('对话不存在或已被删除'))
+    if (!task) throw new Error(t('请在命令后面写上要做的事'))
+    const typed = `/${getLang() === 'en' ? command : command === 'subchat' ? '子对话' : '讨论串'} ${task}` // i18n-ignore
+    if (command === 'subchat') {
+      if (conv.kind !== 'chat' || conv.parentId) throw new Error(t('只有普通对话能开子对话，子对话里不能再开'))
+      if (this.chat.isBusy(conv.id)) throw new Error(t('等这条回复结束再开子对话'))
+      this.chat.addMessage(conv.id, 'user', [{ type: 'text', text: typed }])
+      return this.orchestrator.startSubconversation(conv, '', task).id
+    }
+    const project = this.store.project(conv.projectId)
+    if (conv.kind !== 'project' || !project) throw new Error(t('只有项目的主对话能开讨论串'))
+    const asked = this.chat.addMessage(conv.id, 'user', [{ type: 'text', text: typed }])
+    return this.orchestrator.startThread(project, titleFrom(task), `用户原话：${task}`, undefined, asked).id
   }
 
   async regenerate(conversationId: string): Promise<void> {
@@ -599,6 +638,14 @@ export class AppCore {
     await this.chat.send(threadId, text, { attachments })
   }
 
+  async compactContext(conversationId: string): Promise<void> {
+    await this.chat.compactContext(conversationId)
+  }
+
+  async stopCommand(conversationId: string, id: string): Promise<void> {
+    await this.chat.stopCommand(conversationId, id)
+  }
+
   async cancelPeerMessage(id: string): Promise<void> {
     this.peers.cancel(id)
   }
@@ -637,7 +684,15 @@ export class AppCore {
     const now = Date.now()
     const id = randomUUID()
     const backendId = this.resolveBackend(p.backendId)
+    this.refuseFolder(p.cwd)
     this.rememberFolder(p.cwd)
+    // A project the user gave no folder gets its own under the default folder, named after it.
+    if (!p.cwd) {
+      const root = this.autoFolderRoot()
+      mkdirSync(root, { recursive: true })
+      p = { ...p, cwd: uniqueDir(root, folderSafeName(p.name, t('新项目'))) }
+      mkdirSync(p.cwd!, { recursive: true })
+    }
     const conv = this.chat.createConversation({ kind: 'project', title: p.name, projectId: id, backendId, cwd: p.cwd })
     const project: Project = {
       id,
@@ -864,6 +919,49 @@ export class AppCore {
 
   async deleteProjectFile(projectId: string, name: string): Promise<void> {
     this.files.remove(projectId, name)
+  }
+
+  // ---- files panel (a project's 库, a chat's files) -----------------------
+
+  /** The working folder behind the files panel of a project or a conversation, and the conversations whose changes it shows. */
+  private libraryOf(id: string): { root?: string; convs: string[] } {
+    const project = this.store.projects.find((p) => p.id === id)
+    if (project) return { root: project.cwd, convs: this.store.conversations.filter((c) => c.projectId === id).map((c) => c.id) }
+    const conv = this.store.conversations.find((c) => c.id === id)
+    if (!conv) return { convs: [] }
+    const root = conv.cwd ?? (conv.projectId ? this.store.projects.find((p) => p.id === conv.projectId)?.cwd : undefined)
+    return { root, convs: [conv.id, ...this.store.conversations.filter((c) => c.parentId === conv.id).map((c) => c.id)] }
+  }
+
+  async listLibrary(id: string, rel = '') {
+    const { root } = this.libraryOf(id)
+    if (!root || !existsSync(root)) return undefined
+    const list = listFolder(root, rel)
+    return list && { root, ...list }
+  }
+
+  async libraryChanges(id: string) {
+    const { root, convs } = this.libraryOf(id)
+    if (!root) return []
+    return changedFiles(root, convs.flatMap((c) => this.store.messagesOf(c)), convs.map((c) => this.chat.scratchPath(c)))
+  }
+
+  async readLibraryFile(id: string, rel: string) {
+    const { root } = this.libraryOf(id)
+    return root ? readPreview(root, rel) : undefined
+  }
+
+  async openLibraryPath(id: string, rel: string, reveal = false) {
+    const { root } = this.libraryOf(id)
+    const abs = root && inside(root, rel)
+    if (!abs) return { ok: false, error: t('文件已不在原来的位置。') }
+    return this.openOutput(abs, reveal)
+  }
+
+  async addToLibrary(id: string, rel: string, files: { name: string; data: string }[]) {
+    const { root } = this.libraryOf(id)
+    if (!root) throw new Error(t('还没有文件夹。'))
+    for (const f of files) if (!addFile(root, rel, f.name, Buffer.from(f.data, 'base64'))) throw new Error(t('无法添加 {0}', f.name))
   }
 
   // ---- connectors ---------------------------------------------------------
