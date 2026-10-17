@@ -1,7 +1,7 @@
 import { useShallow } from 'zustand/react/shallow'
 import { GitBranch, Loader2, Square, SquareTerminal, X } from 'lucide-react'
 import type { Conversation } from '@shared/model'
-import { api, toast, useApp } from '../store'
+import { api, toast, useApp, toastError } from '../store'
 import { t } from '../i18n'
 import { relTime, STATUS_LABEL, threadState } from '../util'
 import { FilesPane } from './FilesPane'
@@ -95,7 +95,7 @@ function BackgroundList({ conv }: { conv: Conversation }) {
                 className="icon-btn sm"
                 data-tip={t('停止')}
                 aria-label={t('停止')}
-                onClick={() => void api().stopCommand(owner(b.id), b.id).catch((e) => toast(String(e instanceof Error ? e.message : e), 'error'))}
+                onClick={() => void api().stopCommand(owner(b.id), b.id).catch(toastError)}
               >
                 <Square size={12} />
               </button>

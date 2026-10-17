@@ -5,6 +5,7 @@
 import { demoAgentEnabled } from '../demo'
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
+import { t } from '../../shared/i18n'
 import { normalizeTheme, type AppSettings, type Connector, type Conversation, type Message, type PeerMessage, type Project, type Routine } from '../../shared/model'
 
 interface StateFile {
@@ -30,6 +31,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export class Store {
   private state: StateFile
+  // Lookups by id, kept in step with the lists (the lists stay the order things were added in).
+  private projectIndex = new Map<string, Project>()
+  private conversationIndex = new Map<string, Conversation>()
   private messages = new Map<string, Message[]>()
   private dirtyState = false
   private dirtyMessages = new Set<string>()
@@ -51,6 +55,8 @@ export class Store {
       settings: normalizeTheme({ ...DEFAULT_SETTINGS, ...loaded?.settings }),
       backendSettings: loaded?.backendSettings ?? {}
     }
+    for (const p of this.state.projects) this.projectIndex.set(p.id, p)
+    for (const c of this.state.conversations) this.conversationIndex.set(c.id, c)
     // Data from before the first-run guide existed: the user is already set up, so don't guide them again.
     const s = this.state
     if (loaded && loaded.settings?.onboarded === undefined && (s.conversations.length || s.projects.length || s.settings.userName)) {
@@ -70,14 +76,22 @@ export class Store {
     return this.state.projects
   }
   project(id: string | undefined): Project | undefined {
-    return id ? this.state.projects.find((p) => p.id === id) : undefined
+    return id ? this.projectIndex.get(id) : undefined
+  }
+  /** The project, or an error the user can read. */
+  requireProject(id: string | undefined): Project {
+    const p = this.project(id)
+    if (!p) throw new Error(t('项目不存在或已被删除'))
+    return p
   }
   putProject(p: Project): void {
     upsert(this.state.projects, p)
+    this.projectIndex.set(p.id, p)
     this.touch()
   }
   removeProject(id: string): void {
     this.state.projects = this.state.projects.filter((p) => p.id !== id)
+    this.projectIndex.delete(id)
     this.touch()
   }
 
@@ -86,14 +100,22 @@ export class Store {
     return this.state.conversations
   }
   conversation(id: string | undefined): Conversation | undefined {
-    return id ? this.state.conversations.find((c) => c.id === id) : undefined
+    return id ? this.conversationIndex.get(id) : undefined
+  }
+  /** The conversation, or an error the user can read. */
+  requireConversation(id: string | undefined): Conversation {
+    const c = this.conversation(id)
+    if (!c) throw new Error(t('对话不存在或已被删除'))
+    return c
   }
   putConversation(c: Conversation): void {
     upsert(this.state.conversations, c)
+    this.conversationIndex.set(c.id, c)
     this.touch()
   }
   removeConversation(id: string): void {
     this.state.conversations = this.state.conversations.filter((c) => c.id !== id)
+    this.conversationIndex.delete(id)
     this.messages.delete(id)
     this.variants.delete(id)
     for (const name of [`${id}.json`, `${id}.variants.json`])
@@ -107,9 +129,10 @@ export class Store {
     if (!list) {
       list = readJson<Message[]>(join(this.dir, 'messages', `${conversationId}.json`)) ?? []
       // A reply cut off by a quit: drop it if nothing was said yet (unless a thread card hangs on it).
-      list = list.filter(
-        (m) => !(m.state === 'streaming' && !m.blocks.length && !this.conversations.some((c) => c.anchorMessageId === m.id))
-      )
+      if (list.some((m) => m.state === 'streaming' && !m.blocks.length)) {
+        const anchors = new Set(this.conversations.map((c) => c.anchorMessageId).filter(Boolean))
+        list = list.filter((m) => !(m.state === 'streaming' && !m.blocks.length && !anchors.has(m.id)))
+      }
       for (const m of list)
         if (m.state === 'streaming') {
           m.state = 'cancelled'
@@ -280,7 +303,9 @@ export class Store {
       this.dirtyState = false
     }
     for (const id of this.dirtyMessages) {
-      if (this.messages.has(id)) writeAtomic(join(this.dir, 'messages', `${id}.json`), this.messages.get(id))
+      const list = this.messages.get(id)
+      // While a reply streams the file is rewritten every 400 ms: still atomic, but forced to disk only once it settles.
+      if (list) writeAtomic(join(this.dir, 'messages', `${id}.json`), list, !list.some((m) => m.state === 'streaming'))
     }
     this.dirtyMessages.clear()
     for (const id of this.dirtyVariants) if (this.variants.has(id)) writeAtomic(this.variantsFile(id), this.variants.get(id))
@@ -317,12 +342,12 @@ function readJson<T>(file: string): T | undefined {
 }
 
 /** Write to a temp file, flush it to disk, keep the previous version as `.bak`, then swap in. */
-function writeAtomic(file: string, data: unknown): void {
+function writeAtomic(file: string, data: unknown, durable = true): void {
   const tmp = `${file}.tmp`
   const fd = openSync(tmp, 'w')
   try {
     writeSync(fd, JSON.stringify(data))
-    fsyncSync(fd)
+    if (durable) fsyncSync(fd)
   } finally {
     closeSync(fd)
   }

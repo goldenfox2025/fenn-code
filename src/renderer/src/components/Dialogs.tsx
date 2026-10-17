@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { errorText } from '@shared/errors'
 import { Bot, Check, FolderGit2, FolderKanban, FolderOpen, Info, Palette, Plug, Plus, User, X } from 'lucide-react'
 import type { AppInfo, ConnectorView, FolderCandidate, Project, Routine, Schedule, UpdateCheck } from '@shared/model'
 import { Dropdown, useMenu } from './Menu'
 import { confirmDialog, Overlay, useLayer } from './Modal'
-import { api, refreshAccount, toast, useApp, useUsableBackends } from '../store'
+import { api, refreshAccount, toast, useApp, useUsableBackends, toastError } from '../store'
 import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
 import type { BackendSummary } from '@shared/contract'
@@ -664,7 +665,7 @@ export function LoginButton({ backendId, label, onDone }: { backendId: string; l
       toast(status.signedIn === true ? t('登录成功') : t('登录流程已结束，请确认账号状态后重试'))
       if (status.signedIn === true) onDone?.()
     } catch (e) {
-      toast(t('登录失败：{0}', e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : e), 'error')
+      toast(t('登录失败：{0}', errorText(e)), 'error')
     } finally {
       setBusy(false)
     }
@@ -682,7 +683,7 @@ export function LoginButton({ backendId, label, onDone }: { backendId: string; l
           try {
             methods = await api().backendAuthMethods(backendId)
           } catch (err) {
-            toast(t('无法启动后端：{0}', err instanceof Error ? err.message : err), 'error')
+            toast(t('无法启动后端：{0}', errorText(err)), 'error')
           }
           setBusy(false)
           if (!methods.length) return toast(t('这个后端不需要在应用里登录'))
@@ -791,7 +792,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
       }
     } catch (e) {
       setFailed('failed')
-      toast(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e), 'error')
+      toastError(e)
     } finally {
       setRunning(null)
     }
@@ -879,7 +880,7 @@ export function TerminalLoginButton({ backendId }: { backendId: string }) {
           toast(t('已打开终端，请在里面完成登录，然后回来点「重试」'))
           window.dispatchEvent(new CustomEvent('oc-account-watch', { detail: backendId }))
         } catch (e) {
-          toast(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e), 'error')
+          toastError(e)
         } finally {
           setBusy(false)
         }
@@ -1046,7 +1047,7 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
       })
       onDone()
     } catch (e) {
-      setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e))
+      setError(errorText(e))
     }
   }
   return (

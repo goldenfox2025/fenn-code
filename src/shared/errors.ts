@@ -37,3 +37,9 @@ export function classifyError(raw: string | undefined): ErrorKind | null {
 export function isFriendly(raw: string): boolean {
   return /[一-鿿]/.test(raw.trim().slice(0, 40))
 }
+
+/** The message of anything thrown, without Electron's "Error invoking remote method 'oc:x': Error: " wrapper. */
+export function errorText(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  return raw.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}

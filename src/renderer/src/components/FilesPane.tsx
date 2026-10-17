@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, FolderPlus, FolderSearch, Plus, RefreshCw, Search } from 'lucide-react'
 import type { LibraryChange, LibraryEntry } from '@shared/model'
-import { api, toast, useApp } from '../store'
+import { api, toast, useApp, toastError } from '../store'
 import { t } from '../i18n'
 import { relTime } from '../util'
 import { humanSize } from './Outputs'
@@ -93,13 +93,13 @@ export function FilesPane({ id }: { id: string }) {
       )
       await api().addToLibrary(id, '', files)
     } catch (e) {
-      toast(e instanceof Error ? e.message : String(e), 'error')
+      toastError(e)
     }
     reload()
   }
   const picker = useRef<HTMLInputElement>(null)
   const project = useApp((s) => s.projects.some((p) => p.id === id))
-  const fail = (e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error')
+  const fail = toastError
   const choose = async () => {
     const dir = await api().pickFolder()
     if (!dir) return

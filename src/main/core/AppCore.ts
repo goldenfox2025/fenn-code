@@ -3,7 +3,7 @@
  * be driven from tests; main/index.ts only wires it to IPC.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, rmdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
@@ -76,6 +76,14 @@ export class AppCore {
     this.orchestrator.onProjectChanged = (project) => this.publish({ type: 'project', project })
     this.orchestrator.pickBackend = (preferred) => this.resolveBackend(preferred)
     this.orchestrator.extraTools = (conv) => [...this.routineTools(conv), ...(this.computer?.tools(conv) ?? [])]
+    // What the app keeps per conversation goes with it.
+    this.chat.removedListeners.add((id) => {
+      this.tools.revoke(id)
+      this.computer?.forget(id)
+      this.peers.removed(id)
+      this.switches.delete(id)
+      this.movedNotes.delete(id)
+    })
     this.autoAssigner = new AutoAssigner(
       store,
       this.chat,
@@ -203,8 +211,7 @@ export class AppCore {
       await this.updateProject(id, { cwd: target })
       return target
     }
-    const conv = this.store.conversation(id)
-    if (!conv) throw new Error(t('对话不存在或已被删除'))
+    const conv = this.store.requireConversation(id)
     const has = this.chat.folderOf(conv)
     if (has) return has
     if (this.chat.isBusy(id)) throw new Error(t('等这条回复结束再建文件夹'))
@@ -445,9 +452,8 @@ export class AppCore {
    * conversation with the new card under it; the agent here is not asked.
    */
   async runCommand(conversationId: string, command: 'subchat' | 'thread', text: string): Promise<string> {
-    const conv = this.store.conversation(conversationId)
+    const conv = this.store.requireConversation(conversationId)
     const task = text.trim()
-    if (!conv) throw new Error(t('对话不存在或已被删除'))
     if (!task) throw new Error(t('请在命令后面写上要做的事'))
     const typed = `/${getLang() === 'en' ? command : command === 'subchat' ? '子对话' : '讨论串'} ${task}` // i18n-ignore
     if (command === 'subchat') {
@@ -582,6 +588,37 @@ export class AppCore {
   /** Set by the Electron shell: open a file with its default app, or show it in its folder. */
   shellOpen?: (path: string, reveal: boolean) => Promise<string | undefined>
 
+  /** The OS file dialogs, set by the app shell (absent in tests: pickers answer null). */
+  dialogs?: {
+    openFolder(defaultPath?: string): Promise<string | null>
+    saveFile(defaultName: string, filters: { name: string; extensions: string[] }[]): Promise<string | null>
+  }
+  /** backends.json, which 「打开配置文件夹」 reveals. */
+  backendsFile?: string
+
+  async pickFolder(start?: string): Promise<string | null> {
+    // Opened at a known folder, not wherever Windows last was (often the desktop, whose
+    // big files and shortcuts the picker reads before it answers).
+    const defaultPath = [start, this.autoFolderRoot(), this.documentsDir].find((p) => !!p && existsSync(p))
+    return (await this.dialogs?.openFolder(defaultPath)) ?? null
+  }
+
+  async exportConversation(id: string): Promise<boolean> {
+    const conv = this.store.conversation(id)
+    if (!conv) return false
+    const path = await this.dialogs?.saveFile(`${conv.title.replace(/[\\/:*?"<>|]/g, '_')}.md`, [{ name: 'Markdown', extensions: ['md'] }])
+    if (!path) return false
+    writeFileSync(path, this.markdownOf(id))
+    return true
+  }
+
+  async openConfigFolder(): Promise<void> {
+    const file = this.backendsFile
+    if (!file) return
+    if (!existsSync(file)) writeFileSync(file, '[]\n')
+    await this.shellOpen?.(file, true)
+  }
+
   async openOutput(path: string, reveal = false): Promise<{ ok: boolean; error?: string }> {
     if (!existsSync(path)) return { ok: false, error: t('文件已不在原来的位置。') }
     // Programs and scripts are only ever shown in their folder, never run from a card.
@@ -678,34 +715,14 @@ export class AppCore {
   }
 
   async deleteConversation(id: string): Promise<void> {
-    await this.chat.cancel(id).catch(() => {})
-    this.chat.forgetSession(id)
-    // Deleting a thread also removes its card from the project chat.
-    for (const c of this.store.conversations.filter((c) => c.anchorMessageId && c.id === id)) {
-      const proj = this.store.project(c.projectId)
-      if (proj) {
-        for (const m of this.store.messagesOf(proj.conversationId)) {
-          const before = m.blocks.length
-          m.blocks = m.blocks.filter((b) => !(b.type === 'thread-card' && b.threadId === id))
-          if (m.blocks.length !== before) this.chat.updateMessage(m)
-        }
-      }
-    }
-    // A deleted sub-conversation's card goes from its parent; a deleted parent's children become chats of their own.
     const gone = this.store.conversation(id)
-    if (gone?.parentId) {
-      for (const m of this.store.messagesOf(gone.parentId)) {
-        const before = m.blocks.length
-        m.blocks = m.blocks.filter((b) => !(b.type === 'thread-card' && b.threadId === id))
-        if (m.blocks.length !== before) this.chat.updateMessage(m)
-      }
-    }
+    if (!gone) return
+    // Its card goes from where it was started: a thread's from the project chat, a sub-chat's from its parent.
+    const startedIn = gone.parentId ?? (gone.anchorMessageId ? this.store.project(gone.projectId)?.conversationId : undefined)
+    if (startedIn) this.chat.stripBlocks(startedIn, (b) => b.type === 'thread-card' && b.threadId === id)
+    // A deleted parent's sub-chats become chats of their own.
     for (const child of this.store.conversations.filter((c) => c.parentId === id)) this.chat.patchConversation(child.id, { parentId: undefined })
-    this.tools.revoke(id)
-    this.computer?.forget(id)
-    this.store.removeConversation(id)
-    this.publish({ type: 'conversation-removed', id })
-    this.peers.removed(id)
+    await this.chat.removeConversation(id)
   }
 
   async sendToThread(projectConversationId: string, threadId: string, text: string, attachments?: Attachment[]): Promise<void> {
@@ -839,8 +856,7 @@ export class AppCore {
   // ---- progress board -------------------------------------------------------
 
   private applyProgress(projectId: string, patch: ProgressPatch, by: 'user' | 'agent' | 'app'): ProgressItem {
-    const p = this.store.project(projectId)
-    if (!p) throw new Error(t('项目不存在'))
+    const p = this.store.requireProject(projectId)
     const { items, item } = applyPatch(p.progress ?? [], patch, by)
     const next = { ...p, progress: items, updatedAt: Date.now() }
     this.store.putProject(next)

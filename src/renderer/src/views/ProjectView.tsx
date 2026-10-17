@@ -36,7 +36,7 @@ import { Dropdown, useMenu } from '../components/Menu'
 import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
 import { PlanLine, planHeadline } from '../components/PlanLine'
-import { api, toast, useApp } from '../store'
+import { api, toast, useApp, toastError } from '../store'
 import { duration, relTime, STATUS_LABEL, threadState } from '../util'
 import { EditableTitle } from './ChatView'
 import { locale, t } from '../i18n'
@@ -407,7 +407,7 @@ function FilesPanel({ projectId }: { projectId: string }) {
       )
       await api().addProjectFiles(projectId, files)
     } catch (e) {
-      toast(e instanceof Error ? e.message : String(e), 'error')
+      toastError(e)
     }
     void reload()
   }

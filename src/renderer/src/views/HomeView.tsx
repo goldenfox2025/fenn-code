@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
 import { Composer } from '../components/Composer'
 import type { Attachment } from '@shared/model'
-import { api, toast, useApp } from '../store'
+import { api, toast, useApp, toastError } from '../store'
 import { greeting } from '../util'
 import { t } from '../i18n'
 
@@ -38,7 +38,7 @@ export function HomeView({ folder: initialFolder }: { folder?: string }) {
       const conv = await api().startChat({ text, attachments, backendId, cwd: folder || undefined, modelId, optionValues })
       navigate({ view: 'chat', conversationId: conv.id })
     } catch (e) {
-      toast(String(e), 'error')
+      toastError(e)
     }
   }
 

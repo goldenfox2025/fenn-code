@@ -21,7 +21,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, watch, writeFileSync } from "node:fs";
-import { API_METHODS } from "../shared/ipc";
+import { API_METHODS, type ApiMethod, type CoreApi } from "../shared/ipc";
 
 // Filled in at build time (electron.vite.config.ts).
 declare const __OC_COMMIT__: string;
@@ -395,6 +395,17 @@ core.shellOpen = async (path, reveal) => {
   return (await shell.openPath(path)) || undefined;
 };
 core.backendsConfigError = backendsError;
+core.backendsFile = backendsFile;
+core.dialogs = {
+  openFolder: async (defaultPath) => {
+    const r = await dialog.showOpenDialog(win!, { defaultPath, properties: ["openDirectory", "createDirectory"] });
+    return r.canceled ? null : r.filePaths[0];
+  },
+  saveFile: async (defaultName, filters) => {
+    const r = await dialog.showSaveDialog(win!, { defaultPath: defaultName, filters });
+    return r.canceled || !r.filePath ? null : r.filePath;
+  },
+};
 core.info = {
   name: app.getName(),
   version: app.getVersion(),
@@ -414,37 +425,14 @@ core.fetchJson = async (url) => {
   return res.json();
 };
 
-// Every API method is an AppCore method of the same name.
+// Every API method is an AppCore method of the same name; the compiler checks each one's
+// parameters and result against AncoraApi, so adding a method means the list plus AppCore.
+const handlers: { [K in ApiMethod]: (...a: Parameters<CoreApi[K]>) => ReturnType<CoreApi[K]> | Awaited<ReturnType<CoreApi[K]>> } = core;
 for (const name of API_METHODS) {
   ipcMain.handle(`oc:${name}`, (_e, ...args) =>
-    (core[name] as (...a: unknown[]) => unknown)(...args),
+    (handlers[name] as (...a: unknown[]) => unknown).apply(core, args),
   );
 }
-ipcMain.handle("oc:pickFolder", async (_e, start?: string) => {
-  // Opened at a known folder, not wherever Windows last was (often the desktop, whose
-  // big files and shortcuts the picker reads before it answers).
-  const defaultPath = [start, core.autoFolderRoot(), app.getPath("documents")].find((p) => !!p && existsSync(p));
-  const r = await dialog.showOpenDialog(win!, {
-    defaultPath,
-    properties: ["openDirectory", "createDirectory"],
-  });
-  return r.canceled ? null : r.filePaths[0];
-});
-ipcMain.handle("oc:exportConversation", async (_e, id: string) => {
-  const conv = store.conversation(id);
-  if (!conv) return false;
-  const r = await dialog.showSaveDialog(win!, {
-    defaultPath: `${conv.title.replace(/[\\/:*?"<>|]/g, "_")}.md`,
-    filters: [{ name: "Markdown", extensions: ["md"] }],
-  });
-  if (r.canceled || !r.filePath) return false;
-  writeFileSync(r.filePath, core.markdownOf(id));
-  return true;
-});
-ipcMain.handle("oc:openConfigFolder", () => {
-  if (!existsSync(backendsFile)) writeFileSync(backendsFile, "[]\n");
-  shell.showItemInFolder(backendsFile);
-});
 ipcMain.on("oc:window", (_e, action: string) => {
   if (!win) return;
   if (action === "minimize") win.minimize();

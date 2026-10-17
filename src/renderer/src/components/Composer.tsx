@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { errorText } from '@shared/errors'
 import { ArrowUp, ChevronDown, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Plus, ScrollText, Settings2, Square, SquareTerminal, X } from 'lucide-react'
 import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
-import { api, refreshAccount, toast, useApp } from '../store'
+import { api, refreshAccount, toast, useApp, toastError } from '../store'
 import { useMenu, type MenuItem } from './Menu'
 import { lang, t } from '../i18n'
 import { tk } from '@shared/i18n'
@@ -83,7 +84,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       try {
         next.push(await readAttachment(f))
       } catch (e) {
-        toast(e instanceof Error ? e.message : String(e), 'error')
+        toastError(e)
       }
     }
     if (next.length) setFiles((cur) => [...cur, ...next])
@@ -98,7 +99,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       setText('')
       setPicked(null)
       sessionStorage.removeItem(draftKey)
-      const fail = (e: unknown) => toast(String(e instanceof Error ? e.message : e), 'error')
+      const fail = toastError
       if (picked.app) void api().runCommand(conversation.id, picked.app, t).catch(fail)
       else void api().send(conversation.id, t ? `/${picked.name} ${t}` : `/${picked.name}`).catch(fail)
       return
@@ -109,14 +110,14 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       if (!app.text) return toast(tr(NEED_TEXT), 'error')
       setText('')
       sessionStorage.removeItem(draftKey)
-      void api().runCommand(conversation.id, app.command, app.text).catch((e) => toast(String(e instanceof Error ? e.message : e), 'error'))
+      void api().runCommand(conversation.id, app.command, app.text).catch(toastError)
       return
     }
     setText('')
     setFiles([])
     sessionStorage.removeItem(draftKey)
     if (target && conversation) {
-      void api().sendToThread(conversation.id, target.id, t, files).catch((e) => toast(String(e instanceof Error ? e.message : e), 'error'))
+      void api().sendToThread(conversation.id, target.id, t, files).catch(toastError)
       setTarget(null)
     } else if (onSubmit) onSubmit(t, files, Object.keys(pending).length ? pending : undefined)
     else if (conversation) void api().send(conversation.id, t, files)
@@ -227,7 +228,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       .backendModels(bid, wanted)
       .then(
         (c) => live && setCatalog({ for: bid, loading: false, needsLogin: c.needsLogin }),
-        (e) => live && setCatalog({ for: bid, loading: false, error: e instanceof Error ? e.message : String(e) })
+        (e) => live && setCatalog({ for: bid, loading: false, error: errorText(e) })
       )
     return () => {
       live = false
@@ -245,7 +246,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     try {
       await op()
     } catch (e) {
-      toast(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')
+      toastError(e)
     } finally {
       setSelecting(false)
     }
@@ -361,7 +362,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           usage={conversation.usage}
           timing={conversation.timing}
           scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')}
-          onCompact={conversation.compactCommand && !busy ? () => void api().compactContext(conversation.id).catch((e) => toast(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')) : undefined}
+          onCompact={conversation.compactCommand && !busy ? () => void api().compactContext(conversation.id).catch(toastError) : undefined}
         />
       ) : null}
     </span>
@@ -372,7 +373,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const folderNow = conversation ? (ownsFolder ? project.cwd : conversation.cwd) || '' : (folder ?? '')
   const setFolder = (f: string) => {
     if (!conversation) return onFolderChange?.(f)
-    const failed = (e: unknown) => toast(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')
+    const failed = toastError
     if (ownsFolder) void api().updateProject(project.id, { cwd: f }).catch(failed)
     else void api().updateConversation(conversation.id, { cwd: f }).catch(failed)
   }

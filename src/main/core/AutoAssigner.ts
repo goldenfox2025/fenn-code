@@ -30,7 +30,12 @@ export class AutoAssigner {
     private readonly attachFolder: (conversationId: string, folder: string) => void = () => {},
     /** The app's own scratch spaces: work there says nothing about the user's folders. */
     private readonly ignored: string[] = []
-  ) {}
+  ) {
+    chat.removedListeners.add((id) => {
+      this.checked.delete(id)
+      this.retitled.delete(id)
+    })
+  }
 
   private retitled = new Set<string>()
 

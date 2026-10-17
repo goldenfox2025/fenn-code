@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { create } from 'zustand'
 import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/contract'
 import { backendAvailable } from '@shared/backendAvailability'
+import { errorText } from '@shared/errors'
 import type { AppEvent, AppSettings, Conversation, Message, AncoraApi, PeerMessage, Project, Routine } from '@shared/model'
 
 declare global {
@@ -220,6 +221,11 @@ export function refreshAccount(backendId: string, maxAgeMs = 0): Promise<Account
 
 export function toast(text: string, level: 'info' | 'error' = 'info'): void {
   applyEvent({ type: 'toast', level, text }, useApp.setState, useApp.getState)
+}
+
+/** Shows what went wrong, as the core said it. Fits straight into `.catch(toastError)`. */
+export function toastError(e: unknown): void {
+  toast(errorText(e), 'error')
 }
 
 /**

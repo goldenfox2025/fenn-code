@@ -61,6 +61,10 @@ export class Orchestrator {
     private readonly artifacts: Artifacts,
     private readonly backends?: Pick<BackendManager, 'ask' | 'list'>
   ) {
+    chat.removedListeners.add((id) => {
+      this.memoryWritten.delete(id)
+      this.lastIndex.delete(id)
+    })
     chat.hooks = {
       preamble: (conv, isResume) => this.preamble(conv, isResume),
       history: (conv, prior) => this.handoff(conv, prior),

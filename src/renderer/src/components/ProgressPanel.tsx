@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle2, Circle, CircleAlert, CircleDot, MoreHorizontal, Pencil, Plus, Trash2, Check, X } from 'lucide-react'
 import type { Conversation, Project, ProgressItem, ProgressPatch, ProgressStatus } from '@shared/model'
-import { api, toast, useApp } from '../store'
+import { api, toast, useApp, toastError } from '../store'
 import { Dropdown, useMenu } from './Menu'
 import { confirmDialog, EscLayer } from './Modal'
 import { t } from '../i18n'
@@ -46,7 +46,7 @@ export function ProgressPanel({ project }: { project: Project }) {
     try {
       await api().updateProgress(project.id, patch)
     } catch (e) {
-      toast(String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')
+      toastError(e)
     }
   }
   const remove = async (x: ProgressItem) => {

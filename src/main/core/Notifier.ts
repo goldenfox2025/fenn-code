@@ -26,6 +26,7 @@ export class Notifier {
     if (e.type === 'conversation-removed') {
       this.last.delete(e.id)
       this.needs.delete(e.id)
+      this.startedAt.delete(e.id)
     }
     if (e.type !== 'conversation') return
     const c = e.conversation

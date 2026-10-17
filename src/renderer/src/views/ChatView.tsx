@@ -5,7 +5,7 @@ import { Composer } from '../components/Composer'
 import { useMenu } from '../components/Menu'
 import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
-import { api, toast, useApp } from '../store'
+import { api, toast, useApp, toastError } from '../store'
 import { t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
 import { PlanLine } from '../components/PlanLine'
@@ -24,7 +24,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
     try {
       await api().deleteConversation(conv.id)
       navigate({ view: 'home' })
-    } catch (error) { toast(String(error), 'error') }
+    } catch (error) { toastError(error) }
   }
 
   return (

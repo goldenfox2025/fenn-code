@@ -99,6 +99,8 @@ export class ChatService {
   private tags = new Map<string, string>()
   /** Called after every turn, visible or not, once the conversation is free again. */
   readonly turnEndListeners = new Set<(conversationId: string) => void>()
+  /** Called once a conversation is deleted, so every part of the app can drop what it kept for it. */
+  readonly removedListeners = new Set<(conversationId: string) => void>()
   private emitTimers = new Map<string, NodeJS.Timeout>()
   private pendingPermissions = new Map<string, string>() // requestId → conversationId
   private hostWaiters = new Map<string, (d: string | null) => void>()
@@ -499,7 +501,9 @@ export class ChatService {
   }
 
   async cancel(conversationId: string): Promise<void> {
-    this.queues.set(conversationId, [])
+    // Turns still queued are dropped; whoever waits on them is let go.
+    for (const q of this.queues.get(conversationId) ?? []) q.resolve()
+    this.queues.delete(conversationId)
     const live = this.live.get(conversationId)
     if (live && this.running.has(conversationId)) await this.backends.cancel(live.backendId, live.sessionId)
     // Dismiss any permission prompt this turn is waiting on.
@@ -627,6 +631,27 @@ export class ChatService {
 
   /** Drops the live session so the next turn starts fresh (e.g. after a backend switch). */
   private toolsStale = new Set<string>()
+
+  /** Deletes a conversation: stops its turn, forgets its session and everything kept for it, then tells the rest of the app. */
+  async removeConversation(conversationId: string): Promise<void> {
+    await this.cancel(conversationId).catch(() => {})
+    this.forgetSession(conversationId)
+    for (const m of [this.meters, this.tags, this.epochs, this.current]) m.delete(conversationId)
+    for (const s of [this.toolsStale, this.unattendedTurns]) s.delete(conversationId)
+    clearTimeout(this.emitTimers.get(conversationId))
+    this.emitTimers.delete(conversationId)
+    this.store.removeConversation(conversationId)
+    this.publish({ type: 'conversation-removed', id: conversationId })
+    for (const fn of this.removedListeners) fn(conversationId)
+  }
+
+  /** Takes blocks out of a conversation's messages (e.g. the card of a deleted thread). */
+  stripBlocks(conversationId: string, drop: (b: Block) => boolean): void {
+    for (const m of this.store.messagesOf(conversationId)) {
+      const kept = m.blocks.filter((b) => !drop(b))
+      if (kept.length !== m.blocks.length) this.updateMessage({ ...m, blocks: kept })
+    }
+  }
 
   /**
    * The app's tool list changed (computer control turned on or off): agents read it

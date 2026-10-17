@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, CheckSquare, ChevronDown, Clock, Folder, FolderKanban, MessageCircle, Pause, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { searchable, type Conversation, type Project, type Routine, type Schedule, type SearchHit } from '@shared/model'
-import { api, toast, useApp } from '../store'
+import { api, toast, useApp, toastError } from '../store'
 import { relTime } from '../util'
 import { locale, t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
@@ -124,7 +124,7 @@ export function ChatsPage() {
   const removeOne = async (c: Conversation) => {
     if (!(await confirmDialog(t('删除「{0}」？此操作无法撤销。', c.title)))) return
     try { await api().deleteConversation(c.id) }
-    catch (error) { toast(String(error), 'error') }
+    catch (error) { toastError(error) }
   }
   return (
     <div className="scroll">
