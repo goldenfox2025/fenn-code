@@ -19,6 +19,7 @@ import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer
 import { ChatService, textOf } from './ChatService'
 import { AutoAssigner } from './AutoAssigner'
 import { folderSafeName, moveContents, uniqueDir } from './autoFolder'
+import { PeerMail } from './PeerMail'
 import { Orchestrator } from './Orchestrator'
 import { ProjectMemory } from './ProjectMemory'
 import { Scheduler } from './Scheduler'
@@ -38,6 +39,7 @@ export class AppCore {
   readonly orchestrator: Orchestrator
   readonly autoAssigner: AutoAssigner
   readonly scheduler: Scheduler
+  readonly peers: PeerMail
   readonly memory: ProjectMemory
   readonly files: ProjectFiles
   readonly artifacts: Artifacts
@@ -66,6 +68,8 @@ export class AppCore {
     this.files = new ProjectFiles(store.dir)
     this.artifacts = new Artifacts(store.dir)
     this.orchestrator = new Orchestrator(store, this.chat, tools, this.memory, this.files, this.artifacts, backends)
+    this.peers = new PeerMail(store, this.chat, publish)
+    this.orchestrator.peers = this.peers
     this.orchestrator.progress = (projectId, patch, by) => this.applyProgress(projectId, patch, by)
     this.orchestrator.onProjectChanged = (project) => this.publish({ type: 'project', project })
     this.orchestrator.pickBackend = (preferred) => this.resolveBackend(preferred)
@@ -178,7 +182,8 @@ export class AppCore {
       routines: this.store.routines,
       settings: this.store.settings,
       backends: this.backends.list(),
-      platform: this.platform
+      platform: this.platform,
+      peerMessages: this.store.peerMessages
     }
   }
 
@@ -544,6 +549,11 @@ export class AppCore {
     this.computer?.forget(id)
     this.store.removeConversation(id)
     this.publish({ type: 'conversation-removed', id })
+    this.peers.removed(id)
+  }
+
+  async cancelPeerMessage(id: string): Promise<void> {
+    this.peers.cancel(id)
   }
 
   async react(messageId: string, conversationId: string, emoji: string): Promise<void> {
@@ -604,7 +614,10 @@ export class AppCore {
     this.store.putProject(next)
     this.publish({ type: 'project', project: next })
     if (patch.name) this.chat.patchConversation(p.conversationId, { title: patch.name })
-    if ('archived' in patch && !!patch.archived !== !!p.archived) this.pauseRoutinesFor(id, !!patch.archived)
+    if ('archived' in patch && !!patch.archived !== !!p.archived) {
+      this.pauseRoutinesFor(id, !!patch.archived)
+      this.peers.soon()
+    }
     if ('cwd' in patch) this.rememberFolder(patch.cwd)
     if ('cwd' in patch && (p.cwd || undefined) !== (patch.cwd || undefined)) {
       // The project chat and its threads work in the project's folder.

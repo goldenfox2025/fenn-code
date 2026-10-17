@@ -5,7 +5,7 @@
 import { demoAgentEnabled } from '../demo'
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
-import { normalizeTheme, type AppSettings, type Connector, type Conversation, type Message, type Project, type Routine } from '../../shared/model'
+import { normalizeTheme, type AppSettings, type Connector, type Conversation, type Message, type PeerMessage, type Project, type Routine } from '../../shared/model'
 
 interface StateFile {
   version: 1
@@ -13,6 +13,7 @@ interface StateFile {
   conversations: Conversation[]
   routines: Routine[]
   connectors?: Connector[]
+  peerMessages?: PeerMessage[]
   settings: AppSettings
   backendSettings: Record<string, Record<string, string>>
 }
@@ -46,6 +47,7 @@ export class Store {
       conversations: loaded?.conversations ?? [],
       routines: loaded?.routines ?? [],
       connectors: loaded?.connectors ?? [],
+      peerMessages: loaded?.peerMessages ?? [],
       settings: normalizeTheme({ ...DEFAULT_SETTINGS, ...loaded?.settings }),
       backendSettings: loaded?.backendSettings ?? {}
     }
@@ -195,6 +197,22 @@ export class Store {
     this.dirtyMessages.add(conversationId)
     this.schedule()
     return { removed, restored }
+  }
+
+  // ---- messages between threads ----------------------------------------------
+  get peerMessages(): PeerMessage[] {
+    return this.state.peerMessages ?? []
+  }
+  putPeerMessage(m: PeerMessage): void {
+    this.state.peerMessages = this.peerMessages
+    upsert(this.state.peerMessages, m)
+    // Settled ones are kept a while for their cards, then dropped.
+    if (this.state.peerMessages.length > 500) {
+      const settled = this.state.peerMessages.filter((x) => x.state !== 'pending')
+      const drop = new Set(settled.slice(0, this.state.peerMessages.length - 500).map((x) => x.id))
+      this.state.peerMessages = this.state.peerMessages.filter((x) => !drop.has(x.id))
+    }
+    this.touch()
   }
 
   // ---- connectors ---------------------------------------------------------

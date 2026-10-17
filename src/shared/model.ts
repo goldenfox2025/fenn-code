@@ -29,6 +29,8 @@ export type Block =
   | { type: 'placed'; path: string }
   /** In a project chat: the card of a thread started from this message. */
   | { type: 'thread-card'; threadId: string }
+  /** A message between two threads of a project (see PeerMessage): sent from here, or delivered here. */
+  | { type: 'peer-message'; peerId: string; direction: 'out' | 'in' }
   /** A result the agent handed over: a file on this computer or a link. Shown as a card under the reply. */
   | { type: 'output'; kind: 'file' | 'link'; title: string; path?: string; url?: string; size?: number }
   /** A page the agent published (see Artifacts); opens beside the conversation. */
@@ -167,6 +169,41 @@ export interface Project {
   progress?: ProgressItem[]
   /** Results agents handed over in this project's conversations, newest last (the project's library). */
   outputs?: ProjectOutput[]
+}
+
+/** When a message one thread leaves for another is delivered. */
+export type PeerDelivery = 'now' | 'when_idle' | 'after_current_task'
+
+/** Something a thread hands over with a message: a result card, a project file, or a page. */
+export interface PeerOutput {
+  kind: 'file' | 'link' | 'page'
+  title: string
+  path?: string
+  url?: string
+  pageId?: string
+}
+
+/**
+ * A message one project thread (or the project chat) leaves for another thread,
+ * delivered when its condition is met. Kept across restarts.
+ */
+export interface PeerMessage {
+  id: string
+  projectId: string
+  fromId: string
+  toId: string
+  text: string
+  outputs?: PeerOutput[]
+  deliver: PeerDelivery
+  /** 1 for a message sent in a turn the user started; one more for each message-triggered turn. */
+  hop: number
+  /** Threads the chain has already passed through, oldest first (the sender included). */
+  chain: string[]
+  state: 'pending' | 'delivered' | 'cancelled' | 'failed'
+  /** Why it was not delivered. */
+  reason?: string
+  createdAt: number
+  deliveredAt?: number
 }
 
 export interface ProjectOutput {
@@ -362,6 +399,7 @@ export interface AppSnapshot {
   settings: AppSettings
   backends: BackendSummary[]
   platform: string
+  peerMessages?: PeerMessage[]
 }
 
 /** Pushed from main to renderer. */
@@ -374,6 +412,7 @@ export type AppEvent =
   | { type: 'message-removed'; conversationId: string; id: string }
   | { type: 'routine'; routine: Routine }
   | { type: 'routine-removed'; id: string }
+  | { type: 'peer-message'; message: PeerMessage }
   | { type: 'settings'; settings: AppSettings }
   | { type: 'backends'; backends: BackendSummary[] }
   | { type: 'permission'; conversationId?: string; request: PermissionRequest }
@@ -483,6 +522,8 @@ export interface AncoraApi {
   search(query: string): Promise<SearchHit[]>
   artifactInfo(id: string): Promise<{ id: string; title: string; versions: { version: number; createdAt: number }[] } | null>
   artifactSource(id: string, version?: number): Promise<string | null>
+  /** Withdraws a message one thread left for another, while it still waits. */
+  cancelPeerMessage(id: string): Promise<void>
   /** Answers a decision card: records the choice and sends it to the agent. */
   chooseDecision(conversationId: string, messageId: string, blockIndex: number, option: number): Promise<void>
   listConnectors(): Promise<ConnectorView[]>

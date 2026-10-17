@@ -174,6 +174,16 @@ const handlers = {
         await stream(sessionId, "A plain streamed reply for timing checks.", abort);
       else if (text === "你看到了什么")
         notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: raw } });
+      // "#留言 目标 || 时机 || 产物,… || 内容" leaves a message for another thread; inside a delivered
+      // message, "#回信 …" (same fields) tries to write back to the sender.
+      else if (s.mcp && (raw.includes("<peer-message") ? /#回信 /.test(raw) : /#留言 /.test(raw))) {
+        const body = raw.match(raw.includes("<peer-message") ? /#回信 ([\s\S]*)/ : /#留言 ([\s\S]*)/)[1].replace(/<\/peer-message>[\s\S]*/, "");
+        const [to, deliver, outs, ...rest] = body.split("||").map((x) => x.trim());
+        const r = await callTool(sessionId, s, "message_thread", {
+          thread_id: to, text: rest.join("||").trim(), ...(deliver ? { deliver } : {}), ...(outs ? { outputs: outs.split(",").map((x) => x.trim()) } : {}),
+        });
+        await stream(sessionId, "留言结果：" + (typeof r === "string" ? r : JSON.stringify(r)), abort);
+      }
       else if (raw.includes("<<classify>>")) await classify(sessionId, raw, abort);
       else if (raw.includes("<<summarize>>")) await summarize(sessionId, raw, abort);
       // MOCK_LAZY=1: a model that never calls the app's tools and answers everything inline.

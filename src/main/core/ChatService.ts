@@ -32,6 +32,8 @@ export interface SendOptions {
   role?: 'user' | 'system'
   /** The new version of an edited or regenerated turn. */
   variant?: Message['variant']
+  /** What started this turn, for the app's own bookkeeping (e.g. a message from another thread). */
+  tag?: string
 }
 
 export interface TurnHooks {
@@ -82,6 +84,11 @@ export class ChatService {
   private queues = new Map<string, QueuedTurn[]>()
   private running = new Set<string>()
   private unattendedTurns = new Set<string>()
+  /** Called as a queued turn starts, with the tag it was sent with. */
+  readonly turnStartListeners = new Set<(conversationId: string, tag?: string) => void>()
+  /** Called whenever a conversation is saved (status, resolved, title…). */
+  readonly changeListeners = new Set<(conv: Conversation) => void>()
+  private tags = new Map<string, string>()
   /** Called after every turn, visible or not, once the conversation is free again. */
   readonly turnEndListeners = new Set<(conversationId: string) => void>()
   private emitTimers = new Map<string, NodeJS.Timeout>()
@@ -113,6 +120,7 @@ export class ChatService {
   saveConversation(conv: Conversation): void {
     this.store.putConversation(conv)
     this.publish({ type: 'conversation', conversation: conv })
+    for (const fn of this.changeListeners) fn(conv)
   }
 
   patchConversation(id: string, patch: Partial<Conversation>): Conversation | undefined {
@@ -156,6 +164,31 @@ export class ChatService {
     return this.running.has(conversationId)
   }
 
+  /** Turns waiting behind the running one. */
+  queued(conversationId: string): number {
+    return this.queues.get(conversationId)?.length ?? 0
+  }
+
+  /** Takes back a turn that is still waiting in the queue; false once it has started. */
+  dropQueued(conversationId: string, tag: string): boolean {
+    const q = this.queues.get(conversationId) ?? []
+    const i = q.findIndex((x) => x.opts.tag === tag)
+    if (i < 0) return false
+    q.splice(i, 1)[0].resolve()
+    return true
+  }
+
+  /** The tag of the turn running now (see SendOptions.tag). */
+  turnTag(conversationId: string): string | undefined {
+    return this.tags.get(conversationId)
+  }
+
+  /** A permission prompt is waiting on the user. */
+  awaitingPermission(conversationId: string): boolean {
+    for (const cid of this.pendingPermissions.values()) if (cid === conversationId) return true
+    return false
+  }
+
   // ---- turns --------------------------------------------------------------
 
   /** Queues a user turn; resolves when that turn has finished. */
@@ -175,11 +208,14 @@ export class ChatService {
     if (!next) return
     this.running.add(conversationId)
     if (next.opts.unattended) this.unattendedTurns.add(conversationId)
+    if (next.opts.tag) this.tags.set(conversationId, next.opts.tag)
+    for (const fn of this.turnStartListeners) fn(conversationId, next.opts.tag)
     try {
       await this.runTurn(conversationId, next.text, next.opts)
     } finally {
       this.running.delete(conversationId)
       this.unattendedTurns.delete(conversationId)
+      this.tags.delete(conversationId)
       for (const fn of this.turnEndListeners) fn(conversationId)
       next.resolve()
       void this.pump(conversationId)

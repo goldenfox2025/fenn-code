@@ -59,6 +59,13 @@ export class Artifacts {
     return { meta, version }
   }
 
+  /** Where the page's latest (or given) version is saved. */
+  file(id: string, version?: number): string | undefined {
+    const m = this.meta(id)
+    const v = version ?? m?.versions[m.versions.length - 1]?.version
+    return m && v !== undefined ? join(this.dir(id), `v${v}.html`) : undefined
+  }
+
   list(): ArtifactMeta[] {
     const d = join(this.root, 'artifacts')
     if (!existsSync(d)) return []
