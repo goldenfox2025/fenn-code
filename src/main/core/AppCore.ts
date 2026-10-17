@@ -19,6 +19,7 @@ import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer
 import { ChatService, textOf } from './ChatService'
 import { AutoAssigner } from './AutoAssigner'
 import { folderSafeName, moveContents, uniqueDir } from './autoFolder'
+import { isUnsafeFolder } from '../../shared/unsafeFolders'
 import { PeerMail } from './PeerMail'
 import { Orchestrator } from './Orchestrator'
 import { ProjectMemory } from './ProjectMemory'
@@ -78,7 +79,7 @@ export class AppCore {
       store,
       this.chat,
       backends,
-      () => [...new Set([...(store.settings.recentFolders ?? []), ...store.projects.map((p) => p.cwd ?? ''), store.settings.defaultCwd ?? ''].filter(Boolean))],
+      () => [...new Set([...(store.settings.recentFolders ?? []), ...store.projects.map((p) => p.cwd ?? ''), store.settings.defaultCwd ?? ''])].filter((f) => f && !this.unsafeFolder(f)),
       (id, folder) => void this.updateConversation(id, { cwd: folder }).catch(() => {}),
       [join(store.dir, 'workspaces')]
     )
@@ -122,6 +123,7 @@ export class AppCore {
     }
     this.repairBackends()
     this.separateChatsFromProjects()
+    this.leaveUnsafeFolders()
     this.signInRepair = this.repairSignIns().catch(() => undefined)
     const orchestrate = this.chat.hooks.afterTurn
     this.chat.hooks.afterTurn = (conv, reply, result) => {
@@ -139,6 +141,15 @@ export class AppCore {
       this.movedNotes.delete(conv.id)
       return [moved, digest?.(conv)].filter(Boolean).join('\n\n')
     }
+  }
+
+  /** Home, a drive root or Ancora's own data: never a working folder (see isUnsafeFolder). */
+  unsafeFolder(path: string | undefined): boolean {
+    return !!path && isUnsafeFolder(path, homedir(), this.store.dir)
+  }
+
+  private refuseFolder(path: string | undefined): void {
+    if (this.unsafeFolder(path)) throw new Error(t('不能在 {0} 里工作：这里是主目录、磁盘根目录或 Ancora 的数据目录。请选一个具体的文件夹。', path!))
   }
 
   /** Set by the Electron shell: the user's Documents folder. */
@@ -234,6 +245,14 @@ export class AppCore {
       const cwd = c.cwd || this.store.project(c.projectId)?.cwd || undefined
       this.chat.patchConversation(c.id, { projectId: undefined, cwd })
     }
+  }
+
+  /** Chats an earlier version filed under the home folder (or a drive root) go back to having no folder. */
+  leaveUnsafeFolders(): void {
+    for (const c of this.store.conversations)
+      if (c.kind === 'chat' && this.unsafeFolder(c.cwd)) this.chat.patchConversation(c.id, { cwd: undefined, autoFolder: undefined })
+    const recent = this.store.settings.recentFolders
+    if (recent?.some((f) => this.unsafeFolder(f))) this.store.patchSettings({ recentFolders: recent.filter((f) => !this.unsafeFolder(f)) })
   }
 
   repairBackends(): void {
@@ -337,6 +356,7 @@ export class AppCore {
       await this.send(projectChat.id, opts.text, opts.attachments)
       return projectChat
     }
+    this.refuseFolder(opts.cwd)
     const conv = this.chat.createConversation({
       kind: 'chat',
       title: titleFrom(opts.text || opts.attachments?.[0]?.name || ''),
@@ -537,7 +557,10 @@ export class AppCore {
     // A title the user typed is theirs; the app stops improving it.
     if ('title' in patch) patch = { ...patch, titleAuto: false }
     // A folder the user picks is theirs, even in place of one the app made.
-    if ('cwd' in patch) patch = { ...patch, autoFolder: undefined }
+    if ('cwd' in patch) {
+      this.refuseFolder(patch.cwd)
+      patch = { ...patch, autoFolder: undefined }
+    }
     this.chat.patchConversation(id, patch)
     // A session is tied to its folder: the next turn starts a new one there, with the conversation so far.
     if ('cwd' in patch && before && (before.cwd || undefined) !== (patch.cwd || undefined)) this.chat.forgetSession(id)
@@ -669,7 +692,7 @@ export class AppCore {
 
   /** Keeps the folders the user works in, so they are offered again even after the chat is gone. */
   private rememberFolder(dir?: string): void {
-    if (!dir) return
+    if (!dir || this.unsafeFolder(dir)) return
     const list = this.store.settings.recentFolders ?? []
     if (list[0] === dir) return
     const next = [dir, ...list.filter((f) => f !== dir)].slice(0, 12)

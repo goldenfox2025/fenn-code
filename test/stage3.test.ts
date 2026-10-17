@@ -47,11 +47,11 @@ describe('progress board data', () => {
 })
 
 describe('progress board in a project', () => {
-  it('lets the agent record work, linked to the chat that did it, without duplicates', async () => {
+  it('lets the coordinator record work, without duplicates', async () => {
     const { core, store, dispose } = await makeCore()
     const p = await core.createProject({ name: '发布', backendId: 'mock' })
-    // Work happens in the project's threads (a project has no loose chats).
-    const c = core.chat.createConversation({ kind: 'thread', title: '发布', projectId: p.id, backendId: 'mock' })
+    // The board is the coordinator's (threads keep to their one task), when the user asks for one.
+    const c = store.conversation(p.conversationId)!
     await core.send(c.id, '#进度 发布 v1 / 写安装说明')
     await until(() => store.project(p.id)?.progress?.[0]?.children?.length)
     await until(() => store.conversation(c.id)?.status !== 'working')
@@ -62,7 +62,8 @@ describe('progress board in a project', () => {
     // All its tasks are done, so the milestone is too.
     expect(board[0]).toMatchObject({ title: '发布 v1', status: 'done', by: 'agent' })
     expect(board[0].children!.map((x) => [x.title, x.status])).toEqual([['写安装说明', 'done'], ['打包', 'done']])
-    expect(board[0].children![0].links).toEqual([c.id])
+    // The project chat itself is not linked: the board belongs to it.
+    expect(board[0].children![0].links).toBeUndefined()
     await dispose()
   }, 30000)
 

@@ -14,6 +14,7 @@ import { Workspaces } from '../workspace'
 import { t } from '../../../shared/i18n'
 import { classifyError } from '../../../shared/errors'
 import { visibleSessionOptions } from '../../../shared/sessionOptions'
+import { resolveModelAliases, resolveOptionAliases } from '../../../shared/aliases'
 import { findOnPath } from '../install'
 
 /** How long to wait before retrying a turn that failed because the sign-in was being renewed. */
@@ -454,7 +455,12 @@ export class AcpBackend implements AgentBackend {
         })), this.quirks)
       // Agents that list only the model here may still offer session modes below.
       if (list.length) {
-        this.sessionOptions.set(sessionId, list)
+        const { options, fixes } = resolveOptionAliases(list)
+        this.sessionOptions.set(sessionId, options)
+        // A level the menu can't name ("Default") is set to the one it shows.
+        for (const f of fixes)
+          void this.conn?.setSessionConfigOption({ sessionId, configId: f.id, value: f.value })
+            .catch((err) => this.host.log('warn', `${this.name} could not set ${f.id}: ${errorText(err)}`))
         return
       }
     }
@@ -493,19 +499,14 @@ export class AcpBackend implements AgentBackend {
       : undefined
     if (opt) {
       const flat = (opt.options ?? []).flatMap((o: any) => (Array.isArray(o.options) ? o.options : [o]))
-      this.modelSelectors.set(sessionId, {
-        configId: opt.id,
-        current: opt.currentValue,
-        models: flat.map((o: any) => ({ id: o.value, name: o.name, description: o.description ?? undefined }))
-      })
+      const r = resolveModelAliases(flat.map((o: any) => ({ id: o.value, name: o.name, description: o.description ?? undefined })), opt.currentValue)
+      this.modelSelectors.set(sessionId, { configId: opt.id, current: r.current, models: r.models })
       return
     }
     const l = legacy as { currentModelId?: string; availableModels?: { modelId: string; name: string; description?: string }[] }
     if (l?.availableModels?.length) {
-      this.modelSelectors.set(sessionId, {
-        current: l.currentModelId,
-        models: l.availableModels.map((m) => ({ id: m.modelId, name: m.name, description: m.description }))
-      })
+      const r = resolveModelAliases(l.availableModels.map((m) => ({ id: m.modelId, name: m.name, description: m.description })), l.currentModelId)
+      this.modelSelectors.set(sessionId, { current: r.current, models: r.models })
     }
   }
 }

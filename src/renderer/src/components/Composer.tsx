@@ -144,9 +144,6 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     const v = conversation?.sessionOptions !== undefined ? o.current : (conversation?.optionValues?.[o.id] ?? pending[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id]) ?? o.current)
     return o.choices.some((c) => c.value === v) ? v : o.current
   }
-  const modeOpt = options.find((o) => o.category === 'mode')
-  const modeValue = modeOpt && valueOf(modeOpt)
-  const modeNote = modeOpt && modeValue && modeValue !== modeOpt.choices[0]?.value ? choiceLabel(modeOpt.choices.find((c) => c.value === modeValue)?.name ?? modeValue, modeValue) : ''
   // Thinking level gets its own slider beside the model, like Claude's effort control.
   const effortOpt = options.find((o) => o.category === 'thought_level' || (!o.category && /reasoning|effort|thinking/i.test(o.id)))
 
@@ -303,7 +300,6 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           onClick={(e) => (e.stopPropagation(), open('model', e.currentTarget))}
         >
           {signedOut ? <span className="mode-note warn">{t('未登录')}</span> : (currentModel?.name ?? <span className="muted">{t('模型')}</span>)}
-          {modeNote && <span className="mode-note"> · {modeNote}</span>}
           <ChevronDown size={12} className="chip-caret" />
         </button>
       )}
@@ -321,8 +317,9 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const folderNow = conversation ? (ownsFolder ? project.cwd : conversation.cwd) || '' : (folder ?? '')
   const setFolder = (f: string) => {
     if (!conversation) return onFolderChange?.(f)
-    if (ownsFolder) void api().updateProject(project.id, { cwd: f })
-    else void api().updateConversation(conversation.id, { cwd: f })
+    const failed = (e: unknown) => toast(String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')
+    if (ownsFolder) void api().updateProject(project.id, { cwd: f }).catch(failed)
+    else void api().updateConversation(conversation.id, { cwd: f }).catch(failed)
   }
   const canSetFolder = !!(conversation || onFolderChange)
   const folderChip = canSetFolder && <FolderChip folder={folderNow} onChange={setFolder} hint={project?.name || conversation?.title || text} />

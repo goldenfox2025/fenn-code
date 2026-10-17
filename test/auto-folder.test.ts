@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { folderSafeName, uniqueDir } from '../src/main/core/autoFolder'
@@ -43,8 +44,9 @@ describe('folders for chats', () => {
   }, 30000)
 
   it('never takes the place of a folder the user picked, and picking one clears the mark', async () => {
-    const { core, store, dir, dispose } = await makeCore()
-    const mine = join(dir, 'mine')
+    const { core, store, dispose } = await makeCore()
+    // Outside Ancora's data folder, which is never a working folder.
+    const mine = join(mkdtempSync(join(tmpdir(), 'oc-mine-')), 'mine')
     mkdirSync(mine)
     const c = await core.startChat({ text: '写文件 a.txt', backendId: 'mock', cwd: mine })
     await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).length >= 2)

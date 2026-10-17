@@ -31,10 +31,15 @@ const requestClient = (method, params) =>
     send({ id, method, params });
   });
 
+// MOCK_ALIASES=1: lists stand-ins the way Claude Code does, a "Default (recommended)" model
+// that starts selected and a "Default" thinking level.
+const ALIASES = process.env.MOCK_ALIASES === "1";
 const models = [
+  ...(ALIASES ? [{ value: "default", name: "Default (recommended)", description: "Mock Smart · 带思考过程" }] : []),
   { value: "mock-fast", name: "Mock Fast", description: "快速回复" },
   { value: "mock-smart", name: "Mock Smart", description: "带思考过程" },
 ];
+const FIRST_MODEL = ALIASES ? "default" : "mock-fast";
 
 const handlers = {
   initialize: async () => {
@@ -93,7 +98,7 @@ const handlers = {
       .map((m) => ({ mcp: m, mcpReady: null, tools: null }));
     sessions.set(sessionId, {
       cwd,
-      model: "mock-fast",
+      model: FIRST_MODEL,
       turns: 0,
       abort: null,
       mcp,
@@ -105,10 +110,10 @@ const handlers = {
     if (LEGACY_MODES)
       return {
         sessionId,
-        configOptions: configOptions("mock-fast", sessions.get(sessionId)).filter((o) => o.id === "model"),
+        configOptions: configOptions(FIRST_MODEL, sessions.get(sessionId)).filter((o) => o.id === "model"),
         modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] },
       };
-    return { sessionId, configOptions: configOptions("mock-fast", sessions.get(sessionId)) };
+    return { sessionId, configOptions: configOptions(FIRST_MODEL, sessions.get(sessionId)) };
   },
   "session/resume": ({ sessionId, cwd }) => {
     // Sessions live only as long as this process; after a restart there is nothing to resume.
@@ -253,11 +258,12 @@ function configOptions(current, s = {}) {
       name: "Reasoning Effort",
       category: "thought_level",
       type: "select",
-      currentValue: fixedEffort ? 'none' : s.effort ?? "medium",
+      currentValue: fixedEffort ? 'none' : s.effort ?? (ALIASES ? "default" : "medium"),
       // MOCK_EFFORT_REVERSED=1 lists the levels from high to low, as Codex does.
       options: fixedEffort ? [{ value: 'none', name: 'none' }] : (process.env.MOCK_EFFORT_REVERSED === '1'
         ? [{ value: "xhigh", name: "Extra High" }, { value: "high", name: "High" }, { value: "medium", name: "Medium" }, { value: "low", name: "Low" }]
         : [
+        ...(ALIASES ? [{ value: 'default', name: 'Default' }] : []),
         ...(process.env.MOCK_DYNAMIC_EFFORT === '1' ? [{ value: 'none', name: 'none' }] : []),
         { value: "low", name: "Low" },
         { value: "medium", name: "Medium" },
@@ -700,7 +706,7 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     );
     return;
   }
-  if (s.model === "mock-smart")
+  if (s.model === "mock-smart" || s.model === "default")
     await stream(
       sessionId,
       `用户说：「${text.slice(0, 40)}」。我先想一想怎么回答。`,

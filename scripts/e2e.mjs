@@ -665,11 +665,37 @@ await check('the model menu offers the agent’s permission modes and thinking l
   if (!(await page.locator('.menu.compact .menu-key').count())) throw new Error('no number keys')
   await page.hover('.menu-item:has-text("权限模式")')
   await page.click('.menu.is-sub .menu-item:has-text("自动接受编辑")')
-  await page.waitForSelector('.select-btn .mode-note:has-text("自动接受编辑")', { timeout: 3000 })
+  // The mode shows in the menu's 权限模式 row, never on the model chip.
+  await page.click('.composer .model-btn >> nth=-1')
+  await page.waitForSelector('.menu-item:has-text("权限模式") .menu-hint:has-text("自动接受编辑")', { timeout: 3000 })
+  await page.keyboard.press('Escape')
+  if ((await page.locator('.composer .model-btn').last().innerText()).includes('·')) throw new Error('model chip shows more than the model')
   await send('写一段话')
   if (await page.locator('.perm').count()) throw new Error('asked for permission in accept-edits mode')
   const last = await page.locator('.msg-assistant').last().innerText()
   if (!last.includes('acceptEdits')) throw new Error('the session did not get the mode')
+})
+
+await check('number keys pick in the model and agent menus, as in Claude', async () => {
+  const btn = page.locator('.composer .model-btn').last()
+  for (const n of ['2', '1']) {
+    await btn.click()
+    await page.waitForSelector('.menu.compact')
+    const item = page.locator('.menu.compact .menu-item:has(.menu-key:text-is("' + n + '")), .menu.compact .menu-item[aria-keyshortcuts="' + n + '"]').first()
+    const name = (await item.locator('.menu-text').innerText()).split('\n')[0].trim()
+    await page.keyboard.press(n)
+    await page.waitForSelector('.menu', { state: 'detached', timeout: 2000 })
+    await page.waitForFunction((x) => [...document.querySelectorAll('.composer .model-btn')].pop()?.textContent?.includes(x), name, { timeout: 3000 })
+  }
+  // Hovering an item first doesn't stop the keys working.
+  await btn.click()
+  await page.hover('.menu.compact .menu-item >> nth=0')
+  await page.keyboard.press('2')
+  await page.waitForSelector('.menu', { state: 'detached', timeout: 2000 })
+  await page.locator('.composer .backend-chip').click()
+  await page.waitForSelector('.menu.compact .menu-item[aria-keyshortcuts="1"]')
+  await page.keyboard.press('1')
+  await page.waitForSelector('.menu', { state: 'detached', timeout: 2000 })
 })
 
 await check('a mode picked on the new-chat page applies to that chat only', async () => {
@@ -677,12 +703,17 @@ await check('a mode picked on the new-chat page applies to that chat only', asyn
   await page.locator('.composer-row .model-btn').click()
   await page.hover('.menu-item:has-text("权限模式")')
   await page.click('.menu.is-sub .menu-item:has-text("全部允许")')
-  await page.waitForSelector('.composer-row .mode-note:has-text("全部允许")', { timeout: 2000 })
+  await page.locator('.composer-row .model-btn').click()
+  await page.waitForSelector('.menu-item:has-text("权限模式") .menu-hint:has-text("全部允许")', { timeout: 2000 })
+  await page.keyboard.press('Escape')
   await send('写个开头')
   if (!(await page.locator('.msg-assistant').last().innerText()).includes('bypassPermissions')) throw new Error('the chat did not get the mode')
   await page.click('.sidebar .nav-item:has-text("新建")')
   await page.waitForTimeout(300)
-  if (await page.locator('.composer-row .mode-note:has-text("全部允许")').count()) throw new Error('the mode stuck to the next new chat')
+  await page.locator('.composer-row .model-btn').click()
+  await page.waitForSelector('.menu-item:has-text("权限模式") .menu-hint', { timeout: 2000 })
+  if (await page.locator('.menu-item:has-text("权限模式") .menu-hint:has-text("全部允许")').count()) throw new Error('the mode stuck to the next new chat')
+  await page.keyboard.press('Escape')
 })
 
 await app.close()
