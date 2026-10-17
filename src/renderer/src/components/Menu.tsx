@@ -53,6 +53,7 @@ export function Menu({
   placement = 'below',
   matchWidth,
   compact,
+  row,
   onPicked,
   parentFocus
 }: {
@@ -67,6 +68,8 @@ export function Menu({
   matchWidth?: boolean
   /** Claude's model-menu look: narrow, one line per item. */
   compact?: boolean
+  /** One row of small choices (emoji reactions), moved through with ← →. */
+  row?: boolean
   /** A submenu: closes the whole menu once something is chosen. */
   onPicked?: () => void
   /** A submenu: where ← and Esc return focus. */
@@ -194,8 +197,8 @@ export function Menu({
     else if (e.key === 'ArrowLeft' && parentFocus) {
       onClose()
       parentFocus()
-    } else if (e.key === 'ArrowDown') move(active, 1)
-    else if (e.key === 'ArrowUp') move(active < 0 ? 0 : active, -1)
+    } else if (e.key === (row ? 'ArrowRight' : 'ArrowDown')) move(active, 1)
+    else if (e.key === (row ? 'ArrowLeft' : 'ArrowUp')) move(active < 0 ? 0 : active, -1)
     else if (e.key === 'Home') move(-1, 1)
     else if (e.key === 'End') move(0, -1)
     else if (e.key === 'Enter' || e.key === ' ') items[active] && choose(items[active])
@@ -222,7 +225,7 @@ export function Menu({
   }
 
   return createPortal(
-    <div className={'menu' + (compact ? ' compact' : '') + (parentFocus ? ' is-sub' : '')} role="menu" tabIndex={-1} ref={ref} style={pos} onKeyDown={onKey}>
+    <div className={'menu' + (compact ? ' compact' : '') + (row ? ' row' : '') + (parentFocus ? ' is-sub' : '')} role="menu" tabIndex={-1} ref={ref} style={pos} onKeyDown={onKey}>
       {items.map((it, i) =>
         it.separator ? (
           <div key={i} className="menu-sep" role="separator" />
@@ -288,7 +291,7 @@ export function Menu({
 }
 
 /** Hook: const [menu, open] = useMenu(); <button onClick={e => open(e.currentTarget, items)}> {menu} */
-export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 'above' | 'auto'; matchWidth?: boolean; compact?: boolean } = {}) {
+export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 'above' | 'auto'; matchWidth?: boolean; compact?: boolean; row?: boolean } = {}) {
   const [state, setState] = useState<{ anchor: HTMLElement; rect: DOMRect; items: MenuItem[] } | null>(null)
   const node = state ? <Menu anchor={state.anchor} rect={state.rect} items={state.items} onClose={() => setState(null)} {...opts} /> : null
   return [

@@ -62,7 +62,25 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
   useLayoutEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [messages, conversation.id, conversation.queued, compact])
+  }, [messages, conversation.id, compact])
+
+  // Anything else that changes the height (a card unfolding, an image arriving, the composer
+  // growing) keeps the view at the bottom too, if it was there.
+  useEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    if (el.firstElementChild) ro.observe(el.firstElementChild)
+    return () => ro.disconnect()
+  }, [])
+
+  // Only the user's own scrolling decides whether to follow the bottom; a jump in height
+  // between two frames (a reply cut short, a long block arriving) is not them scrolling away.
+  const touched = useRef(0)
+  const byUser = () => (touched.current = performance.now())
 
   const visible = (messages ?? []).filter((m) => !m.hidden)
   let lastDay = ''
@@ -84,9 +102,14 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     <div
       className="scroll"
       ref={scroller}
+      onWheel={byUser}
+      onTouchMove={byUser}
+      onPointerDown={byUser}
+      onKeyDown={byUser}
       onScroll={(e) => {
         const el = e.currentTarget
-        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        if (atBottom || performance.now() - touched.current < 800) stick.current = atBottom
       }}
     >
       <div className="transcript">
@@ -106,13 +129,6 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
             </div>
           )
         })}
-        {/* Sent while the reply runs: shown dimmed until its turn comes; 停止 hands them back to the composer. */}
-        {conversation.queued?.map((q, i) => (
-          <div key={'queued-' + i} className="msg msg-user msg-queued">
-            {q.text && <div className="bubble">{q.text}</div>}
-            <div className="queued-note">{q.attachments?.length ? t('等待发送 · {0} 个附件', q.attachments.length) : t('等待发送')}</div>
-          </div>
-        ))}
       </div>
     </div>
   )
@@ -284,7 +300,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
   const streaming = m.state === 'streaming'
   const connecting = m.blocks.find((b): b is Extract<Block, { type: 'notice' }> => b.type === 'notice' && b.key === 'starting')
   const groups = groupBlocks(m.blocks)
-  const [menu, openMenu] = useMenu()
+  const [menu, openMenu] = useMenu({ row: true, placement: 'auto' })
   const inProjectChat = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.kind === 'project')
   if (!streaming && m.state === 'done' && groups.length === 0 && !m.reactions?.length) return null
 
@@ -346,7 +362,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
             onClick={(e) =>
               openMenu(
                 e.currentTarget,
-                ['👍', '❤️', '🎉', '👀', '🙏', '😄'].map((emo) => ({
+                REACTIONS.map((emo) => ({
                   label: emo,
                   onClick: () => api().react(m.id, m.conversationId, emo)
                 }))
@@ -372,6 +388,9 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
     </div>
   )
 }
+
+/** The emoji a reply can be answered with, in one row. */
+const REACTIONS = ['👍', '❤️', '🎉', '👀', '🙏', '😄']
 
 const MD_COMPONENTS = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (

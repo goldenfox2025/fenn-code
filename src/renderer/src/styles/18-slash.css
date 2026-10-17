@@ -75,12 +75,8 @@
 .command-chip .slash-icon {
   color: inherit;
 }
+/* In the sent bubble the command is just accented text: a chip inside a bubble reads as a box in a box. */
 .cmd-token {
-  display: inline-block;
-  margin-right: var(--space-2);
-  padding: var(--space-0) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
   color: var(--accent);
   font-weight: 500;
 }

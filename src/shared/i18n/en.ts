@@ -919,4 +919,11 @@ export const en: Record<string, string> = {
   "刚刚开始": "Started just now",
   "立即发送": "Send now",
   "{0} 个附件": "{0} attachments",
+  "找不到 Antigravity 的 ACP 服务（agy_acp_server）。请在 设置 → Agent 后端 → Antigravity 里点「安装」，或填写它的路径，然后重试。": "Can't find Antigravity's ACP server (agy_acp_server). In Settings → Agent backends → Antigravity, click Install or enter its path, then try again.",
+  "Google Antigravity（agy）官方 ACP 服务": "Google Antigravity (agy), official ACP server",
+  "在 aistudio.google.com 生成。留空则点上方「登录」，用 Google 账号登录。": "Create one at aistudio.google.com. Leave it empty to click Sign in above and use your Google account.",
+  "服务程序路径": "Server path",
+  "留空自动查找；也可填写 agy_acp_server 的绝对路径。": "Leave empty to find it automatically, or enter the full path to agy_acp_server.",
+  "解压 Antigravity 服务": "Unpacking the Antigravity server",
+  "{0} 没有执行 {1}": "{0} did not run {1}",
 }

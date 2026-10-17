@@ -274,7 +274,8 @@ function configOptions(current, s = {}) {
       currentValue: current,
       options: models,
     },
-    {
+    // MOCK_NO_MODE=1: no mode option; permissions go through `/always-approve on|off` (as Grok's do).
+    ...(process.env.MOCK_NO_MODE === "1" ? [] : [{
       id: "mode",
       name: "Mode",
       category: "mode",
@@ -285,7 +286,7 @@ function configOptions(current, s = {}) {
         { value: "acceptEdits", name: "Accept Edits", description: "Auto-approves edit tools" },
         { value: "bypassPermissions", name: "Bypass Permissions", description: "Auto-approves all tools" },
       ],
-    },
+    }]),
     {
       id: "effort",
       name: "Reasoning Effort",
@@ -597,6 +598,16 @@ async function classify(sessionId, raw, abort) {
 }
 
 async function turn(sessionId, s, text, abort, sawHistory) {
+  const approve = text.trim().match(/^\/always-approve(?:\s+(on|off))?$/);
+  if (approve) {
+    s.alwaysApprove = approve[1] ? approve[1] === "on" : !s.alwaysApprove;
+    await stream(sessionId, `Always-approve mode ${s.alwaysApprove ? "enabled" : "disabled"}.`, abort);
+    return;
+  }
+  if (/当前权限/.test(text)) {
+    await stream(sessionId, s.alwaysApprove ? "全部自动批准" : "每次询问", abort);
+    return;
+  }
   if (sawHistory)
     await stream(sessionId, "（我看到了之前的对话记录。）\n\n", abort);
   if (

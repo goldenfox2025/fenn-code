@@ -114,3 +114,28 @@
   color: var(--text-3);
   padding: var(--space-3) var(--space-5) var(--space-1);
 }
+
+/* One row of small choices: the emoji a reply can be answered with. */
+.menu.row {
+  display: flex;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-pill);
+}
+.menu.row .menu-item {
+  width: 32px;
+  height: 32px;
+  padding: var(--space-0);
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  font-size: 18px;
+  line-height: 1;
+}
+.menu.row .menu-text {
+  flex: none;
+  transition: transform var(--dur-1) var(--ease);
+}
+.menu.row .menu-item.active .menu-text {
+  transform: scale(1.15);
+}

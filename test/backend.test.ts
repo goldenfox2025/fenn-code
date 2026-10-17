@@ -151,3 +151,46 @@ describe('stray replies from the agent', () => {
     expect(out).toEqual(input.slice(1))
   })
 })
+
+describe('a permission mode the agent takes only as a command (Grok)', () => {
+  it('shows as the mode option, sends its command quietly, and follows the command typed by hand', async () => {
+    const { acpPlugin } = await import('../src/main/backends/acp')
+    const plugin = acpPlugin({
+      id: 'cmd-mode',
+      name: 'Cmd',
+      launch: ({ nodeCommand, resourcesDir }) => ({ command: nodeCommand.command, args: [join(resourcesDir, 'mock-agent.mjs')], env: { ...nodeCommand.env, MOCK_NO_MODE: '1' } }),
+      quirks: {
+        commandOption: {
+          id: 'mode', name: 'Mode', category: 'mode', initial: 'default',
+          choices: [
+            { value: 'default', name: 'Default', command: '/always-approve off' },
+            { value: 'bypassPermissions', name: 'Bypass permissions', command: '/always-approve on' }
+          ]
+        }
+      }
+    })
+    const events: HostEvent[] = []
+    const mgr = new BackendManager({
+      plugins: [plugin],
+      settings: { get: () => ({}), set: () => undefined },
+      resourcesDir: join(__dirname, '../resources'),
+      nodeCommand: { command: process.execPath, env: {} },
+      defaultCwd: process.cwd(),
+      emit: (e) => events.push(e)
+    })
+    try {
+      const s = await mgr.newSession('cmd-mode')
+      expect(s.options?.find((o) => o.id === 'mode')).toMatchObject({ category: 'mode', current: 'default' })
+      const options = await mgr.setOption('cmd-mode', s.sessionId, 'mode', 'bypassPermissions')
+      expect(options?.find((o) => o.id === 'mode')?.current).toBe('bypassPermissions')
+      // What the agent said back to the command is not part of any reply.
+      const said = () => events.map((e) => (e.type === 'agent' && e.event.kind === 'message.delta' ? e.event.text : '')).join('')
+      expect(said()).toBe('')
+      await mgr.prompt('cmd-mode', s.sessionId, [{ type: 'text', text: '当前权限' }])
+      expect(said()).toBe('全部自动批准')
+      await mgr.prompt('cmd-mode', s.sessionId, [{ type: 'text', text: '/always-approve' }])
+      const last = events.filter((e) => e.type === 'agent' && e.event.kind === 'options').at(-1)
+      expect(last?.type === 'agent' && last.event.kind === 'options' && last.event.options.find((o) => o.id === 'mode')?.current).toBe('default')
+    } finally { await mgr.disposeAll() }
+  }, 30000)
+})

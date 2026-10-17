@@ -577,6 +577,25 @@ const scenarios = {
     await wait(300)
     await shot('131-queued-returned')
   },
+  // The reaction row under a reply, a reaction pill, and a / command in a sent message.
+  async reactions() {
+    await page.evaluate(() => window.ancora.startChat({ text: '你好', backendId: 'mock' }))
+    await page.click('.sidebar :text("你好")')
+    await page.waitForSelector('.msg-assistant .msg-actions', { timeout: 15000 })
+    await page.hover('.msg-assistant')
+    await page.click('.msg-assistant .msg-actions .icon-btn >> nth=1')
+    await page.waitForSelector('.menu.row')
+    await wait(300)
+    await shot('140-reaction-menu')
+    await page.click('.menu.row .menu-item >> nth=2')
+    await page.fill('.composer textarea', '/always-approve on')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.cmd-token', { timeout: 5000 })
+    await page.waitForSelector('.send-btn:not(.stop)', { timeout: 15000 })
+    await page.hover('.msg-user >> nth=-1')
+    await wait(300)
+    await shot('141-reaction-command')
+  },
   async project() {
     await page.click('.nav-item:has-text("项目")')
     await page.click('.page-head .btn')
@@ -749,9 +768,11 @@ const scenarios = {
   },
   async autoassign() {
     await page.click('.nav-item:has-text("新建")')
-    await page.fill('.composer textarea', '给 Ancora 桌面应用想个发布口号')
+    await page.fill('.composer textarea', '写文件 计划.md')
     await page.keyboard.press('Enter')
-    await page.waitForSelector('.msg-system', { timeout: 20000 })
+    // The folder the app makes once the agent writes a file gets its own header in the sidebar.
+    await page.waitForFunction(() => document.querySelectorAll('.sidebar .folder-head').length > 1, null, { timeout: 30000 })
+    await page.hover('.sidebar .folder-head >> nth=0')
     await wait(500)
     await shot('40-autoassign')
   },

@@ -53,6 +53,12 @@ describe('folders for chats', () => {
     await core.send(c.id, '你在哪里工作')
     await until(() => store.messagesOf(c.id).filter((m) => m.role === 'assistant' && m.state === 'done').length === 3)
     expect(textOf(store.messagesOf(c.id).at(-1)!)).toContain(desk)
+    // Refused: the agent is told why, not just "Internal error".
+    const elsewhere = mkdtempSync(join(tmpdir(), 'oc-else-'))
+    answerWith(() => 'reject')
+    await core.send(c.id, `在 ${elsewhere} 运行 node -e 1`)
+    await until(() => store.messagesOf(c.id).at(-1)?.state === 'done')
+    expect(textOf(store.messagesOf(c.id).at(-1)!)).toContain('用户没有允许在这里运行命令')
     await dispose()
   }, 30000)
 

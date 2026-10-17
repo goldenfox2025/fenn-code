@@ -35,8 +35,8 @@ export function groupByFolder(chats: Conversation[], platform = 'win32'): Folder
   for (const c of chats) if (c.parentId && ids.has(c.parentId)) children.set(c.parentId, [...(children.get(c.parentId) ?? []), c])
   for (const c of [...chats].sort((a, b) => b.updatedAt - a.updatedAt)) {
     if (c.parentId && ids.has(c.parentId)) continue
-    // A folder the app made for one chat is not a place the user works in; it stays with the plain chats.
-    const cwd = c.autoFolder ? undefined : c.cwd
+    // A folder the app made for a chat is shown like any other, so a new chat can start there (its +).
+    const cwd = c.cwd
     const key = keyOf(cwd, caseless)
     let g = groups.get(key)
     if (!g) groups.set(key, (g = { key: key || '~none', folder: cwd || undefined, name: cwd ? folderName(cwd) : t('对话'), chats: [] }))

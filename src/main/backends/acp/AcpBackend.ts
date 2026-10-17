@@ -63,12 +63,39 @@ export interface AcpQuirks {
    * agents that take one there instead of ACP sessionCapabilities.systemPrompt (Grok: `rules`).
    */
   systemPromptMeta?: string
+  /**
+   * A choice the agent offers only as a / command (Grok's `/always-approve on|off`), shown as a
+   * session option like any other. Picking a value sends its command as a quiet prompt.
+   */
+  commandOption?: CommandOption
+}
+
+export interface CommandOption {
+  id: string
+  name: string
+  category: 'mode'
+  /** The value a new session starts with. */
+  initial: string
+  choices: { value: string; name: string; command: string }[]
 }
 
 interface ModelSelector {
   configId?: string
   models: ModelInfo[]
   current?: string
+}
+
+/**
+ * Runs a request from the agent; a refusal reaches it in the error message ("the user did not allow…"),
+ * where the SDK would otherwise send a bare "Internal error" and tuck the reason away in its data.
+ */
+async function said<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (err) {
+    if (err instanceof acp.RequestError) throw err
+    throw new acp.RequestError(-32603, errorText(err))
+  }
 }
 
 const TOOL_STATUS: Record<string, ToolStatus> = {
@@ -86,7 +113,9 @@ export class AcpBackend implements AgentBackend {
   /** Compactions already shown as a step. */
   private compactions = new Set<string>()
   /** Each session's non-model choices; `legacy` marks ACP session modes (set with session/set_mode). */
-  private sessionOptions = new Map<string, (SessionOption & { legacy?: boolean })[]>()
+  private sessionOptions = new Map<string, (SessionOption & { legacy?: boolean; command?: boolean })[]>()
+  /** Sessions whose updates are not shown: a command sent for a session option is running. */
+  private quiet = new Set<string>()
   private stderrTail: string[] = []
   /** Why the agent process last exited, for readable errors. */
   private exitReason?: string
@@ -216,7 +245,7 @@ export class AcpBackend implements AgentBackend {
   private clientHandler(): acp.Client {
     return {
       sessionUpdate: async ({ sessionId, update }) => {
-        if (this.replaying.has(sessionId)) return
+        if (this.replaying.has(sessionId) || this.quiet.has(sessionId)) return
         const ev = translateUpdate(update)
         if (ev) this.host.emit(sessionId, ev)
         if (update.sessionUpdate === 'available_commands_update') {
@@ -257,14 +286,14 @@ export class AcpBackend implements AgentBackend {
           ? { outcome: { outcome: 'selected', optionId: decision } }
           : { outcome: { outcome: 'cancelled' } }
       },
-      readTextFile: async ({ sessionId, path, line, limit }) => ({
+      readTextFile: ({ sessionId, path, line, limit }) => said(async () => ({
         content: await this.workspaces.readTextFile(sessionId, path, line, limit)
-      }),
-      writeTextFile: async ({ sessionId, path, content }) => {
+      })),
+      writeTextFile: ({ sessionId, path, content }) => said(async () => {
         await this.workspaces.writeTextFile(sessionId, path, content)
         return {}
-      },
-      createTerminal: async (req) => ({ terminalId: await this.workspaces.createTerminal(req.sessionId, req) }),
+      }),
+      createTerminal: (req) => said(async () => ({ terminalId: await this.workspaces.createTerminal(req.sessionId, req) })),
       terminalOutput: async ({ terminalId }) => this.workspaces.output(terminalId),
       waitForTerminalExit: async ({ terminalId }) => this.workspaces.waitForExit(terminalId),
       killTerminal: async ({ terminalId }) => {
@@ -389,6 +418,7 @@ export class AcpBackend implements AgentBackend {
     for (let attempt = 0; ; attempt++) {
       try {
         const res = await this.conn!.prompt({ sessionId, prompt: this.toContent(sessionId, parts) })
+        this.typedCommand(sessionId, parts)
         const usage = turnUsage(res, this.quirks.inputIncludesCache)
         return usage ? { stopReason: normalizeStop(res.stopReason), usage } : { stopReason: normalizeStop(res.stopReason) }
       } catch (err) {
@@ -404,6 +434,21 @@ export class AcpBackend implements AgentBackend {
         return { stopReason: 'error', error }
       }
     }
+  }
+
+  /** The user typed the command behind a session option (`/always-approve on`): the option shows it. */
+  private typedCommand(sessionId: string, parts: PromptPart[]): void {
+    const c = this.quirks.commandOption
+    const opt = this.sessionOptions.get(sessionId)?.find((o) => o.command)
+    const text = parts.length === 1 && parts[0].type === 'text' ? parts[0].text.trim().replace(/\s+/g, ' ') : ''
+    if (!c || !opt || !text.startsWith('/')) return
+    const exact = c.choices.find((x) => x.command === text)
+    // The bare command toggles between the two choices.
+    const toggled = c.choices.length === 2 && c.choices.every((x) => x.command.split(' ')[0] === text) ? c.choices.find((x) => x.value !== opt.current) : undefined
+    const next = exact ?? toggled
+    if (!next || next.value === opt.current) return
+    opt.current = next.value
+    this.emitOptions(sessionId)
   }
 
   /** Maps prompt parts to ACP content, degrading gracefully to what the agent accepts. */
@@ -459,7 +504,19 @@ export class AcpBackend implements AgentBackend {
     await this.start()
     const opt = this.sessionOptions.get(sessionId)?.find((o) => o.id === optionId)
     if (!opt) throw new Error(t('没有这个选项：{0}', optionId))
-    if (opt.legacy) {
+    if (opt.command) {
+      const command = this.quirks.commandOption?.choices.find((c) => c.value === value)?.command
+      if (!command) throw new Error(t('没有这个选项：{0}', `${optionId}=${value}`))
+      // The agent handles its own / commands without the model; what it says back isn't part of the chat.
+      this.quiet.add(sessionId)
+      try {
+        const res = await this.conn!.prompt({ sessionId, prompt: [{ type: 'text', text: command }] })
+        if (res.stopReason !== 'end_turn') throw new Error(t('{0} 没有执行 {1}', this.name, command))
+      } finally {
+        this.quiet.delete(sessionId)
+      }
+      opt.current = value
+    } else if (opt.legacy) {
       await this.conn!.setSessionMode({ sessionId, modeId: value })
       opt.current = value
     } else {
@@ -475,7 +532,7 @@ export class AcpBackend implements AgentBackend {
 
   private optionsOf(sessionId: string): SessionOption[] | undefined {
     const list = this.sessionOptions.get(sessionId)
-    return list?.length ? list.map(({ legacy: _legacy, ...o }) => ({ ...o, choices: o.choices.map((c) => ({ ...c })) })) : undefined
+    return list?.length ? list.map(({ legacy: _legacy, command: _command, ...o }) => ({ ...o, choices: o.choices.map((c) => ({ ...c })) })) : undefined
   }
 
   private emitOptions(sessionId: string): void {
@@ -487,6 +544,17 @@ export class AcpBackend implements AgentBackend {
    * session modes when it has no config options. Unknown shapes are skipped.
    */
   private captureOptions(sessionId: string, configOptions: unknown, modes: unknown): void {
+    const before = this.sessionOptions.get(sessionId)?.find((o) => o.command)?.current
+    this.captureAgentOptions(sessionId, configOptions, modes)
+    // A choice the agent takes only as a command, unless it now offers a mode of its own.
+    const c = this.quirks.commandOption
+    const list = this.sessionOptions.get(sessionId) ?? []
+    if (!c || list.some((o) => o.category === 'mode')) return
+    const choices = c.choices.map(({ value, name }) => ({ value, name }))
+    this.sessionOptions.set(sessionId, [...list, { id: c.id, name: c.name, category: c.category, command: true, current: before ?? c.initial, choices }])
+  }
+
+  private captureAgentOptions(sessionId: string, configOptions: unknown, modes: unknown): void {
     this.sessionOptions.delete(sessionId)
     if (Array.isArray(configOptions)) {
       const list = visibleSessionOptions((configOptions as { id: string; name?: string; category?: string; type: string; currentValue?: unknown; options?: unknown[] }[])

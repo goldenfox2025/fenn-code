@@ -47,7 +47,7 @@ export interface DeclaredAcpBackend {
 }
 
 /** Built-in agents in the order they are offered; the first installed one is suggested. */
-export const PREFERRED_BACKENDS = ['codex', 'claude-code', 'grok', 'qoder']
+export const PREFERRED_BACKENDS = ['codex', 'claude-code', 'grok', 'qoder', 'antigravity']
 
 /** backends.json is broken; the message says where. */
 export class BackendsConfigError extends Error {}

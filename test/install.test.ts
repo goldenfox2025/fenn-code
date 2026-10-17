@@ -31,6 +31,13 @@ describe('finding agent programs, never installing them unasked', () => {
   it('every built-in backend installs only through its confirmed Settings command', () => {
     for (const p of loadPlugins().filter((x) => !x.testOnly && x.id !== 'mock')) {
       if (!p.upgrade) continue
+      // Antigravity's server isn't on npm: Google's own archive, over https from Google's host only.
+      if (p.id === 'antigravity') {
+        expect(p.upgrade.run.command).toBe('curl')
+        expect(p.upgrade.run.args?.at(-1)).toMatch(/^https:\/\/dl\.google\.com\/agy-extensions\/releases\//)
+        expect(p.upgrade.after?.command).toBe('tar')
+        continue
+      }
       expect(p.upgrade.run.command, p.id).toBe('npm')
       expect(p.upgrade.run.args?.slice(0, 2), p.id).toEqual(['install', '-g'])
     }

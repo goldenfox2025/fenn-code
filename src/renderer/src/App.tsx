@@ -144,8 +144,11 @@ function useTheme(theme: 'system' | 'light' | 'dark' | 'glass', glass: boolean) 
     const apply = () => {
       const fade = !!root.dataset.theme && root.dataset.theme !== look() && 'startViewTransition' in document &&
         !matchMedia('(prefers-reduced-motion: reduce)').matches
-      if (fade) (document as Document & { startViewTransition(cb: () => void): unknown }).startViewTransition(set)
-      else set()
+      if (!fade) return set()
+      // A fade cut short by the next change (or skipped) rejects these; the look is set either way.
+      const fadeOut = (document as Document & { startViewTransition(cb: () => void): { ready: Promise<void>; finished: Promise<void> } }).startViewTransition(set)
+      fadeOut.ready.catch(() => undefined)
+      fadeOut.finished.catch(() => undefined)
     }
     if (nativeGlass === undefined)
       void api()

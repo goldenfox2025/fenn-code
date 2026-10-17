@@ -50,6 +50,18 @@ export default acpPlugin({
     inputIncludesCache: true,
     // Grok appends `_meta.rules` on session/new to its system prompt (its ACP docs, "Session _meta options").
     systemPromptMeta: 'rules',
+    // Grok has no ACP mode; it skips permission prompts through its own command (`input: on|off`).
+    // The names are Claude Code's, so the menu shows them the same way (每次询问 / 全部允许).
+    commandOption: {
+      id: 'mode',
+      name: 'Mode',
+      category: 'mode',
+      initial: 'default',
+      choices: [
+        { value: 'default', name: 'Default', command: '/always-approve off' },
+        { value: 'bypassPermissions', name: 'Bypass permissions', command: '/always-approve on' }
+      ]
+    },
     authHint: tk('请在 设置 → Agent 后端 → Grok 填写 xAI API Key，或点「登录」用 grok.com 账号登录。'),
     missingHint: MISSING,
     // Grok reports retries through its own `_x.ai/session_notification`; surface them as notices.

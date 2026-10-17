@@ -50,7 +50,9 @@ export class AutoAssigner {
     const firstUser = users[0]
     if (!firstUser) return
     const first = !this.checked.has(conv.id)
-    const again = !first && conv.titleAuto && isSmallTalk(textOf(firstUser)) && users.length >= 2 && users.length <= 3 && !this.retitled.has(conv.id)
+    // An agent command (/compact, /always-approve on) is not content to name the chat after.
+    const command = /^\/\S+/.test(textOf(users[users.length - 1]).trim())
+    const again = !first && !command && conv.titleAuto && isSmallTalk(textOf(firstUser)) && users.length >= 2 && users.length <= 3 && !this.retitled.has(conv.id)
     if (!first && !again) return
     this.checked.add(conv.id)
     if (again) this.retitled.add(conv.id)
