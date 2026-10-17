@@ -1,4 +1,5 @@
 import { ExternalLink, FileText, FolderOpen, Link2 } from 'lucide-react'
+import { routeFor } from '../actions'
 import type { Project, ProjectOutput } from '@shared/model'
 import { api, toast, useApp } from '../store'
 import { t } from '../i18n'
@@ -60,7 +61,7 @@ export function OutputsPanel({ project }: { project: Project }) {
           <div key={o.id} className="output-row">
             <OutputCard o={o} />
             {conv && (
-              <button className="text-link small" onClick={() => navigate(conv.kind === 'thread' ? { view: 'project', projectId: project.id, threadId: conv.id } : conv.kind === 'chat' ? { view: 'chat', conversationId: conv.id } : { view: 'project', projectId: project.id })}>
+              <button className="text-link small" onClick={() => navigate(routeFor(conv))}>
                 {t('来自「{0}」', conv.title)}
               </button>
             )}

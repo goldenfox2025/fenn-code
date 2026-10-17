@@ -15,15 +15,19 @@ import { homedir } from 'node:os'
 import { basename, isAbsolute, resolve as resolvePath } from 'node:path'
 import type { HostToolServer, TurnResult } from '../../shared/contract'
 import { currentBlocker, withBlocker, type Block, type Conversation, type Message, type PeerOutput, type ProgressItem, type ProgressPatch, type Project } from '../../shared/model'
-import { progressText, resolveItem, statusOf } from './progress'
 import type { Store } from '../store/Store'
-import { ToolContent, ToolRefusal, type ToolDef, type ToolServer } from '../tools/ToolServer'
+import { ToolRefusal, type ToolDef, type ToolServer } from '../tools/ToolServer'
 import { excerpt, fmt, linesOf, textOf, transcript, type ChatService } from './ChatService'
 import type { BackendManager } from '../backends/BackendManager'
 import type { ProjectMemory } from './ProjectMemory'
 import type { ProjectFiles } from './ProjectFiles'
 import type { Artifacts } from './Artifacts'
 import type { PeerMail } from './PeerMail'
+import { obj, str } from './tools/args'
+
+export { obj }
+import { progressTools } from './tools/progressTools'
+import { projectDataTools, type ProjectDataToolDeps } from './tools/projectDataTools'
 import { getLang, t } from '../../shared/i18n'
 
 /**
@@ -38,10 +42,6 @@ const HANDOFF_RECENT = 30
 const SUMMARY_CHUNK = 60_000
 const SUMMARY_MAX = 6000
 
-const str = (v: unknown, name: string): string => {
-  if (typeof v !== 'string' || !v.trim()) throw new Error(`参数 ${name} 不能为空`)
-  return v.trim()
-}
 
 export class Orchestrator {
   /** Handoff thresholds (overridable, e.g. in tests). */
@@ -464,60 +464,6 @@ export class Orchestrator {
   /** Adds or changes one item on a project's progress board (set by AppCore, which owns projects). */
   progress?: (projectId: string, patch: ProgressPatch, by: 'agent' | 'app') => ProgressItem
 
-  private progressTools(projectId: string, conv: Conversation): ToolDef[] {
-    const linkHere = conv.kind === 'thread' || conv.kind === 'chat' ? [conv.id] : []
-    return [
-      {
-        name: 'progress_read',
-        description: '读取项目进度表：里程碑和其下的任务，每项有状态（✓ 完成、✱ 进行中、! 受阻、○ 未开始）、id 和截止日期。',
-        inputSchema: obj({}, []),
-        run: () => progressText(this.store.project(projectId)?.progress ?? [])
-      },
-      {
-        name: 'progress_update',
-        description:
-          '更新项目进度表里的一项，或新增一项。里程碑是大目标，任务是里程碑下的具体工作。开始、完成、受阻时都更新状态。改已有的项传 item（id 或标题）；新增里程碑只传 title；在里程碑下新增任务再传 milestone（id 或标题）。本讨论串会自动关联到这一项。',
-        inputSchema: obj(
-          {
-            item: { type: 'string', description: '要修改的项的 id 或标题；新增时不填' },
-            milestone: { type: 'string', description: '新增任务时，所属里程碑的 id 或标题' },
-            title: { type: 'string' },
-            status: { type: 'string', enum: ['todo', 'doing', 'blocked', 'done'] },
-            due: { type: 'string', description: '截止日期 YYYY-MM-DD，可选' },
-            note: { type: 'string', description: '一句话备注，可选' }
-          },
-          []
-        ),
-        aliases: { item: ['id', 'item_id', 'name'], milestone: ['parent', 'parent_id', 'milestone_id'], status: ['state'], due: ['due_date', 'deadline'] },
-        example: { milestone: '上线第一版', title: '写安装说明', status: 'doing' },
-        run: ({ item, milestone, title, status, due, note }) => {
-          if (!this.progress) throw new Error('进度表不可用')
-          const items = this.store.project(projectId)?.progress ?? []
-          const ref = typeof item === 'string' ? item : ''
-          const parent = typeof milestone === 'string' && milestone ? resolveItem(items, milestone) : undefined
-          // A new item whose title is already there beside it updates that one instead of adding a twin.
-          const same = (list: ProgressItem[] = []) =>
-            typeof title === 'string' ? list.find((x) => x.title.trim().toLowerCase() === title.trim().toLowerCase()) : undefined
-          const existing = ref ? resolveItem(items, ref) : same(parent ? parent.children : items)
-          if (ref && !existing && !title) throw new Error(`进度表里没有「${ref}」。先用 progress_read 看看现有的项。`)
-          if (milestone && !parent && !existing) throw new Error(`进度表里没有里程碑「${milestone}」。`)
-          const st = status === undefined ? undefined : statusOf(status)
-          if (status !== undefined && !st) throw new Error('status 只能是 todo / doing / blocked / done')
-          const saved = this.progress(projectId, {
-            id: existing?.id,
-            parentId: existing ? undefined : parent?.id,
-            title: typeof title === 'string' ? title : existing ? undefined : ref,
-            status: st,
-            due: typeof due === 'string' ? due : undefined,
-            note: typeof note === 'string' ? note : undefined,
-            link: linkHere,
-            suggested: false
-          }, 'agent')
-          return `已保存：${saved.title} [id:${saved.id}]`
-        }
-      }
-    ]
-  }
 
   /** Set by the core: the installed backend a new thread should use, given the project's. */
   pickBackend?: (preferred?: string) => string
@@ -525,6 +471,10 @@ export class Orchestrator {
   /** Called when a project's library of outputs changes. */
   onProjectChanged?: (p: Project) => void
   /** Puts a result card under the reply being written, and into the project's library. */
+  private get dataToolDeps(): ProjectDataToolDeps {
+    return { files: this.files, memory: this.memory, attachOutput: (id, o) => this.attachOutput(id, o), wroteMemory: (id) => void this.memoryWritten.add(id) }
+  }
+
   private attachOutput(conversationId: string, o: { kind: 'file' | 'link'; title: string; path?: string; url?: string; size?: number }): void {
     const reply = this.chat.currentReply(conversationId)
     if (!reply) throw new Error('只能在回复过程中使用')
@@ -542,103 +492,6 @@ export class Orchestrator {
     this.onProjectChanged?.(next)
   }
 
-  private memoryTools(projectId: string, conversationId: string): ToolDef[] {
-    return [
-      {
-        name: 'project_files_list',
-        description: '列出用户放进这个项目的文件（名称、大小、本机路径）。',
-        inputSchema: obj({}, []),
-        run: () => this.files.list(projectId).map((f) => ({ name: f.name, size: f.size, path: f.path }))
-      },
-      {
-        name: 'project_file_read',
-        description: '读取一个项目文件。文本文件按字符分页返回（offset 从 0 开始），图片直接返回图像。',
-        inputSchema: obj({ name: { type: 'string' }, offset: { type: 'integer' } }, ['name']),
-        run: ({ name, offset }) => {
-          const r = this.files.read(projectId, str(name, 'name'), Number(offset) || 0)
-          if (r.kind === 'image') return new ToolContent([{ type: 'image', data: r.data, mimeType: r.mimeType }])
-          const start = Number(offset) || 0
-          const more = start + r.text.length < r.total ? `\n\n（共 ${r.total} 字，下一页 offset=${start + r.text.length}）` : ''
-          return r.text + more
-        }
-      },
-      {
-        name: 'project_file_write',
-        description:
-          '把一份成果写进项目文件（报告、表格、数据、代码片段），项目里所有 agent 都能读到，同时作为附件卡片显示在你这条回复下面。已有同名文件会被覆盖。二进制内容用 encoding: "base64"。',
-        inputSchema: obj(
-          {
-            name: { type: 'string', description: '文件名，例如 竞品定价.md' },
-            content: { type: 'string' },
-            encoding: { type: 'string', enum: ['utf8', 'base64'], description: '默认 utf8' }
-          },
-          ['name', 'content']
-        ),
-        aliases: { name: ['filename', 'file', 'path'], content: ['text', 'body', 'data'] },
-        run: ({ name, content, encoding }) => {
-          const text = String(content ?? '')
-          const b64 = encoding === 'base64' ? text : Buffer.from(text, 'utf8').toString('base64')
-          const f = this.files.add(projectId, str(name, 'name'), b64)
-          this.attachOutput(conversationId, { kind: 'file', title: f.name, path: f.path, size: f.size })
-          return { name: f.name, size: f.size, path: f.path }
-        }
-      },
-      {
-        name: 'memory_list',
-        description: '列出项目记忆的索引（名称、类型、一句话描述）。',
-        inputSchema: obj({}, []),
-        run: () => this.memory.index(projectId)
-      },
-      {
-        name: 'memory_read',
-        description: '读取一条项目记忆的全文。',
-        inputSchema: obj({ name: { type: 'string' } }, ['name']),
-        run: ({ name }) => {
-          const m = this.memory.read(projectId, str(name, 'name'))
-          if (!m) throw new Error(`没有名为 ${name} 的记忆`)
-          return `${m.description}\n\n${m.body}`
-        }
-      },
-      {
-        name: 'memory_write',
-        description:
-          '新建或覆盖一条项目记忆（同名覆盖）。一条记忆只写一个事实。type：user（用户是谁、偏好）、feedback（用户对工作方式的要求，附原因）、project（进行中的工作、决定、约束，相对日期写成绝对日期）、reference（外部资源的位置）。',
-        inputSchema: obj(
-          {
-            name: { type: 'string', description: '简短的 kebab-case 名称' },
-            description: { type: 'string', description: '一句话说明，用于索引' },
-            type: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'] },
-            body: { type: 'string', description: '记忆内容，不超过 4000 字' }
-          },
-          ['name', 'body']
-        ),
-        aliases: { body: ['content', 'text', 'value', 'memory', 'fact'], name: ['key', 'title', 'id'], description: ['summary', 'desc'] },
-        example: { name: 'user-prefers-short-replies', description: '用户希望回复简短', type: 'feedback', body: '用户说：以后回复简短一点，别用列表。' },
-        run: (a, ctx) => {
-          const body = str(a.body, 'body')
-          const name = typeof a.name === 'string' && a.name.trim() ? a.name.trim() : `note-${Date.now().toString(36)}`
-          const before = this.memory.read(projectId, name)
-          this.memoryWritten.add(ctx.conversationId)
-          const m = this.memory.write(projectId, {
-            name,
-            description: typeof a.description === 'string' && a.description.trim() ? a.description.trim() : body.replace(/\s+/g, ' ').slice(0, 60),
-            type: typeof a.type === 'string' ? a.type : undefined,
-            body
-          })
-          // Names are normalized ("User Prefs" = "user-prefs"), so say when an existing entry was replaced.
-          return before
-            ? `已更新 ${m.name}（覆盖了原来的「${before.description}」；如果那是另一件事，请换个名字重新保存它）`
-            : `已保存 ${m.name}`
-        }
-      },
-      {
-        name: 'memory_delete',
-        description: '删除一条已经不成立的项目记忆。',
-        inputSchema: obj({ name: { type: 'string' } }, ['name']),
-        run: ({ name }) => (this.memory.remove(projectId, str(name, 'name')) ? '已删除' : '没有这条记忆')
-      }
-    ]
-  }
 
   /** The user's connectors (other MCP servers), added to every session. */
   extraServers?: (conv: Conversation) => HostToolServer[]
@@ -974,7 +827,7 @@ export class Orchestrator {
       }
     })
     if (!project) return common
-    common.push(...this.memoryTools(project.id, conv.id), ...this.progressTools(project.id, conv))
+    common.push(...projectDataTools(this.dataToolDeps, project.id, conv.id), ...progressTools({ store: this.store, progress: this.progress }, project.id, conv))
 
     if (conv.kind === 'project') {
       return [
@@ -1148,10 +1001,6 @@ const QUIET =
 const PLAN_HINT =
   '做多步骤的任务时，用 update_status 写任务计划并随进度更新；卡在难点上时用 set_blocker 写一句，遇到新难点再写，解决了清掉。简单问答不需要这些。'
 
-// Extra properties are allowed: coerceArgs maps them, and strict schemas make weaker models fail calls.
-export function obj(properties: Record<string, unknown>, required: string[]) {
-  return { type: 'object', properties, required }
-}
 
 function summaryPrompt(projectName: string, previous: string, conversation: string): string {
   return [

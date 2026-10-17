@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { deleteChat, routeFor } from '../actions'
 import { Check, CheckSquare, ChevronDown, Clock, Folder, FolderKanban, MessageCircle, Pause, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { searchable, type Conversation, type Project, type Routine, type Schedule, type SearchHit } from '@shared/model'
-import { api, toast, useApp, toastError } from '../store'
+import { api, useApp } from '../store'
 import { relTime } from '../util'
 import { locale, t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
@@ -121,11 +122,7 @@ export function ChatsPage() {
     for (const c of chosen) await api().deleteConversation(c.id)
     stop()
   }
-  const removeOne = async (c: Conversation) => {
-    if (!(await confirmDialog(t('删除「{0}」？此操作无法撤销。', c.title)))) return
-    try { await api().deleteConversation(c.id) }
-    catch (error) { toastError(error) }
-  }
+  const removeOne = (c: Conversation) => deleteChat(c)
   return (
     <div className="scroll">
       <div className="page">
@@ -231,12 +228,7 @@ function MessageHits({ q }: { q: string }) {
     return () => clearTimeout(t)
   }, [q])
   if (!hits.length) return null
-  const open = (c: Conversation) =>
-    c.kind === 'thread' && c.projectId
-      ? navigate({ view: 'project', projectId: c.projectId, threadId: c.id })
-      : c.kind === 'project' && c.projectId
-        ? navigate({ view: 'project', projectId: c.projectId })
-        : navigate({ view: 'chat', conversationId: c.id })
+  const open = (c: Conversation) => navigate(routeFor(c))
   return (
     <div style={{ marginBottom: 16 }}>
       <div className="small muted" style={{ margin: '8px 4px' }}>

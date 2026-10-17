@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { routeFor } from '../actions'
 import { CheckCircle2, Circle, CircleAlert, CircleDot, MoreHorizontal, Pencil, Plus, Trash2, Check, X } from 'lucide-react'
 import type { Conversation, Project, ProgressItem, ProgressPatch, ProgressStatus } from '@shared/model'
-import { api, toast, useApp, toastError } from '../store'
+import { api, useApp, toastError } from '../store'
 import { Dropdown, useMenu } from './Menu'
 import { confirmDialog, EscLayer } from './Modal'
 import { t } from '../i18n'
@@ -53,8 +54,7 @@ export function ProgressPanel({ project }: { project: Project }) {
     if (x.children?.length && !(await confirmDialog(t('删除里程碑「{0}」及其 {1} 个任务？', x.title, x.children.length)))) return
     void api().deleteProgress(project.id, x.id)
   }
-  const open = (c: Conversation) =>
-    c.kind === 'thread' ? navigate({ view: 'project', projectId: project.id, threadId: c.id }) : navigate({ view: 'chat', conversationId: c.id })
+  const open = (c: Conversation) => navigate(routeFor(c))
 
   const suggested = items.filter((m) => m.suggested)
   const board = items.filter((m) => !m.suggested)

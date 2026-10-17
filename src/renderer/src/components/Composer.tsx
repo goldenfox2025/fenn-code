@@ -41,6 +41,8 @@ interface Props {
 const MAX_TEXT_FILE = 1_000_000
 const MAX_IMAGE = 8_000_000
 
+const NO_CONVERSATIONS: Conversation[] = []
+
 export function Composer({ conversation, placeholder, autoFocus, onSubmit, leading, backendId, onBackendChange, modelId, onModelChange, folder, onFolderChange }: Props) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<Attachment[]>([])
@@ -128,7 +130,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const [mention, setMention] = useState<{ query: string; start: number; end: number } | null>(null)
   const [mentionAt, setMentionAt] = useState(0)
   useEffect(() => setTarget(null), [conversation?.id])
-  const allThreads = useApp((s) => s.conversations)
+  // Only while @ is being typed in a project chat: the list doesn't redraw the composer otherwise.
+  const allThreads = useApp((s) => (mention && conversation?.kind === 'project' ? s.conversations : NO_CONVERSATIONS))
   const mentionable =
     conversation?.kind === 'project' && mention
       ? allThreads

@@ -1,9 +1,10 @@
 import { useShallow } from 'zustand/react/shallow'
 import { GitBranch, Loader2, Square, SquareTerminal, X } from 'lucide-react'
 import type { Conversation } from '@shared/model'
-import { api, toast, useApp, toastError } from '../store'
+import { api, useApp, toastError } from '../store'
 import { t } from '../i18n'
-import { relTime, STATUS_LABEL, threadState } from '../util'
+import { relTime } from '../util'
+import { StatusChip } from './StatusChip'
 import { FilesPane } from './FilesPane'
 import { paneStyle, ResizeHandle, usePaneWidth } from './ResizeHandle'
 
@@ -71,19 +72,16 @@ function BackgroundList({ conv }: { conv: Conversation }) {
   return (
     <div className="thread-list">
       {children.length > 0 && <div className="thread-group-head">{t('子对话')}</div>}
-      {children.map((c) => {
-        const state = threadState(c)
-        return (
-          <button key={c.id} className={'thread-item' + (c.id === conv.id ? ' active' : '')} onClick={() => navigate({ view: 'chat', conversationId: c.id })}>
-            <div className="row1">
-              <GitBranch size={14} className="muted" />
-              <span className="title">{c.title}</span>
-              <span className={'status-chip ' + state}>{STATUS_LABEL[state]}</span>
-            </div>
-            <div className="preview">{relTime(c.updatedAt)}</div>
-          </button>
-        )
-      })}
+      {children.map((c) => (
+        <button key={c.id} className={'thread-item' + (c.id === conv.id ? ' active' : '')} onClick={() => navigate({ view: 'chat', conversationId: c.id })}>
+          <div className="row1">
+            <GitBranch size={14} className="muted" />
+            <span className="title">{c.title}</span>
+            <StatusChip conv={c} />
+          </div>
+          <div className="preview">{relTime(c.updatedAt)}</div>
+        </button>
+      ))}
       {commands.length > 0 && <div className="thread-group-head">{t('命令')}</div>}
       {commands.map((b) => (
         <div key={b.id + b.startedAt} className="thread-item bg-command">

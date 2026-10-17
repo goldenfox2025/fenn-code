@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
 import { Composer } from '../components/Composer'
 import type { Attachment } from '@shared/model'
-import { api, toast, useApp, toastError } from '../store'
+import { api, useApp, toastError } from '../store'
 import { greeting } from '../util'
 import { t } from '../i18n'
 

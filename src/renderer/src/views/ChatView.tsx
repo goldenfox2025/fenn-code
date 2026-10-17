@@ -1,13 +1,13 @@
 import { useState } from 'react'
+import { deleteChat } from '../actions'
 import { ChevronDown, ChevronRight, CornerUpLeft, Download, FolderOpen, MoreHorizontal, Pin, PinOff, Trash2 } from 'lucide-react'
 import type { Conversation } from '@shared/model'
 import { Composer } from '../components/Composer'
 import { useMenu } from '../components/Menu'
 import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
-import { api, toast, useApp, toastError } from '../store'
+import { api, useApp } from '../store'
 import { t } from '../i18n'
-import { confirmDialog } from '../components/Modal'
 import { PlanLine } from '../components/PlanLine'
 import { UsageButton } from '../components/Usage'
 import { useRunning } from '../components/SidePane'
@@ -18,14 +18,6 @@ export function ChatView({ conversationId }: { conversationId: string }) {
   const navigate = useApp((s) => s.navigate)
   const [menu, openMenu] = useMenu({ align: 'right' })
   if (!conv) return <div className="empty">{t('对话不存在或已被删除')}</div>
-  const deleteChat = async () => {
-    const kept = useApp.getState().conversations.some((x) => x.parentId === conv.id) ? ' ' + t('它的子对话会保留，成为独立的对话。') : ''
-    if (!(await confirmDialog(t('删除「{0}」？', conv.title) + kept))) return
-    try {
-      await api().deleteConversation(conv.id)
-      navigate({ view: 'home' })
-    } catch (error) { toastError(error) }
-  }
 
   return (
     <div className="center">
@@ -61,7 +53,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
                 icon: <Trash2 size={15} />,
                 label: t('删除对话'),
                 danger: true,
-                onClick: () => void deleteChat()
+                onClick: () => void deleteChat(conv)
               }
             ])
           }

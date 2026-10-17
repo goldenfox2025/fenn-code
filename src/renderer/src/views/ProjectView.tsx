@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { deleteProject } from '../actions'
+import { StatusChip } from '../components/StatusChip'
 import { ResizeHandle, paneStyle, usePaneWidth, usePanelSqueezed } from '../components/ResizeHandle'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -8,7 +10,6 @@ import {
   FileText,
   Clock,
   ListChecks,
-  Loader,
   Maximize2,
   MessagesSquare,
   Minimize2,
@@ -36,8 +37,8 @@ import { Dropdown, useMenu } from '../components/Menu'
 import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
 import { PlanLine, planHeadline } from '../components/PlanLine'
-import { api, toast, useApp, toastError } from '../store'
-import { duration, relTime, STATUS_LABEL, threadState } from '../util'
+import { api, useApp, toastError } from '../store'
+import { duration, relTime, threadState } from '../util'
 import { EditableTitle } from './ChatView'
 import { locale, t } from '../i18n'
 import { tk } from '@shared/i18n'
@@ -143,11 +144,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
                   icon: <Trash2 size={15} />,
                   label: t('删除项目'),
                   danger: true,
-                  onClick: async () => {
-                    if (!(await confirmDialog(t('删除项目「{0}」及其所有讨论串？项目内的普通对话会保留。', project.name)))) return
-                    void api().deleteProject(project.id)
-                    navigate({ view: 'projects' })
-                  }
+                  onClick: () => void deleteProject(project)
                 }
               ])
             }
@@ -586,10 +583,7 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
           <ArrowLeft size={16} />
         </button>
         <EditableTitle conv={th} />
-        <span className={'status-chip ' + st}>
-          {st === 'working' && <Loader size={11} className="spark" />}
-          {th.resolved ? t('已解决') : STATUS_LABEL[st]}
-        </span>
+        <StatusChip conv={th} />
         <span className="spacer" />
         <UsageButton usage={th.usage} timing={th.timing} backendId={th.backendId} scope={t('本讨论串用量')} creditsOnly />
         {wide && (

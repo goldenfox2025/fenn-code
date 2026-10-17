@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { routeFor } from '../routes'
 import { ChevronRight, CornerDownRight, CornerUpRight, FileText, Link2, PanelRight } from 'lucide-react'
 import type { PeerMessage, PeerOutput } from '@shared/model'
 import { api, toast, useApp } from '../store'
@@ -51,7 +52,7 @@ export function PeerCard({ peerId, direction }: { peerId: string; direction: 'ou
   if (!m) return null
   const name = other?.title ?? t('已删除的讨论串')
   const n = m.outputs?.length ?? 0
-  const go = () => other?.projectId && navigate({ view: 'project', projectId: other.projectId, threadId: other.id })
+  const go = () => other && navigate(routeFor(other))
   return (
     <div className={'peer-card dir-' + direction + ' state-' + m.state}>
       <div className="peer-head">

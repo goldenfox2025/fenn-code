@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/contract'
 import { backendAvailable } from '@shared/backendAvailability'
 import { errorText } from '@shared/errors'
+import { routeFor } from './routes'
 import type { AppEvent, AppSettings, Conversation, Message, AncoraApi, PeerMessage, Project, Routine } from '@shared/model'
 
 declare global {
@@ -180,9 +181,7 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
     case 'open-conversation': {
       const c = s.conversations.find((x) => x.id === e.conversationId)
       if (!c) return
-      if (c.kind === 'thread' && c.projectId) return s.navigate({ view: 'project', projectId: c.projectId, threadId: c.id })
-      if (c.kind === 'project' && c.projectId) return s.navigate({ view: 'project', projectId: c.projectId })
-      return s.navigate({ view: 'chat', conversationId: c.id })
+      return s.navigate(routeFor(c))
     }
     case 'backend-upgrade':
       window.dispatchEvent(new CustomEvent('oc-upgrade-line', { detail: e }))

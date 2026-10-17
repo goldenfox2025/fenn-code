@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BackendManager } from '../src/main/backends/BackendManager'
 import { loadPlugins } from '../src/main/backends/registry'
-import { makeCore, until } from './helpers'
+import { makeCore } from './helpers'
 
 describe('one-time routines', () => {
   it('still run at their time after 「立即运行」, then switch off', async () => {

@@ -1,4 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { routeFor } from '../actions'
+import { StatusChip } from './StatusChip'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MessageUsageLabel } from './Usage'
@@ -7,7 +9,6 @@ import { PeerCard } from './PeerCard'
 import {
   AppWindow,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -33,7 +34,7 @@ import {
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
 import { planHeadline } from './PlanLine'
 import { api, toast, useApp } from '../store'
-import { dayLabel, STATUS_LABEL, textOf, threadState } from '../util'
+import { dayLabel, textOf } from '../util'
 import { markdownParts } from '../markdownParts'
 import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
@@ -41,7 +42,7 @@ import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
 import { classifyError, isFriendly, type ErrorKind } from '@shared/errors'
 
-import { APP_TOOL, groupBlocks, type PlanBlock, type StepBlock, type ToolBlock } from '../turn'
+import { groupBlocks, type PlanBlock, type StepBlock, type ToolBlock } from '../turn'
 
 export function Transcript({ conversation, compact, header }: { conversation: Conversation; compact?: boolean; header?: React.ReactNode }) {
   const messages = useApp((s) => s.messages[conversation.id])
@@ -145,7 +146,7 @@ function ThreadEventLine({ ev }: { ev: Extract<Block, { type: 'thread-event' }> 
   return (
     <button
       className={'thread-event kind-' + ev.kind + (settled ? ' settled' : '')}
-      onClick={() => navigate({ view: 'project', projectId: thread.projectId!, threadId: thread.id })}
+      onClick={() => navigate(routeFor(thread))}
     >
       {ev.kind === 'forwarded' ? <CornerUpRight size={14} /> : <CircleHelp size={14} />}
       <span className="ellipsis">{ev.kind === 'forwarded' ? t('已转给「{0}」：{1}', thread.title, ev.text) : t('「{0}」需要您决定：{1}', thread.title, ev.text)}</span>
@@ -160,7 +161,7 @@ function ForwardedNote({ m }: { m: Message }) {
   const navigate = useApp((s) => s.navigate)
   if (!thread?.projectId) return null
   return (
-    <button className="forwarded" onClick={() => navigate({ view: 'project', projectId: thread.projectId!, threadId: thread.id })}>
+    <button className="forwarded" onClick={() => navigate(routeFor(thread))}>
       <CornerUpLeft size={12} />
       {t('已发送到讨论串')}
     </button>
@@ -673,16 +674,11 @@ function ThreadCard({ threadId }: { threadId: string }) {
   const outputs = useApp((s) => s.projects.find((p) => p.id === thread?.projectId)?.outputs?.filter((o) => o.conversationId === threadId).length ?? 0)
   const navigate = useApp((s) => s.navigate)
   if (!thread) return null
-  const st = threadState(thread)
   const headline = planHeadline(thread)
   return (
     <button
       className="thread-card"
-      onClick={() =>
-        thread.kind === 'chat'
-          ? navigate({ view: 'chat', conversationId: thread.id })
-          : navigate({ view: 'project', projectId: thread.projectId!, threadId: thread.id })
-      }
+      onClick={() => navigate(routeFor(thread))}
     >
       <MessagesSquare size={15} className="muted" />
       <span className="t">{thread.title}</span>
@@ -693,10 +689,7 @@ function ThreadCard({ threadId }: { threadId: string }) {
           {outputs}
         </span>
       )}
-      <span className={'status-chip ' + st}>
-        {st === 'working' && <Loader size={11} className="spark" />}
-        {thread.resolved ? t('已解决') : STATUS_LABEL[st]}
-      </span>
+      <StatusChip conv={thread} />
       {headline && !thread.resolved && <span className={'plan-headline' + (currentBlocker(thread) ? ' blocked' : '')}>{headline}</span>}
     </button>
   )

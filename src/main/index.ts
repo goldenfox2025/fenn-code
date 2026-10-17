@@ -20,7 +20,7 @@ import {
 } from "electron";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, watch, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, watch } from "node:fs";
 import { API_METHODS, type ApiMethod, type CoreApi } from "../shared/ipc";
 
 // Filled in at build time (electron.vite.config.ts).

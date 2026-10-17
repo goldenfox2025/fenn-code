@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { deleteChat, deleteProject } from '../actions'
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,15 +16,15 @@ import {
   Search,
   Settings,
   Trash2,
-  Pencil,
-  Archive
+  Pencil
 } from 'lucide-react'
 import { searchable, type Conversation, type NotifyLevel, type Project } from '@shared/model'
+import { useShallow } from 'zustand/react/shallow'
 import { api, useApp } from '../store'
 import { initials } from '../util'
 import { useMenu } from './Menu'
 import { t } from '../i18n'
-import { confirmDialog, promptDialog } from './Modal'
+import { promptDialog } from './Modal'
 import { groupByFolder, isNested } from '../folderGroups'
 import { ResizeHandle, paneStyle, usePaneWidth } from './ResizeHandle'
 
@@ -36,7 +37,14 @@ const NOTIFY_LEVELS = (): { id: NotifyLevel; label: string; sub?: string; short:
 ]
 
 export function Sidebar() {
-  const s = useApp()
+  // Only what the sidebar shows: streaming replies (messages) don't redraw it.
+  const s = useApp(
+    useShallow((x) => ({
+      projects: x.projects, conversations: x.conversations, routines: x.routines, search: x.search, route: x.route,
+      sidebarOpen: x.sidebarOpen, platform: x.platform, history: x.history, future: x.future, settings: x.settings,
+      set: x.set, navigate: x.navigate, back: x.back, forward: x.forward
+    }))
+  )
   const width = usePaneWidth('sidebar')
   const [menu, openMenu] = useMenu({ align: 'left' })
   const q = s.search.trim().toLowerCase()
@@ -44,9 +52,10 @@ export function Sidebar() {
 
   const live = s.projects.filter((p) => !p.archived)
   const pinnedProjects = live.filter((p) => p.pinned)
+  // One pass over the conversations: each project's latest activity and what its threads are doing.
+  const stats = useMemo(() => projectStats(s.conversations), [s.conversations])
   // Other projects, most recently active first (activity = its own chats and threads).
-  const lastActive = (p: Project) =>
-    Math.max(p.updatedAt, ...s.conversations.filter((c) => c.projectId === p.id || c.id === p.conversationId).map((c) => c.updatedAt))
+  const lastActive = (p: Project) => Math.max(p.updatedAt, stats.get(p.id)?.updatedAt ?? 0)
   const recentProjects = live
     .filter((p) => !p.pinned)
     .sort((a, b) => lastActive(b) - lastActive(a))
@@ -68,13 +77,7 @@ export function Sidebar() {
   const SHOWN = 8
   const matchingProjects = q ? s.projects.filter((p) => p.name.toLowerCase().includes(q)) : []
 
-  const projectActivity = (p: Project) => {
-    const threads = s.conversations.filter((c) => c.projectId === p.id && c.kind !== 'chat')
-    if (threads.some((t) => t.status === 'working')) return 'working'
-    if (threads.some((t) => t.status === 'waiting')) return 'waiting'
-    if (threads.some((t) => t.unread)) return 'unread'
-    return ''
-  }
+  const projectActivity = (p: Project) => stats.get(p.id)?.activity ?? ''
 
   const chatMenu = (el: HTMLElement, c: Conversation) =>
     openMenu(el, [
@@ -92,15 +95,8 @@ export function Sidebar() {
         onClick: () => api().updateConversation(c.id, { pinned: !c.pinned })
       },
       { separator: true },
-      { icon: <Trash2 size={15} />, label: t('删除'), danger: true, onClick: () => removeChat(c) }
+      { icon: <Trash2 size={15} />, label: t('删除'), danger: true, onClick: () => void deleteChat(c) }
     ])
-
-  const removeChat = async (c: Conversation) => {
-    const kept = s.conversations.some((x) => x.parentId === c.id) ? ' ' + t('它的子对话会保留，成为独立的对话。') : ''
-    if (!(await confirmDialog(t('删除「{0}」？此操作无法撤销。', c.title) + kept))) return
-    void api().deleteConversation(c.id)
-    if (route.view === 'chat' && route.conversationId === c.id) s.navigate({ view: 'home' })
-  }
 
   // As in Claude: how to open it, pin, rename, notifications, settings; archive and delete apart.
   const projectMenu = (el: HTMLElement, p: Project) => {
@@ -140,11 +136,7 @@ export function Sidebar() {
         label: t('删除'),
         shortcut: 'D',
         danger: true,
-        onClick: async () => {
-          if (!(await confirmDialog(t('删除项目「{0}」及其所有讨论串？项目内的普通对话会保留。', p.name)))) return
-          void api().deleteProject(p.id)
-          if (route.view === 'project' && route.projectId === p.id) s.navigate({ view: 'projects' })
-        }
+        onClick: () => void deleteProject(p)
       }
     ])
   }
@@ -358,4 +350,23 @@ export function Sidebar() {
       {menu}
     </aside>
   )
+}
+
+type Activity = '' | 'unread' | 'waiting' | 'working'
+const RANK: Record<Activity, number> = { '': 0, unread: 1, waiting: 2, working: 3 }
+
+/** Per project: the latest update among its conversations, and the busiest state of its threads. */
+function projectStats(conversations: Conversation[]): Map<string, { updatedAt: number; activity: Activity }> {
+  const out = new Map<string, { updatedAt: number; activity: Activity }>()
+  for (const c of conversations) {
+    if (!c.projectId) continue
+    const st = out.get(c.projectId) ?? { updatedAt: 0, activity: '' as Activity }
+    st.updatedAt = Math.max(st.updatedAt, c.updatedAt)
+    if (c.kind !== 'chat') {
+      const a: Activity = c.status === 'working' ? 'working' : c.status === 'waiting' ? 'waiting' : c.unread ? 'unread' : ''
+      if (RANK[a] > RANK[st.activity]) st.activity = a
+    }
+    out.set(c.projectId, st)
+  }
+  return out
 }
