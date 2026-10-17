@@ -48,7 +48,7 @@ export interface AcpQuirks {
   /** Hide the provider's non-actionable "none" reasoning choice. */
   hideNoneReasoning?: boolean
   /** Translate a vendor extension notification (`_vendor/...`) into a contract event. */
-  translateExt?(method: string, params: Record<string, unknown>): { sessionId: string; event: AgentEvent } | null
+  translateExt?(method: string, params: Record<string, unknown>): { sessionId: string; events: AgentEvent[] } | null
   /** Shown when the agent says authentication is required. */
   authHint?: string
   /** Shown when the agent's program can't be found (instead of a bare ENOENT). */
@@ -333,7 +333,7 @@ export class AcpBackend implements AgentBackend {
       // Vendor extensions (e.g. `_x.ai/...`) are not part of the contract unless a plugin translates them.
       extNotification: async (method, params) => {
         const t = this.quirks.translateExt?.(method, params)
-        if (t) this.host.emit(t.sessionId, t.event)
+        if (t) for (const e of t.events) this.host.emit(t.sessionId, e)
       },
       extMethod: async () => ({})
     }

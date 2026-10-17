@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { acpPlugin } from '../acp'
 import { findOnPath } from '../install'
 import { finishNpmInstall } from '../npmSetup'
+import type { AgentEvent } from '../../../shared/contract'
 import { t, tk } from '../../../shared/i18n'
 
 const EXE = process.platform === 'win32' ? '.exe' : ''
@@ -68,22 +69,9 @@ export default acpPlugin({
     },
     authHint: tk('请在 设置 → Agent 后端 → Grok 填写 xAI API Key，或点「登录」用 grok.com 账号登录。'),
     missingHint: MISSING,
-    // Grok reports retries through its own `_x.ai/session_notification`; surface them as notices.
-    translateExt(method, params) {
-      if (!/^_?x\.ai\/session_notification$/.test(method)) return null
-      const p = params as { sessionId?: string; update?: { sessionUpdate?: string; attempt?: number; max_retries?: number; reason?: string } }
-      const u = p.update
-      if (!p.sessionId || u?.sessionUpdate !== 'retry_state') return null
-      return {
-        sessionId: p.sessionId,
-        event: {
-          kind: 'notice',
-          level: 'warning',
-          key: 'grok-retry',
-          text: t('连接 Grok 失败，正在重试（{0}/{1}）：{2}', u.attempt, u.max_retries, (u.reason ?? '').slice(0, 160))
-        }
-      }
-    }
+    // Grok reports retries, /goal progress, its subagents and auto-compaction through its own
+    // `_x.ai/session_notification`; they show as a notice, the plan card, and steps.
+    translateExt: grokExt
   },
   // `grok --version` tells whether it's installed; signing in is checked when a session starts.
   account: () => ({
@@ -105,3 +93,81 @@ export default acpPlugin({
     env: { XAI_API_KEY: host.config.XAI_API_KEY }
   })
 })
+
+type PlanStatus = 'pending' | 'in_progress' | 'completed'
+const compacting = new Map<string, string>()
+let compactions = 0
+
+/** Grok's vendor notifications as contract events (the wire name is `_x.ai/session_notification`). */
+export function grokExt(method: string, params: Record<string, unknown>): { sessionId: string; events: AgentEvent[] } | null {
+  if (!/^_?x\.ai\/session_(notification|update)$/.test(method)) return null
+  const sessionId = typeof params.sessionId === 'string' ? params.sessionId : undefined
+  const u = params.update as Record<string, unknown> | undefined
+  if (!sessionId || !u) return null
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  const events: AgentEvent[] = []
+  switch (u.sessionUpdate) {
+    case 'retry_state':
+      events.push({
+        kind: 'notice',
+        level: 'warning',
+        key: 'grok-retry',
+        text: t('连接 Grok 失败，正在重试（{0}/{1}）：{2}', u.attempt, u.max_retries, str(u.reason).slice(0, 160))
+      })
+      break
+    case 'goal_updated': {
+      const status = str(u.status)
+      const objective = str(u.objective).trim()
+      if (!objective) break
+      const done = /complete|achieved|done|success/.test(status)
+      const goal: PlanStatus = done ? 'completed' : status === 'active' ? 'in_progress' : 'pending'
+      const paused = /pause/.test(status)
+      const entries: { content: string; status: PlanStatus }[] = [
+        { content: paused ? t('目标（已暂停）：{0}', objective) : t('目标：{0}', objective), status: goal }
+      ]
+      if (u.planning === true) entries.push({ content: t('正在拟定计划'), status: 'in_progress' })
+      const total = num(u.total_deliverables)
+      if (total > 0) {
+        const finished = num(u.completed_deliverables)
+        entries.push({ content: t('交付物 {0}/{1}', finished, total), status: finished >= total ? 'completed' : goal === 'in_progress' ? 'in_progress' : 'pending' })
+      }
+      events.push({ kind: 'plan', entries })
+      break
+    }
+    case 'subagent_spawned': {
+      const id = str(u.subagent_id) || str(u.child_session_id)
+      if (!id) break
+      events.push({ kind: 'tool.start', toolId: `grok-subagent:${id}`, title: t('子任务：{0}', str(u.description) || str(u.subagent_type)), toolKind: 'other', status: 'running' })
+      break
+    }
+    case 'subagent_finished': {
+      const id = str(u.subagent_id) || str(u.child_session_id)
+      if (!id) break
+      const ok = /complete|success|done/.test(str(u.status))
+      events.push({ kind: 'tool.update', toolId: `grok-subagent:${id}`, status: ok ? 'completed' : 'failed', output: str(u.output).slice(0, 4000) || undefined })
+      break
+    }
+    case 'auto_compact_started': {
+      const toolId = `grok-compact:${++compactions}`
+      compacting.set(sessionId, toolId)
+      events.push({ kind: 'tool.start', toolId, title: t('压缩上下文'), toolKind: 'other', status: 'running' })
+      break
+    }
+    case 'auto_compact_completed':
+    case 'auto_compact_failed': {
+      const ok = u.sessionUpdate === 'auto_compact_completed'
+      const toolId = compacting.get(sessionId)
+      compacting.delete(sessionId)
+      const before = num(u.tokens_before)
+      const after = num(u.tokens_after)
+      const output = ok && before && after ? t('{0} → {1} tokens', before.toLocaleString('en-US'), after.toLocaleString('en-US')) : undefined
+      if (toolId) events.push({ kind: 'tool.update', toolId, status: ok ? 'completed' : 'failed', output })
+      else events.push({ kind: 'tool.start', toolId: `grok-compact:${++compactions}`, title: t('压缩上下文'), toolKind: 'other', status: ok ? 'completed' : 'failed', input: output })
+      if (ok) events.push({ kind: 'compacted' })
+      if (ok && after) events.push({ kind: 'usage', contextUsed: after })
+      break
+    }
+  }
+  return events.length ? { sessionId, events } : null
+}
