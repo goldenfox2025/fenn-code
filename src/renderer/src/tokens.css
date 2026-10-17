@@ -13,6 +13,7 @@
   --bg-sidebar: #f5f4ef;
   --bg-elevated: #ffffff;
   --bg-panel: #ffffff;
+  --bg-floating: #ffffff;
   --bg-hover: rgba(31, 30, 29, 0.05);
   --bg-active: rgba(31, 30, 29, 0.08);
   --bg-input: #ffffff;
@@ -49,6 +50,7 @@
   --bg-sidebar: #1f1e1d;
   --bg-elevated: #30302e;
   --bg-panel: #2a2a28;
+  --bg-floating: #2a2a28;
   --bg-hover: rgba(250, 249, 245, 0.06);
   --bg-active: rgba(250, 249, 245, 0.1);
   --bg-input: #30302e;
@@ -81,6 +83,7 @@
   --bg-sidebar: rgba(255, 255, 255, 0.035);
   --bg-elevated: rgba(255, 255, 255, 0.065);
   --bg-panel: rgba(255, 255, 255, 0.04);
+  --bg-floating: #10121b;
   --bg-hover: rgba(255, 255, 255, 0.06);
   --bg-active: rgba(255, 255, 255, 0.1);
   --bg-input: rgba(255, 255, 255, 0.055);
@@ -116,6 +119,7 @@
   --bg-sidebar: rgba(255, 255, 255, 0.42);
   --bg-elevated: rgba(255, 255, 255, 0.74);
   --bg-panel: rgba(255, 255, 255, 0.52);
+  --bg-floating: #f6f7fb;
   --bg-hover: rgba(22, 26, 44, 0.05);
   --bg-active: rgba(22, 26, 44, 0.085);
   --bg-input: rgba(255, 255, 255, 0.72);

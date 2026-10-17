@@ -14,7 +14,7 @@ import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, resolve as resolvePath } from 'node:path'
 import type { HostToolServer, TurnResult } from '../../shared/contract'
-import { withBlocker, type Block, type Conversation, type Message, type PeerOutput, type ProgressItem, type ProgressPatch, type Project } from '../../shared/model'
+import { currentBlocker, withBlocker, type Block, type Conversation, type Message, type PeerOutput, type ProgressItem, type ProgressPatch, type Project } from '../../shared/model'
 import { progressText, resolveItem, statusOf } from './progress'
 import type { Store } from '../store/Store'
 import { ToolContent, ToolRefusal, type ToolDef, type ToolServer } from '../tools/ToolServer'
@@ -158,23 +158,14 @@ export class Orchestrator {
       `更早的内容以项目记忆为准，下面还附有应用整理的早期对话摘要和最近的消息。`
     ]
     if (conv.kind === 'project') {
-      // Open threads in full; resolved ones only the latest few (list_threads has the rest).
-      const all = [...this.threadsOf(project.id)].sort((a, b) => b.updatedAt - a.updatedAt)
-      const open = all.filter((t) => !t.resolved).slice(0, 40)
-      const done = all.filter((t) => t.resolved)
-      const line = (t: Conversation, full: boolean) => {
-        const step = t.checklist?.split('\n').find((l) => l.startsWith('✱'))?.replace(/\*\*/g, '')
-        const result = this.latestResult(t.id, full ? 400 : 160)
-        return [
-          `- 「${t.title}」(${t.id.slice(0, 8)})：${t.resolved ? '已解决' : t.status}${step ? `，当前：${step}` : ''}`,
-          result ? `  最新结果：${result}` : ''
-        ]
-          .filter(Boolean)
-          .join('\n')
+      // The same list the coordinator gets between turns, with every thread's latest result;
+      // marked as seen so the first prompt doesn't carry it twice.
+      const index = this.threadIndex(project.id, 0)
+      if (index) {
+        parts.push(index)
+        this.lastIndex.set(conv.id, statesOf(index))
+        this.chat.patchConversation(conv.id, { threadsSeenAt: Date.now() })
       }
-      const roster = [...open.map((t) => line(t, true)), ...done.slice(0, 8).map((t) => line(t, false))]
-      if (done.length > 8) roster.push(`- 另有 ${done.length - 8} 个已解决的讨论串，用 list_threads 查看`)
-      parts.push(`讨论串现状：\n${roster.join('\n') || '（无）'}`)
     } else {
       const brief = prior.find((m) => m.role === 'user' && m.hidden && !m.housekeeping)
       if (brief) parts.push(`你最初收到的任务：\n${textOf(brief).slice(0, 6000)}`)
@@ -304,7 +295,7 @@ export class Orchestrator {
     // saw it, with the results that came in meanwhile: one snapshot, not a pile of notices.
     const seen = this.store.conversation(conv.id)?.threadsSeenAt ?? 0
     const index = this.threadIndex(conv.projectId, seen)
-    const states = index.split('\n').filter((l) => !l.startsWith('  最新结果')).join('\n')
+    const states = statesOf(index)
     this.chat.patchConversation(conv.id, { threadsSeenAt: Date.now() })
     if (!index || (states === this.lastIndex.get(conv.id) && states === index)) return ''
     this.lastIndex.set(conv.id, states)
@@ -368,9 +359,11 @@ export class Orchestrator {
     }
     if (conv.kind !== 'thread' || !conv.projectId) return
     const fresh = this.store.conversation(conv.id)!
-    // A thread that finished its turn is waiting on the user unless resolved.
+    // A thread that finished its turn is waiting on the user unless resolved; one that stopped
+    // on an obstacle it reported needs them in person.
     if (result.stopReason !== 'error' && fresh.status === 'idle') {
-      this.chat.patchConversation(conv.id, { status: fresh.resolved ? 'done' : 'waiting' })
+      const stuck = !fresh.resolved && !fresh.needsUser ? currentBlocker(fresh) : undefined
+      this.chat.patchConversation(conv.id, { status: fresh.resolved ? 'done' : 'waiting', ...(stuck ? { needsUser: { kind: 'blocked', text: stuck.text, at: Date.now() } } : {}) })
     }
     // Touch the project so it sorts as recently active.
     const p = this.store.project(conv.projectId)
@@ -831,9 +824,11 @@ export class Orchestrator {
           recommended: rec
         })
         this.chat.updateMessage(reply)
+        const at = Date.now()
+        this.chat.patchConversation(conversationId, { needsUser: { kind: 'decision', text: str(question, 'question').slice(0, 300), at } })
         // A thread waiting on the user says so in the project chat, outside every agent's context.
         if (conv.kind === 'thread' && project)
-          this.chat.addMessage(project.conversationId, 'system', [{ type: 'thread-event', threadId: conv.id, kind: 'decision', text: str(question, 'question').slice(0, 300) }])
+          this.chat.addMessage(project.conversationId, 'system', [{ type: 'thread-event', threadId: conv.id, kind: 'decision', text: str(question, 'question').slice(0, 300), at }])
         return '卡片已发给用户。用户选择后会以一条消息告诉你。'
       }
     })
@@ -1209,4 +1204,12 @@ export function rememberRequest(text: string): string | undefined {
     return rest || sentence
   }
   return undefined
+}
+
+/** A thread list without its result lines: what changed in state, not in output. */
+function statesOf(index: string): string {
+  return index
+    .split('\n')
+    .filter((l) => !l.startsWith('  最新结果'))
+    .join('\n')
 }

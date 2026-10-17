@@ -160,18 +160,19 @@ const squeezeListeners = new Set<() => void>()
 
 /**
  * Fits the panes to the window as it is now, without touching what the user
- * chose: the thread panel gives way first (down to its minimum), then the
- * sidebar; when even that leaves the conversation too little room, the panel
- * folds away. Sets --sidebar-cap and --panel-cap on the root.
+ * chose: the sidebar keeps its width (only a window too narrow for it and the
+ * conversation trims it); the thread panel gives way down to its minimum and,
+ * when even that leaves the conversation too little room, folds away. Nothing
+ * jumps: the sidebar never changes because the panel came or went, and in an
+ * ordinary chat, which has no panel, nothing is reserved for one. Sets
+ * --sidebar-cap and --panel-cap on the root.
  */
 export function fitPanes(sidebarOpen: boolean): void {
   const w = window.innerWidth
   const s = storedWidth('sidebar') ?? SIDEBAR_DEFAULT
-  const available = w - MAIN_MIN - PANEL_MARGIN
-  let sidebarCap = sidebarOpen ? Math.max(PANE_LIMITS.sidebar.min, Math.min(s, available - PANE_LIMITS.panel.min)) : s
-  const panelCap = available - (sidebarOpen ? sidebarCap : 0)
+  const sidebarCap = sidebarOpen ? Math.max(PANE_LIMITS.sidebar.min, Math.min(s, w - MAIN_MIN)) : s
+  const panelCap = w - MAIN_MIN - PANEL_MARGIN - (sidebarOpen ? sidebarCap : 0)
   const squeeze = panelCap < PANE_LIMITS.panel.min
-  if (squeeze && sidebarOpen) sidebarCap = Math.max(PANE_LIMITS.sidebar.min, Math.min(s, w - MAIN_MIN))
   const root = document.documentElement.style
   root.setProperty('--sidebar-cap', `${sidebarCap}px`)
   root.setProperty('--panel-cap', `${Math.max(PANE_LIMITS.panel.min, panelCap)}px`)

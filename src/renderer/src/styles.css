@@ -918,6 +918,91 @@ body.resizing .sidebar {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A message between two threads: on the sender's reply, and in the receiving thread. */
+.peer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  font-size: var(--font-sm);
+}
+.peer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.peer-head > svg {
+  flex: none;
+}
+.peer-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+}
+.peer-link {
+  color: var(--text);
+  font-weight: 500;
+}
+.peer-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.peer-card .btn {
+  height: auto;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-xs);
+}
+.peer-card .chev {
+  transition: transform 0.15s;
+}
+.peer-card .chev.open {
+  transform: rotate(90deg);
+}
+.peer-preview,
+.peer-text {
+  padding-left: var(--thread-indent);
+  color: var(--text-3);
+}
+.peer-text {
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.peer-outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 0 var(--thread-indent);
+}
+.peer-output {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-size: var(--font-xs);
+}
+.peer-output:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.peer-card.state-cancelled,
+.peer-card.state-failed {
+  opacity: 0.7;
+}
+/* In the receiving thread it stands where a user message would, on its own. */
+.msg-peer {
+  margin: var(--space-2) 0;
+}
 .status-chip {
   font-size: 12px;
   padding: 1px var(--space-4);
@@ -1225,11 +1310,11 @@ body.resizing .sidebar {
   width: var(--panel-w);
   max-width: var(--panel-cap, none);
 }
-.panel.overlay .resize-handle {
+.panel.floating .resize-handle {
   display: none;
 }
 /* Too narrow for the panel beside the conversation: it opens over it instead. */
-.panel.overlay {
+.panel.floating {
   position: absolute;
   top: var(--space-0);
   right: var(--space-0);
@@ -1237,6 +1322,8 @@ body.resizing .sidebar {
   z-index: 20;
   max-width: calc(100% - var(--space-11));
   box-shadow: var(--shadow);
+  /* Near-opaque in every look, so the conversation never shows through. */
+  background: var(--bg-floating);
 }
 .panel-head {
   height: 46px;
@@ -1725,6 +1812,52 @@ button.card:hover {
 .composer-input textarea {
   flex: 1;
 }
+/* @ in a project chat: the threads to send the message to, above the box. */
+.composer {
+  position: relative;
+}
+.menu.mention-menu {
+  position: absolute;
+  left: var(--space-6);
+  bottom: calc(100% + var(--space-2));
+  max-height: 320px;
+}
+.mention-menu .menu-item.info {
+  cursor: default;
+}
+.mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  align-self: flex-start;
+  max-width: 40%;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mention-chip .icon-btn {
+  color: inherit;
+  width: 18px;
+  height: 18px;
+}
+.thread-event.kind-forwarded {
+  align-self: flex-end;
+  width: fit-content;
+  margin-left: auto;
+  border-color: transparent;
+  background: none;
+  color: var(--text-3);
+}
+.thread-event.kind-forwarded > svg:first-child {
+  color: var(--text-3);
+}
 .composer.dragging {
   border-color: var(--accent);
   border-style: dashed;
@@ -2121,6 +2254,12 @@ button.card:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.thread-row .sub.peer-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--amber);
+}
 .thread-row .progress {
   display: inline-flex;
   align-items: center;
@@ -2440,6 +2579,9 @@ details.advanced > summary {
   backdrop-filter: var(--frost);
   box-shadow: var(--hairline-top);
 }
+:root[data-theme='glass'] .panel.floating {
+  box-shadow: var(--shadow);
+}
 :root[data-theme='glass'] .composer {
   backdrop-filter: var(--frost);
   border-color: rgba(255, 255, 255, 0.12);
@@ -2541,6 +2683,9 @@ details.advanced > summary {
 }
 :root.no-blur[data-theme='glass'] :is(.sidebar, .panel, .page-panel, .composer) {
   background-color: rgba(18, 20, 30, 0.82);
+}
+:root.no-blur[data-theme='glass'] .panel.floating {
+  background-color: var(--bg-floating);
 }
 :root.no-blur[data-theme='glass'] :is(.menu, .modal, .onboarding-card, .toast) {
   background: rgba(22, 24, 36, 0.97);
@@ -3340,6 +3485,9 @@ details.advanced > summary {
 }
 :root.no-blur[data-theme='glass-light'] :is(.sidebar, .panel, .page-panel, .composer) {
   background-color: rgba(250, 251, 255, 0.86);
+}
+:root.no-blur[data-theme='glass-light'] .panel.floating {
+  background-color: var(--bg-floating);
 }
 :root.no-blur[data-theme='glass-light'] :is(.menu, .modal, .onboarding-card, .toast, .effort-pop) {
   background: rgba(252, 252, 255, 0.98);

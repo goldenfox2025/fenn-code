@@ -79,8 +79,26 @@ describe('handoff safety net', () => {
     const seen = lastReply(second.store, cid)
     expect(seen).toContain('最新结果：')
     expect(seen).toContain(result.replace(/\s+/g, ' ').slice(0, 40))
+    // One list, in words the coordinator reads, not the app's status names.
+    expect(seen.match(/<threads>/g)).toHaveLength(1)
+    expect(seen).toMatch(/等用户回复/)
+    expect(seen).not.toMatch(/\b(waiting|working|idle|done)\b/)
     await second.dispose()
   }, 40000)
+
+  it("starts a new thread clean: its ack is not a previous session to hand over", async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      const p = await core.createProject({ name: 'p', backendId: 'mock' })
+      const th = core.chat.createConversation({ kind: 'thread', title: 't', projectId: p.id, backendId: 'mock' })
+      core.chat.addMessage(th.id, 'assistant', [{ type: 'text', text: '先看一下现有资料。' }])
+      await core.chat.send(th.id, '你看到了什么')
+      const seen = lastReply(store, th.id)
+      expect(seen).toContain('你看到了什么')
+      expect(seen).not.toContain('<handoff>')
+      expect(seen).not.toContain('接替')
+    } finally { await dispose() }
+  }, 30000)
 
   it('keeps the start of a long ordinary chat when replaying it after a restart', async () => {
     const first = await makeCore()

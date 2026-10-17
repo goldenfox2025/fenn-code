@@ -247,7 +247,8 @@ export class ChatService {
     this.current.set(conversationId, reply)
     this.updateMessage(reply)
     this.recount(conversationId)
-    conv = this.patchConversation(conversationId, { status: 'working', updatedAt: Date.now() })!
+    // The user wrote: whatever the agent was waiting on them for is answered.
+    conv = this.patchConversation(conversationId, { status: 'working', updatedAt: Date.now(), ...(!opts.hidden && !opts.housekeeping ? { needsUser: undefined } : {}) })!
 
     let result: TurnResult
     let live: Live | undefined
@@ -269,13 +270,18 @@ export class ChatService {
       live = session.live
       live.unprompted = undefined
       let promptText = text
-      const updates = this.hooks.beforePrompt?.(conv) ?? ''
       if (session.fresh) {
-        const pre = this.hooks.preamble?.(conv, prior.length > 0) ?? ''
-        const history = prior.length ? (this.hooks.history?.(conv, prior) ?? transcript(prior)) : ''
+        // Only a conversation the agent already worked in has history to hand over; a new thread's
+        // ack (written by the app) is not a previous session.
+        const resumed = prior.some((m) => m.role === 'user')
+        const pre = this.hooks.preamble?.(conv, resumed) ?? ''
+        const history = resumed ? (this.hooks.history?.(conv, prior) ?? transcript(prior)) : ''
+        // After the history: a handoff may already carry what the updates would say.
+        const updates = this.hooks.beforePrompt?.(conv) ?? ''
         promptText = [pre, history, updates, history ? `新消息：\n${text}` : text].filter(Boolean).join('\n\n')
-      } else if (updates) {
-        promptText = `${updates}\n\n${text}`
+      } else {
+        const updates = this.hooks.beforePrompt?.(conv) ?? ''
+        if (updates) promptText = `${updates}\n\n${text}`
       }
       const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
       live.turns++
@@ -559,7 +565,7 @@ export class ChatService {
     if (conversationId) {
       this.meters.get(conversationId)?.interrupt()
       this.pendingPermissions.set(request.requestId, conversationId)
-      this.patchConversation(conversationId, { status: 'waiting' })
+      this.patchConversation(conversationId, { status: 'waiting', needsUser: { kind: 'permission', text: request.title, at: Date.now() } })
     }
     this.publish({ type: 'permission', conversationId, request })
   }
@@ -586,7 +592,7 @@ export class ChatService {
       this.hostWaiters.set(requestId, resolve)
       if (timeoutMs) setTimeout(() => this.hostWaiters.has(requestId) && this.respondPermission(requestId, null), timeoutMs)
       this.pendingPermissions.set(requestId, conversationId)
-      this.patchConversation(conversationId, { status: 'waiting' })
+      this.patchConversation(conversationId, { status: 'waiting', needsUser: { kind: 'permission', text: q.title, at: Date.now() } })
       this.publish({ type: 'permission', conversationId, request: { ...q, requestId, sessionId: '' } })
     })
   }
@@ -599,7 +605,9 @@ export class ChatService {
     if (host) host(decision)
     else this.backends.respondPermission(requestId, decision)
     this.publish({ type: 'permission-resolved', requestId })
-    if (conversationId && this.running.has(conversationId)) this.patchConversation(conversationId, { status: 'working' })
+    const answered = conversationId && this.store.conversation(conversationId)?.needsUser?.kind === 'permission' && !this.awaitingPermission(conversationId)
+    if (conversationId && this.running.has(conversationId)) this.patchConversation(conversationId, { status: 'working', ...(answered ? { needsUser: undefined } : {}) })
+    else if (answered) this.patchConversation(conversationId, { needsUser: undefined })
   }
 
   // ---- streaming ----------------------------------------------------------

@@ -104,13 +104,14 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   await page.dblclick('.panel:visible > .resize-handle')
   await page.waitForTimeout(250)
   near(await width('.panel:visible'), p0, 'double-click resets the thread panel')
-  // A narrower window fits the panes again: the panel gives way first, then the sidebar,
-  // and the conversation keeps at least 420px; too narrow, the panel folds away.
+  // A narrower window fits the panes again: the panel gives way, then folds away; the sidebar
+  // keeps the width the user chose, and the conversation keeps at least 420px.
   await drag('.sidebar > .resize-handle', 600)
   await drag('.panel:visible > .resize-handle', -2000)
   for (const w of [1100, 900]) {
     await page.setViewportSize({ width: w, height: 900 })
     await page.waitForTimeout(300)
+    near(await width('.sidebar'), 440, `at ${w}px the sidebar keeps its width`)
     const center = await width('.center .workspace > .center')
     if (center < 419) throw new Error(`at ${w}px the conversation is ${center}px wide`)
     const composer = await page.locator('.center .workspace > .center .composer').boundingBox()
@@ -118,11 +119,30 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   }
   if (await page.locator('.panel:visible').count()) throw new Error('panel still beside the conversation at 900px')
   await page.click('[data-tip="打开讨论串"]')
-  await page.waitForSelector('.panel.overlay')
+  await page.waitForSelector('.panel.floating')
+  // The floating panel covers the conversation: nothing may show through it.
+  const panelBg = await page.$eval('.panel.floating', (el) => getComputedStyle(el).backgroundColor)
+  const alpha = /rgba\([^)]*,\s*([\d.]+)\)/.exec(panelBg)?.[1]
+  if (alpha !== undefined && Number(alpha) < 0.9) throw new Error(`the floating panel is see-through: ${panelBg}`)
+  // It closes like a popover: Esc, or a click on the conversation behind it.
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('.panel.floating', { state: 'detached', timeout: 2000 })
+  await page.click('[data-tip="打开讨论串"]')
+  await page.waitForSelector('.panel.floating')
+  await page.mouse.click(400, 300)
+  await page.waitForSelector('.panel.floating', { state: 'detached', timeout: 2000 })
+  await page.click('[data-tip="打开讨论串"]')
+  await page.waitForSelector('.panel.floating')
   await page.setViewportSize({ width: 1400, height: 900 })
   await page.waitForTimeout(300)
-  if (await page.locator('.panel.overlay').count()) throw new Error('panel still floating in a wide window')
+  if (await page.locator('.panel.floating').count()) throw new Error('panel still floating in a wide window')
   near(await width('.sidebar'), 440, 'sidebar back to its chosen width')
+  // Narrowing again doesn't bring the floating panel back by itself.
+  await page.setViewportSize({ width: 900, height: 900 })
+  await page.waitForTimeout(300)
+  if (await page.locator('.panel:visible').count()) throw new Error('the panel floated up by itself')
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await page.waitForTimeout(300)
   await page.dblclick('.sidebar > .resize-handle')
   await page.dblclick('.panel:visible > .resize-handle')
   // The keyboard works too: arrows move the edge, Home resets.
@@ -136,6 +156,64 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   near(await width('.sidebar'), sb0, 'Home resets the sidebar')
   // A tooltip-free separator with a resize cursor.
   if ((await page.locator('.panel:visible > .resize-handle').evaluate((el) => getComputedStyle(el).cursor)) !== 'col-resize') throw new Error('no col-resize cursor')
+})
+
+await check('a project menu like Claude: open with, pin P, rename R, notifications with four levels, settings S, archive A, delete D', async () => {
+  await page.click('.sidebar .nav-item:has-text("端到端")', { button: 'right' })
+  await page.waitForSelector('.menu')
+  const labels = (await page.locator('.menu .menu-item').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ').trim())
+  const want = ['打开方式', '置顶 P', '重命名 R', '通知 协调者', '设置 S', '归档 A', '删除 D']
+  if (JSON.stringify(labels) !== JSON.stringify(want)) throw new Error('menu: ' + JSON.stringify(labels))
+  if (!(await page.locator('.menu .menu-item.danger:has-text("删除")').count())) throw new Error('删除 is not red')
+  await page.hover('.menu .menu-item:has-text("通知")')
+  await page.waitForSelector('.menu.is-sub')
+  const levels = (await page.locator('.menu.is-sub .menu-item').allInnerTexts()).map((x) => x.split('\n')[0].trim())
+  if (JSON.stringify(levels) !== JSON.stringify(['所有新消息', '协调者与 @提及', '仅 @提及', '无'])) throw new Error('levels: ' + JSON.stringify(levels))
+  if (!(await page.locator('.menu.is-sub .menu-item:has-text("协调者与 @提及") .lucide-check').count())) throw new Error('default level not checked')
+  await page.click('.menu.is-sub .menu-item:has-text("仅 @提及")')
+  await page.waitForSelector('.menu', { state: 'detached' })
+  await page.click('.sidebar .nav-item:has-text("端到端")', { button: 'right' })
+  if (!(await page.locator('.menu .menu-item:has-text("通知")').innerText()).includes('仅提及')) throw new Error('level not shown after choosing')
+  await page.keyboard.press('Escape')
+})
+
+await check('@ in the project chat picks a thread, the message goes straight there, and the project chat keeps one line', async () => {
+  await page.click('.sidebar .nav-item:has-text("端到端")')
+  await send('帮我调研竞品定价')
+  await page.waitForSelector('.thread-card', { timeout: 15000 })
+  await page.click('.center .workspace > .center .composer textarea')
+  await page.keyboard.type('@竞品')
+  await page.waitForSelector('.mention-menu .menu-item.active:has-text("调研竞品定价")')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.mention-chip:has-text("调研竞品定价")')
+  await page.keyboard.type('再加一家 D 公司')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.thread-event.kind-forwarded:has-text("已转给「调研竞品定价」：再加一家 D 公司")', { timeout: 5000 })
+  if (await page.locator('.mention-chip').count()) throw new Error('chip stayed after sending')
+  if (await page.locator('.center .workspace > .center .msg-user:has-text("再加一家")').count()) throw new Error('the message also went to the coordinator')
+  await page.click('.thread-event.kind-forwarded')
+  await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司")', { timeout: 5000 })
+})
+
+await check('a thread leaves another a message: a card on each side, where it went and where it came from', async () => {
+  await send('帮我写发布说明')
+  await page.waitForSelector('.thread-card:has-text("写发布说明")', { timeout: 15000 })
+  await page.click('.center .workspace > .center .composer textarea')
+  await page.keyboard.type('@竞品')
+  await page.waitForSelector('.mention-menu .menu-item.active:has-text("调研竞品定价")')
+  await page.keyboard.press('Enter')
+  await page.keyboard.insertText('#留言 写发布说明 || now || || 定价结论：D 公司最便宜')
+  await page.keyboard.press('Enter')
+  await page.click('.thread-event.kind-forwarded >> nth=-1')
+  const out = page.locator('.panel .peer-card.dir-out')
+  await out.waitFor({ timeout: 15000 })
+  if (!(await out.innerText()).includes('留言给「写发布说明」')) throw new Error('out card: ' + (await out.innerText()))
+  await page.waitForSelector('.panel .peer-card.dir-out .status-chip:has-text("已送达")', { timeout: 15000 })
+  await out.locator('.peer-link').click()
+  const inbound = page.locator('.panel .peer-card.dir-in')
+  await inbound.waitFor({ timeout: 5000 })
+  const text = await inbound.innerText()
+  if (!text.includes('来自「调研竞品定价」') || !text.includes('定价结论：D 公司最便宜')) throw new Error('in card: ' + text)
 })
 
 await check('one Chinese character finds a message, and the hit scrolls to it', async () => {
@@ -243,7 +321,7 @@ await check('Esc in the add-connector form closes only the form', async () => {
 })
 
 await check('deleting asks in an in-app dialog; Esc keeps the chat, 删除 removes it', async () => {
-  const rows = page.locator('.sidebar .nav-item:has(.dot)')
+  const rows = page.locator('.sidebar nav:not(.recent-projects) .nav-item:has(.dot)')
   const before = await rows.count()
   const openDelete = async () => {
     await rows.first().hover()
@@ -259,7 +337,7 @@ await check('deleting asks in an in-app dialog; Esc keeps the chat, 删除 remov
   if ((await rows.count()) !== before) throw new Error('Esc deleted the chat')
   await openDelete()
   await page.click('.modal.confirm .btn.danger-solid')
-  await page.waitForFunction((n) => document.querySelectorAll('.sidebar .nav-item .dot').length < n, before, { timeout: 3000 })
+  await page.waitForFunction((n) => document.querySelectorAll('.sidebar nav:not(.recent-projects) .nav-item .dot').length < n, before, { timeout: 3000 })
 })
 
 await check('closing New Project returns focus to the button that opened it', async () => {
@@ -278,7 +356,7 @@ await check('closing New Project returns focus to the button that opened it', as
 await check('cancelling a sidebar delete puts focus back on its 「…」 button', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
   await send('再开一个对话')
-  const row = page.locator('.sidebar .nav-item:has(.dot)').first()
+  const row = page.locator('.sidebar nav:not(.recent-projects) .nav-item:has(.dot)').first()
   await row.hover()
   await row.locator('.trail .icon-btn').click()
   await page.click('.menu-item:has-text("删除")')

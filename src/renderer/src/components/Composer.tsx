@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp, ChevronDown, FileText, Folder, FolderGit2, FolderOpen, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, MessagesSquare, Plus, Square, X } from 'lucide-react'
 import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp } from '../store'
@@ -86,8 +86,43 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     setText('')
     setFiles([])
     sessionStorage.removeItem(draftKey)
-    if (onSubmit) onSubmit(t, files, Object.keys(pending).length ? pending : undefined)
+    if (target && conversation) {
+      void api().sendToThread(conversation.id, target.id, t, files).catch((e) => toast(String(e instanceof Error ? e.message : e), 'error'))
+      setTarget(null)
+    } else if (onSubmit) onSubmit(t, files, Object.keys(pending).length ? pending : undefined)
     else if (conversation) void api().send(conversation.id, t, files)
+  }
+
+  // In a project chat, @ picks a thread: the message then goes straight to it.
+  const [target, setTarget] = useState<{ id: string; title: string } | null>(null)
+  const [mention, setMention] = useState<{ query: string; start: number; end: number } | null>(null)
+  const [mentionAt, setMentionAt] = useState(0)
+  useEffect(() => setTarget(null), [conversation?.id])
+  const allThreads = useApp((s) => s.conversations)
+  const mentionable =
+    conversation?.kind === 'project' && mention
+      ? allThreads
+          .filter((c) => c.kind === 'thread' && c.projectId === conversation.projectId && c.title.toLowerCase().includes(mention.query.toLowerCase()))
+          .sort((a, b) => Number(!!a.resolved) - Number(!!b.resolved) || b.updatedAt - a.updatedAt)
+          .slice(0, 8)
+      : []
+  const findMention = (value: string, caret: number) => {
+    if (conversation?.kind !== 'project') return setMention(null)
+    const m = /(^|\s)@([^\s@]{0,24})$/.exec(value.slice(0, caret))
+    setMention(m ? { query: m[2], start: caret - m[2].length - 1, end: caret } : null)
+    setMentionAt(0)
+  }
+  const pickMention = (th: { id: string; title: string }) => {
+    if (!mention) return
+    const next = text.slice(0, mention.start) + text.slice(mention.end)
+    setText(next)
+    sessionStorage.setItem(draftKey, next)
+    setTarget({ id: th.id, title: th.title })
+    setMention(null)
+    requestAnimationFrame(() => {
+      ta.current?.focus()
+      ta.current?.setSelectionRange(mention.start, mention.start)
+    })
   }
 
   const bid = conversation?.backendId ?? backendId ?? ''
@@ -288,30 +323,30 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const canSetFolder = !!(conversation || onFolderChange)
   const folderChip = canSetFolder && <FolderChip folder={folderNow} onChange={setFolder} hint={project?.name || conversation?.title || text} />
   // A folder path typed into the message is offered as the working folder; never set without asking.
-  const [mention, setMention] = useState<string | null>(null)
-  useEffect(() => setMention(null), [draftKey])
+  const [folderMention, setFolderMention] = useState<string | null>(null)
+  useEffect(() => setFolderMention(null), [draftKey])
   useEffect(() => {
     if (!canSetFolder || !text.trim()) return
-    if (!/[\\/]/.test(text)) return setMention(null)
+    if (!/[\\/]/.test(text)) return setFolderMention(null)
     const h = setTimeout(async () => {
       const found = (await api().foldersInText(text).catch(() => [])).find((f) => f !== folderNow && !dismissedFolders.has(f))
-      setMention(found ?? null)
+      setFolderMention(found ?? null)
     }, 400)
     return () => clearTimeout(h)
   }, [text, folderNow, canSetFolder])
-  const folderHint = mention && mention !== folderNow && (
+  const folderHint = folderMention && folderMention !== folderNow && (
     <div className="folder-hint">
       <Folder size={15} />
-      <span className="grow" data-tip={mention}>
-        {t('消息里提到了文件夹「{0}」', baseName(mention))}
-        <span className="muted"> · {mention}</span>
+      <span className="grow" data-tip={folderMention}>
+        {t('消息里提到了文件夹「{0}」', baseName(folderMention))}
+        <span className="muted"> · {folderMention}</span>
       </span>
       <button
         className="btn"
         onClick={(e) => {
           e.stopPropagation()
-          setFolder(mention)
-          setMention(null)
+          setFolder(folderMention)
+          setFolderMention(null)
         }}
       >
         {ownsFolder ? t('设为项目文件夹') : t('设为工作文件夹')}
@@ -321,8 +356,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
         data-tip={t('不用')}
         onClick={(e) => {
           e.stopPropagation()
-          dismissedFolders.add(mention)
-          setMention(null)
+          dismissedFolders.add(folderMention)
+          setFolderMention(null)
         }}
       >
         <X size={14} />
@@ -372,16 +407,50 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             ))}
           </div>
         )}
+        {mention && conversation?.kind === 'project' && (
+          <div className="menu compact mention-menu" role="listbox" aria-label={t('转给讨论串')}>
+            {mentionable.length ? (
+              mentionable.map((th, i) => (
+                <button
+                  key={th.id}
+                  role="option"
+                  aria-selected={i === mentionAt}
+                  className={'menu-item' + (i === mentionAt ? ' active' : '')}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setMentionAt(i)}
+                  onClick={() => pickMention(th)}
+                >
+                  <MessagesSquare size={15} className="muted" />
+                  <span className="menu-text">{th.title}</span>
+                  {th.resolved && <span className="menu-hint">{t('已解决')}</span>}
+                </button>
+              ))
+            ) : (
+              <div className="menu-item info muted">{t('没有匹配的讨论串')}</div>
+            )}
+          </div>
+        )}
         <div className="composer-input">
+          {target && (
+            <span className="mention-chip">
+              <CornerUpRight size={13} />
+              {target.title}
+              <button className="icon-btn xs" aria-label={t('不转给讨论串')} onClick={() => setTarget(null)}>
+                <X size={12} />
+              </button>
+            </span>
+          )}
           <textarea
             ref={ta}
             rows={1}
             value={text}
-            placeholder={placeholder ?? (busy ? t('继续输入，消息会在当前回复结束后发送') : t('回复…'))}
+            placeholder={target ? t('发给「{0}」…', target.title) : (placeholder ?? (busy ? t('继续输入，消息会在当前回复结束后发送') : t('回复…')))}
             onChange={(e) => {
               setText(e.target.value)
               sessionStorage.setItem(draftKey, e.target.value)
+              findMention(e.target.value, e.target.selectionStart)
             }}
+            onBlur={() => setTimeout(() => setMention(null), 150)}
             onPaste={(e) => {
               const imgs = Array.from(e.clipboardData.files)
               if (imgs.length) {
@@ -390,6 +459,23 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
               }
             }}
             onKeyDown={(e) => {
+              if (mention && !e.nativeEvent.isComposing) {
+                if (e.key === 'Escape') return (e.preventDefault(), setMention(null))
+                if (mentionable.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                  e.preventDefault()
+                  const n = mentionable.length
+                  return setMentionAt((i) => (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n)
+                }
+                if (mentionable.length && (e.key === 'Enter' || e.key === 'Tab')) {
+                  e.preventDefault()
+                  return pickMention(mentionable[Math.min(mentionAt, mentionable.length - 1)])
+                }
+              }
+              // Backspace at the very start drops the thread the message was going to.
+              if (e.key === 'Backspace' && target && ta.current?.selectionStart === 0 && ta.current.selectionEnd === 0) {
+                e.preventDefault()
+                return setTarget(null)
+              }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 submit()

@@ -42,4 +42,38 @@ describe('thread events reach the coordinator as one fresh list, not a pile of n
       expect(textOf(store.messagesOf(p.conversationId).filter((m) => m.role === 'assistant').pop()!)).toMatch(/「发布日期」 id:\w+ 等用户决定/)
     } finally { await dispose() }
   }, 40000)
+
+  it('@ in the project chat hands the message straight to a thread and leaves one line the coordinator never sees', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      const p = await core.createProject({ name: 'p', backendId: 'mock' })
+      const th = core.orchestrator.startThread(p, '调研', '查三家竞品 完成后解决')
+      await until(() => done(store, th.id, 1) && store.conversation(th.id)?.resolved)
+      await core.sendToThread(p.conversationId, th.id, '再加一家：D 公司')
+      await until(() => done(store, th.id, 2))
+      expect(store.conversation(th.id)?.resolved).toBe(false) // reopened for the new work
+      const mine = store.messagesOf(th.id).filter((m) => m.role === 'user' && !m.hidden)
+      expect(mine.map(textOf)).toEqual(['再加一家：D 公司'])
+      const line = store.messagesOf(p.conversationId).find((m) => m.blocks.some((b) => b.type === 'thread-event'))!
+      expect(line).toMatchObject({ role: 'system', blocks: [{ type: 'thread-event', kind: 'forwarded', threadId: th.id, text: '再加一家：D 公司' }] })
+      expect(linesOf(store.messagesOf(p.conversationId))).toEqual([])
+      expect(store.conversation(p.conversationId)?.status).toBe('idle')
+      await expect(core.sendToThread(p.conversationId, p.conversationId, 'x')).rejects.toThrow()
+    } finally { await dispose() }
+  }, 40000)
+
+  it('marks what needs the user in person, and clears it once they answer', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      const p = await core.createProject({ name: 'p', backendId: 'mock' })
+      await core.updateProject(p.id, { notify: 'mentions' })
+      expect(store.project(p.id)?.notify).toBe('mentions')
+      const th = core.orchestrator.startThread(p, '发布日期', '帮我决定发布日期')
+      await until(() => done(store, th.id, 1))
+      expect(store.conversation(th.id)?.needsUser).toMatchObject({ kind: 'decision', text: '发布日期定在哪天？' })
+      const card = store.messagesOf(th.id).find((m) => m.blocks.some((b) => b.type === 'decision'))!
+      await core.chooseDecision(th.id, card.id, card.blocks.findIndex((b) => b.type === 'decision'), 0)
+      expect(store.conversation(th.id)?.needsUser).toBeUndefined()
+    } finally { await dispose() }
+  }, 40000)
 })

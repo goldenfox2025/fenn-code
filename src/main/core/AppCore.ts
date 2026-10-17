@@ -552,6 +552,17 @@ export class AppCore {
     this.peers.removed(id)
   }
 
+  async sendToThread(projectConversationId: string, threadId: string, text: string, attachments?: Attachment[]): Promise<void> {
+    const coordinator = this.store.conversation(projectConversationId)
+    const thread = this.store.conversation(threadId)
+    if (!coordinator || coordinator.kind !== 'project' || thread?.kind !== 'thread' || thread.projectId !== coordinator.projectId)
+      throw new Error(t('找不到这个讨论串'))
+    // The project chat keeps one line; the coordinator never sees it.
+    this.chat.addMessage(coordinator.id, 'system', [{ type: 'thread-event', threadId, kind: 'forwarded', text: text.slice(0, 300) }])
+    if (thread.resolved) this.chat.patchConversation(threadId, { resolved: false })
+    await this.chat.send(threadId, text, { attachments })
+  }
+
   async cancelPeerMessage(id: string): Promise<void> {
     this.peers.cancel(id)
   }
@@ -580,6 +591,7 @@ export class AppCore {
     if (!m || b?.type !== 'decision' || b.chosen !== undefined || !b.options[option]) return
     b.chosen = option
     this.chat.updateMessage(m)
+    this.chat.patchConversation(conversationId, { needsUser: undefined })
     await this.send(conversationId, t('关于「{0}」，我选：{1}', b.question, b.options[option].label))
   }
 

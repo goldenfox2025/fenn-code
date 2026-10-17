@@ -26,7 +26,8 @@ import {
   ArchiveRestore,
   Milestone,
   Gauge,
-  PackageOpen
+  PackageOpen,
+  CircleDot
 } from 'lucide-react'
 import type { Conversation, MemoryEntry, Project } from '@shared/model'
 import { Composer } from '../components/Composer'
@@ -59,7 +60,32 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
   useEffect(() => {
     if (threadId) setOverlay(true)
   }, [threadId])
+  // Back beside the conversation, the floating state is over: narrowing again doesn't bring it back by itself.
+  useEffect(() => {
+    if (!squeezed) setOverlay(false)
+  }, [squeezed])
   const showPanel = panelOpen && (!squeezed || overlay)
+  const floating = squeezed && showPanel
+  const panelRef = useRef<HTMLElement>(null)
+  // The floating panel closes like a popover: Esc, or a click on the conversation behind it.
+  useEffect(() => {
+    if (!floating) return
+    const busy = () => !!document.querySelector('.menu, .overlay')
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !busy()) setOverlay(false)
+    }
+    const onDown = (e: PointerEvent) => {
+      const el = e.target as Element | null
+      if (!el || busy() || panelRef.current?.contains(el) || el.closest('.menu, .overlay, .tooltip, [data-panel-toggle]')) return
+      setOverlay(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', onDown)
+    }
+  }, [floating])
   const [menu, openMenu] = useMenu({ align: 'right' })
   if (!project || !conv) return <div className="empty">{t('项目不存在或已被删除')}</div>
 
@@ -135,7 +161,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
       </div>
 
       {showPanel && (
-        <aside className={'panel' + (wide ? ' wide' : '') + (panelWidth && !wide ? ' sized' : '') + (squeezed ? ' overlay' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
+        <aside ref={panelRef} className={'panel' + (wide ? ' wide' : '') + (panelWidth && !wide ? ' sized' : '') + (squeezed ? ' floating' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
           <ResizeHandle pane="panel" edge="left" onResize={() => setWide(false)} />
           {threadId ? (
             <ThreadView threadId={threadId} onBack={() => go({})} wide={wide} setWide={setWide} />
@@ -152,7 +178,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
         </aside>
       )}
       {!showPanel && (
-        <button className="icon-btn" style={{ position: 'absolute', right: 12, top: 52 }} data-tip={t('打开讨论串')} onClick={() => (setPanelOpen(true), setOverlay(true))}>
+        <button className="icon-btn" style={{ position: 'absolute', right: 12, top: 52 }} data-panel-toggle data-tip={t('打开讨论串')} onClick={() => (setPanelOpen(true), setOverlay(true))}>
           <MessagesSquare size={17} />
         </button>
       )}
@@ -640,6 +666,9 @@ function ThreadRow({ th, onOpen }: { th: Conversation; onOpen: (id: string) => v
   const st = threadState(th)
   const step = planHeadline(th)
   const progress = progressOf(th.checklist)
+  // A message from another thread waiting to be handed over says so on the board.
+  const waiting = useApp((s) => s.peerMessages.find((m) => m.toId === th.id && m.state === 'pending'))
+  const from = useApp((s) => (waiting ? s.conversations.find((c) => c.id === waiting.fromId)?.title : undefined))
   return (
     <button className="thread-row" onClick={() => onOpen(th.id)}>
       <span className="text">
@@ -648,6 +677,12 @@ function ThreadRow({ th, onOpen }: { th: Conversation; onOpen: (id: string) => v
           {th.title}
         </span>
         <span className="sub">{st === 'working' && step ? step : st === 'error' ? t('出错') : th.lastPreview ?? ''}</span>
+        {waiting && (
+          <span className="sub peer-waiting">
+            <CircleDot size={11} />
+            {waiting.deliver === 'after_current_task' ? t('「{0}」的留言等这里做完再送', from ?? '') : t('「{0}」的留言等这里空闲再送', from ?? '')}
+          </span>
+        )}
       </span>
       {progress && st === 'working' && (
         <span className="progress" data-tip={t('{0}/{1} 步', progress.done, progress.total)}>

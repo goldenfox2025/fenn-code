@@ -24,14 +24,14 @@ const hiddenTool = (b: Block) => b.type === 'tool' && (APP_TOOL.test(b.title) ||
 export function groupBlocks(blocks: Block[]): (Block | StepBlock[])[] {
   const out: (Block | StepBlock[])[] = []
   const plan = blocks.find((b): b is PlanBlock => b.type === 'plan')
-  const cards = blocks.filter((b) => b.type === 'thread-card' || b.type === 'output')
+  const cards = blocks.filter((b) => b.type === 'thread-card' || b.type === 'output' || b.type === 'peer-message')
   let lastStep = -1
   blocks.forEach((b, i) => {
     if (b.type === 'thought' || (b.type === 'tool' && !hiddenTool(b))) lastStep = i
   })
   let steps: StepBlock[] | undefined
   blocks.forEach((b, i) => {
-    if (b.type === 'thread-card' || b.type === 'output' || b.type === 'plan' || hiddenTool(b)) return
+    if (b.type === 'thread-card' || b.type === 'output' || b.type === 'peer-message' || b.type === 'plan' || hiddenTool(b)) return
     const isStep = b.type === 'tool' || b.type === 'thought' || (b.type === 'text' && i < lastStep)
     if (!isStep) return void out.push(b)
     if (b.type === 'text' && !b.text.trim()) return

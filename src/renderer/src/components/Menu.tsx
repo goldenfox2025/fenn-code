@@ -185,7 +185,7 @@ export function Menu({
   }
   const onKey = (e: React.KeyboardEvent) => {
     if (e.target !== e.currentTarget) return
-    const byKey = items.findIndex((it) => it.shortcut === e.key && actionable(it))
+    const byKey = e.ctrlKey || e.metaKey || e.altKey ? -1 : items.findIndex((it) => !!it.shortcut && it.shortcut.toLowerCase() === e.key.toLowerCase() && actionable(it))
     if (byKey >= 0) {
       e.preventDefault()
       return choose(items[byKey], byKey)

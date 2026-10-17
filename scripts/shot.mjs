@@ -52,6 +52,46 @@ page.on('console', (m) => m.type() === 'error' && console.log('[renderer]', m.te
 page.on('pageerror', (e) => console.log('[pageerror]', e.message, e.stack?.split('\n').slice(0, 4).join(' | ')))
 
 const scenarios = {
+  // The project menu with its notification levels, and @ in the project chat.
+  async projectmenu() {
+    await page.click('.nav-item:has-text("项目")')
+    await page.click('.page-head .btn')
+    await page.fill('.modal input', '躺平研究')
+    await page.click('.modal-actions .btn.primary')
+    await page.waitForSelector('.panel')
+    await page.fill('.composer textarea', '帮我调研躺平一辈子要多少钱')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.thread-card', { timeout: 15000 })
+    await wait(2500)
+    await page.click('.sidebar .nav-item:has-text("躺平研究")', { button: 'right' })
+    await page.hover('.menu .menu-item:has-text("通知")')
+    await page.waitForSelector('.menu.is-sub')
+    await wait(400)
+    await shot('project-menu')
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await page.click('.center .workspace > .center .composer textarea')
+    await page.keyboard.type('@躺平')
+    await page.waitForSelector('.mention-menu')
+    await wait(300)
+    await shot('mention-menu')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('再算一下在大理的情况')
+    await wait(300)
+    await shot('mention-chip')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.thread-event.kind-forwarded')
+    await wait(500)
+    await shot('mention-sent')
+    // A narrow window: the thread panel opens over the conversation.
+    await page.setViewportSize({ width: 900, height: 760 })
+    await wait(300)
+    await page.click('[data-tip="打开讨论串"]')
+    await page.waitForSelector('.panel.floating')
+    await wait(400)
+    if (process.env.DEBUG_FLOAT) console.log(await page.$eval('.panel.floating', (el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.opacity, c.zIndex, c.position, c.backdropFilter, c.filter].join(' | ') }))
+    await shot('floating')
+  },
   // MOCK_AUTH=1: the agent is installed but signed out; the picker says so instead of failing.
   async signedout() {
     await wait(2500)

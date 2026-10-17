@@ -29,8 +29,11 @@ export type Block =
   | { type: 'placed'; path: string }
   /** In a project chat: the card of a thread started from this message. */
   | { type: 'thread-card'; threadId: string }
-  /** In a project chat: a thread needs the user (shown to the user only, never to an agent). */
-  | { type: 'thread-event'; threadId: string; kind: 'decision'; text: string }
+  /**
+   * In a project chat, shown to the user only (never to an agent): a thread needs their decision,
+   * or the user sent a message straight to a thread with @.
+   */
+  | { type: 'thread-event'; threadId: string; kind: 'decision' | 'forwarded'; text: string; /** For a decision: matches the thread's needsUser.at while it is still open. */ at?: number }
   /** A message between two threads of a project (see PeerMessage): sent from here, or delivered here. */
   | { type: 'peer-message'; peerId: string; direction: 'out' | 'in' }
   /** A result the agent handed over: a file on this computer or a link. Shown as a card under the reply. */
@@ -149,6 +152,12 @@ export interface Conversation {
   factsSummary?: string
   /** The last message factsSummary covers. */
   factsThrough?: string
+  /**
+   * The agent needs the user in person: a decision card, a permission prompt, or
+   * a thread that stopped stuck. Cleared once the user answers or writes. This,
+   * not text in the reply, decides which notifications a project's level lets through.
+   */
+  needsUser?: { kind: 'decision' | 'permission' | 'blocked'; text?: string; at: number }
   /** Project chats: when the coordinator last saw the list of threads (see Orchestrator.threadIndex). */
   threadsSeenAt?: number
 }
@@ -171,6 +180,8 @@ export interface Project {
   archived?: boolean
   /** The project's progress board: milestones, each with optional tasks. */
   progress?: ProgressItem[]
+  /** Which desktop notifications the project raises (default 'coordinator'). */
+  notify?: NotifyLevel
   /** Results agents handed over in this project's conversations, newest last (the project's library). */
   outputs?: ProjectOutput[]
 }
@@ -209,6 +220,13 @@ export interface PeerMessage {
   createdAt: number
   deliveredAt?: number
 }
+
+/**
+ * A project's notifications, as in Claude: every new message (each thread's
+ * replies too); the project chat plus whatever needs the user (the default);
+ * only what needs the user; or nothing.
+ */
+export type NotifyLevel = 'all' | 'coordinator' | 'mentions' | 'none'
 
 export interface ProjectOutput {
   id: string
@@ -479,6 +497,8 @@ export interface AncoraApi {
 
   startChat(opts: NewChatOptions): Promise<Conversation>
   send(conversationId: string, text: string, attachments?: Attachment[]): Promise<void>
+  /** From the project chat: hands the user's message straight to one of its threads (@ in the composer). */
+  sendToThread(projectConversationId: string, threadId: string, text: string, attachments?: Attachment[]): Promise<void>
   /** Drops the last reply and asks again. */
   regenerate(conversationId: string): Promise<void>
   /** Replaces a user message (and everything after it) with an edited version. */

@@ -18,7 +18,7 @@ import {
   Pencil,
   Archive
 } from 'lucide-react'
-import { searchable, type Conversation, type Project } from '@shared/model'
+import { searchable, type Conversation, type NotifyLevel, type Project } from '@shared/model'
 import { api, useApp } from '../store'
 import { initials } from '../util'
 import { useMenu } from './Menu'
@@ -26,6 +26,14 @@ import { t } from '../i18n'
 import { confirmDialog, promptDialog } from './Modal'
 import { groupByFolder, isNested } from '../folderGroups'
 import { ResizeHandle, paneStyle, usePaneWidth } from './ResizeHandle'
+
+/** A project's notification levels, as Claude words them. */
+const NOTIFY_LEVELS = (): { id: NotifyLevel; label: string; sub?: string; short: string }[] => [
+  { id: 'all', label: t('所有新消息'), sub: t('包含每个讨论串中的回复'), short: t('所有') },
+  { id: 'coordinator', label: t('协调者与 @提及'), sub: t('主对话以及所有需要您处理的内容'), short: t('协调者') },
+  { id: 'mentions', label: t('仅 @提及'), short: t('仅提及') },
+  { id: 'none', label: t('无'), short: t('无') }
+]
 
 export function Sidebar() {
   const s = useApp()
@@ -93,16 +101,52 @@ export function Sidebar() {
     if (route.view === 'chat' && route.conversationId === c.id) s.navigate({ view: 'home' })
   }
 
-  const projectMenu = (el: HTMLElement, p: Project) =>
+  // As in Claude: how to open it, pin, rename, notifications, settings; archive and delete apart.
+  const projectMenu = (el: HTMLElement, p: Project) => {
+    const level = p.notify ?? 'coordinator'
     openMenu(el, [
       {
-        icon: p.pinned ? <PinOff size={15} /> : <Pin size={15} />,
-        label: p.pinned ? t('取消置顶') : t('置顶'),
-        onClick: () => api().updateProject(p.id, { pinned: !p.pinned })
+        label: t('打开方式'),
+        submenu: [
+          { label: t('文件管理器'), disabled: !p.cwd, onClick: () => p.cwd && void api().openOutput(p.cwd) },
+          { label: t('项目设置'), onClick: () => s.set({ settingsOpen: `project:${p.id}` }) }
+        ]
       },
-      { icon: <Settings size={15} />, label: t('项目设置'), onClick: () => s.set({ settingsOpen: `project:${p.id}` }) },
-      { icon: <Archive size={15} />, label: t('归档项目'), onClick: () => api().updateProject(p.id, { archived: true, pinned: false }) }
+      { separator: true },
+      { label: p.pinned ? t('取消置顶') : t('置顶'), shortcut: 'P', onClick: () => api().updateProject(p.id, { pinned: !p.pinned }) },
+      {
+        label: t('重命名'),
+        shortcut: 'R',
+        onClick: async () => {
+          const name = await promptDialog(t('重命名项目'), p.name)
+          if (name?.trim() && name.trim() !== p.name) void api().updateProject(p.id, { name: name.trim() })
+        }
+      },
+      {
+        label: t('通知'),
+        hint: NOTIFY_LEVELS().find((n) => n.id === level)?.short,
+        submenu: NOTIFY_LEVELS().map((n) => ({
+          label: n.label,
+          sub: n.sub,
+          checked: n.id === level,
+          onClick: () => api().updateProject(p.id, { notify: n.id })
+        }))
+      },
+      { label: t('设置'), shortcut: 'S', onClick: () => s.set({ settingsOpen: `project:${p.id}` }) },
+      { separator: true },
+      { label: t('归档'), shortcut: 'A', onClick: () => api().updateProject(p.id, { archived: true, pinned: false }) },
+      {
+        label: t('删除'),
+        shortcut: 'D',
+        danger: true,
+        onClick: async () => {
+          if (!(await confirmDialog(t('删除项目「{0}」及其所有讨论串？项目内的普通对话会保留。', p.name)))) return
+          void api().deleteProject(p.id)
+          if (route.view === 'project' && route.projectId === p.id) s.navigate({ view: 'projects' })
+        }
+      }
     ])
+  }
 
   // Plain render functions, not components: a component declared in here would be a new type on
   // every render, remounting each row and detaching the 「…」 button a menu is anchored to.
@@ -137,6 +181,10 @@ export function Sidebar() {
         className={'nav-item' + (selected ? ' selected' : '')}
         role="button"
         onClick={() => s.navigate({ view: 'project', projectId: p.id })}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          projectMenu(e.currentTarget.querySelector<HTMLElement>('.trail .icon-btn') ?? e.currentTarget, p)
+        }}
       >
         <FolderKanban size={15} style={{ flex: 'none' }} />
         <span className="label">{p.name}</span>

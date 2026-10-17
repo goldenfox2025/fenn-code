@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { create } from 'zustand'
 import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/contract'
 import { backendAvailable } from '@shared/backendAvailability'
-import type { AppEvent, AppSettings, Conversation, Message, AncoraApi, Project, Routine } from '@shared/model'
+import type { AppEvent, AppSettings, Conversation, Message, AncoraApi, PeerMessage, Project, Routine } from '@shared/model'
 
 declare global {
   interface Window {
@@ -30,6 +30,8 @@ interface State {
   projects: Project[]
   conversations: Conversation[]
   routines: Routine[]
+  /** Messages between threads (see PeerMessage). */
+  peerMessages: PeerMessage[]
   settings: AppSettings
   backends: BackendSummary[]
   /** Each backend's install and sign-in state, as last checked (see refreshAccount). */
@@ -64,6 +66,7 @@ export const useApp = create<State>((set, get) => ({
   projects: [],
   conversations: [],
   routines: [],
+  peerMessages: [],
   settings: { defaultBackendId: '', theme: 'system', userName: '' },
   backends: [],
   accounts: {},
@@ -82,7 +85,7 @@ export const useApp = create<State>((set, get) => ({
 
   async init() {
     const snap = await api().snapshot()
-    set({ ...snap, ready: true })
+    set({ ...snap, peerMessages: snap.peerMessages ?? [], ready: true })
     api().onEvent((e) => applyEvent(e, set, get))
   },
 
@@ -156,6 +159,8 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
     }
     case 'routine':
       return set({ routines: upsert(s.routines, e.routine) })
+    case 'peer-message':
+      return set({ peerMessages: upsert(s.peerMessages, e.message) })
     case 'routine-removed':
       return set({ routines: s.routines.filter((r) => r.id !== e.id) })
     case 'settings':

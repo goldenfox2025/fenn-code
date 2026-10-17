@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MessageUsageLabel } from './Usage'
 import { OutputCard } from './Outputs'
+import { PeerCard } from './PeerCard'
 import {
   AppWindow,
   Check,
@@ -26,7 +27,8 @@ import {
   Split,
   PackageOpen,
   FolderOpen,
-  CircleHelp
+  CircleHelp,
+  CornerUpRight
 } from 'lucide-react'
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
 import { planHeadline } from './PlanLine'
@@ -119,24 +121,33 @@ export const MessageView = memo(function MessageView({
   if (m.role === 'system') {
     const ev = m.blocks.find((b): b is Extract<Block, { type: 'thread-event' }> => b.type === 'thread-event')
     if (ev) return <ThreadEventLine ev={ev} />
+    const peer = m.blocks.find((b): b is Extract<Block, { type: 'peer-message' }> => b.type === 'peer-message')
+    if (peer)
+      return (
+        <div className="msg msg-peer">
+          <PeerCard peerId={peer.peerId} direction={peer.direction} />
+        </div>
+      )
     return <div className="msg msg-system">{textOf(m)}</div>
   }
   if (m.role === 'user') return <UserMessage m={m} busy={busy} />
   return <AssistantMessage m={m} last={last} busy={busy} />
 })
 
-/** In the project chat: a thread is waiting for the user's decision; opens that thread. */
+/** In the project chat: a thread waits for the user's decision, or the user sent it a message with @; opens that thread. */
 function ThreadEventLine({ ev }: { ev: Extract<Block, { type: 'thread-event' }> }) {
   const thread = useApp((s) => s.conversations.find((c) => c.id === ev.threadId))
   const navigate = useApp((s) => s.navigate)
   if (!thread?.projectId) return null
+  // A decision line greys once the user chose (or a newer question replaced it).
+  const settled = thread.resolved || (ev.kind === 'decision' && ev.at !== undefined && thread.needsUser?.at !== ev.at)
   return (
     <button
-      className={'thread-event' + (thread.resolved ? ' settled' : '')}
+      className={'thread-event kind-' + ev.kind + (settled ? ' settled' : '')}
       onClick={() => navigate({ view: 'project', projectId: thread.projectId!, threadId: thread.id })}
     >
-      <CircleHelp size={14} />
-      <span className="ellipsis">{t('「{0}」需要您决定：{1}', thread.title, ev.text)}</span>
+      {ev.kind === 'forwarded' ? <CornerUpRight size={14} /> : <CircleHelp size={14} />}
+      <span className="ellipsis">{ev.kind === 'forwarded' ? t('已转给「{0}」：{1}', thread.title, ev.text) : t('「{0}」需要您决定：{1}', thread.title, ev.text)}</span>
       <ChevronRight size={14} className="muted" />
     </button>
   )
@@ -177,7 +188,7 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
                 e.preventDefault()
                 save()
               }
-              if (e.key === 'Escape') setEditing(null)
+              if (e.key === 'Escape') (e.preventDefault(), setEditing(null))
             }}
           />
           <div className="edit-actions">
@@ -287,6 +298,8 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
             return <OutputCard key={i} o={g} />
           case 'decision':
             return <DecisionCard key={i} m={m} index={m.blocks.indexOf(g)} d={g} />
+          case 'peer-message':
+            return <PeerCard key={i} peerId={g.peerId} direction={g.direction} />
           default:
             return null
         }
