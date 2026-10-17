@@ -1,5 +1,6 @@
 appId: dev.ancora.desktop
 productName: Ancora
+copyright: Copyright © 2026 Ancora contributors
 directories:
   output: release
   buildResources: build
