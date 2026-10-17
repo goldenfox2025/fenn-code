@@ -72,7 +72,8 @@ select {
 
 .sidebar {
   position: relative;
-  width: var(--sidebar-w);
+  /* What the user chose, within what the window leaves (see fitPanes). */
+  width: min(var(--sidebar-w), var(--sidebar-cap, var(--sidebar-w)));
   flex: none;
   display: flex;
   flex-direction: column;
@@ -81,7 +82,7 @@ select {
   transition: margin-left 0.18s ease;
 }
 .sidebar.closed {
-  margin-left: calc(-1 * var(--sidebar-w));
+  margin-left: calc(-1 * min(var(--sidebar-w), var(--sidebar-cap, var(--sidebar-w))));
 }
 .sidebar.closed .resize-handle {
   display: none;
@@ -111,7 +112,7 @@ select {
   bottom: 0;
   left: calc((var(--resize-hit) - var(--resize-line)) / 2);
   width: var(--resize-line);
-  background: var(--border-strong);
+  background: var(--resize-line-color);
   opacity: 0;
   transition: opacity 0.15s ease 0.1s;
 }
@@ -119,8 +120,12 @@ select {
   left: 0;
 }
 .resize-handle:hover::after,
-.resize-handle.active::after {
+.resize-handle.active::after,
+.resize-handle:focus-visible::after {
   opacity: 1;
+}
+.resize-handle:focus-visible {
+  outline: none;
 }
 body.resizing,
 body.resizing * {
@@ -376,6 +381,7 @@ body.resizing .sidebar {
   color: white;
 }
 .workspace {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1198,7 +1204,7 @@ body.resizing .sidebar {
 .panel {
   width: 42%;
   min-width: 360px;
-  max-width: 720px;
+  max-width: min(720px, var(--panel-cap, 720px));
   flex: none;
   margin: 0 var(--space-4) var(--space-4) 0;
   border: 1px solid var(--border);
@@ -1210,14 +1216,27 @@ body.resizing .sidebar {
 }
 .panel.wide {
   width: 62%;
-  max-width: none;
+  max-width: var(--panel-cap, none);
 }
 .panel {
   position: relative;
 }
 .panel.sized {
   width: var(--panel-w);
-  max-width: none;
+  max-width: var(--panel-cap, none);
+}
+.panel.overlay .resize-handle {
+  display: none;
+}
+/* Too narrow for the panel beside the conversation: it opens over it instead. */
+.panel.overlay {
+  position: absolute;
+  top: var(--space-0);
+  right: var(--space-0);
+  bottom: var(--space-0);
+  z-index: 20;
+  max-width: calc(100% - var(--space-11));
+  box-shadow: var(--shadow);
 }
 .panel-head {
   height: 46px;

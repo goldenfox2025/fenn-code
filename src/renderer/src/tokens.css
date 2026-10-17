@@ -8,6 +8,7 @@
   --sidebar-w: 284px;
   --resize-hit: 8px;
   --resize-line: 2px;
+  --resize-line-color: var(--text-4);
   --bg: #faf9f5;
   --bg-sidebar: #f5f4ef;
   --bg-elevated: #ffffff;

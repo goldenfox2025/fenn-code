@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ResizeHandle, paneStyle, usePaneWidth } from '../components/ResizeHandle'
+import { ResizeHandle, paneStyle, usePaneWidth, usePanelSqueezed } from '../components/ResizeHandle'
 import { useShallow } from 'zustand/react/shallow'
 import {
   ArrowLeft,
@@ -53,6 +53,13 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
   const [panelOpen, setPanelOpen] = useState(true)
   const [wide, setWide] = useState(false)
   const panelWidth = usePaneWidth('panel')
+  // In a narrow window the panel opens over the conversation, only when asked for.
+  const squeezed = usePanelSqueezed()
+  const [overlay, setOverlay] = useState(false)
+  useEffect(() => {
+    if (threadId) setOverlay(true)
+  }, [threadId])
+  const showPanel = panelOpen && (!squeezed || overlay)
   const [menu, openMenu] = useMenu({ align: 'right' })
   if (!project || !conv) return <div className="empty">{t('项目不存在或已被删除')}</div>
 
@@ -127,8 +134,8 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
         <Composer conversation={conv} placeholder={t('提问或开始一项任务…')} autoFocus={!threadId} />
       </div>
 
-      {panelOpen && (
-        <aside className={'panel' + (wide ? ' wide' : '') + (panelWidth && !wide ? ' sized' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
+      {showPanel && (
+        <aside className={'panel' + (wide ? ' wide' : '') + (panelWidth && !wide ? ' sized' : '') + (squeezed ? ' overlay' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
           <ResizeHandle pane="panel" edge="left" onResize={() => setWide(false)} />
           {threadId ? (
             <ThreadView threadId={threadId} onBack={() => go({})} wide={wide} setWide={setWide} />
@@ -137,15 +144,15 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
               project={project}
               userName={userName}
               onOpen={(id) => go({ threadId: id })}
-              onClose={() => setPanelOpen(false)}
+              onClose={() => (setPanelOpen(false), setOverlay(false))}
               wide={wide}
               setWide={setWide}
             />
           )}
         </aside>
       )}
-      {!panelOpen && (
-        <button className="icon-btn" style={{ position: 'absolute', right: 12, top: 52 }} data-tip={t('打开讨论串')} onClick={() => setPanelOpen(true)}>
+      {!showPanel && (
+        <button className="icon-btn" style={{ position: 'absolute', right: 12, top: 52 }} data-tip={t('打开讨论串')} onClick={() => (setPanelOpen(true), setOverlay(true))}>
           <MessagesSquare size={17} />
         </button>
       )}

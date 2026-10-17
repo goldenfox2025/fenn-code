@@ -104,6 +104,36 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   await page.dblclick('.panel:visible > .resize-handle')
   await page.waitForTimeout(250)
   near(await width('.panel:visible'), p0, 'double-click resets the thread panel')
+  // A narrower window fits the panes again: the panel gives way first, then the sidebar,
+  // and the conversation keeps at least 420px; too narrow, the panel folds away.
+  await drag('.sidebar > .resize-handle', 600)
+  await drag('.panel:visible > .resize-handle', -2000)
+  for (const w of [1100, 900]) {
+    await page.setViewportSize({ width: w, height: 900 })
+    await page.waitForTimeout(300)
+    const center = await width('.center .workspace > .center')
+    if (center < 419) throw new Error(`at ${w}px the conversation is ${center}px wide`)
+    const composer = await page.locator('.center .workspace > .center .composer').boundingBox()
+    if (!composer || composer.width < 300) throw new Error(`at ${w}px the composer is gone`)
+  }
+  if (await page.locator('.panel:visible').count()) throw new Error('panel still beside the conversation at 900px')
+  await page.click('[data-tip="打开讨论串"]')
+  await page.waitForSelector('.panel.overlay')
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await page.waitForTimeout(300)
+  if (await page.locator('.panel.overlay').count()) throw new Error('panel still floating in a wide window')
+  near(await width('.sidebar'), 440, 'sidebar back to its chosen width')
+  await page.dblclick('.sidebar > .resize-handle')
+  await page.dblclick('.panel:visible > .resize-handle')
+  // The keyboard works too: arrows move the edge, Home resets.
+  const sb0 = await width('.sidebar')
+  await page.focus('.sidebar > .resize-handle')
+  await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(150)
+  near(await width('.sidebar'), sb0 + 16, 'ArrowRight widens the sidebar')
+  await page.keyboard.press('Home')
+  await page.waitForTimeout(150)
+  near(await width('.sidebar'), sb0, 'Home resets the sidebar')
   // A tooltip-free separator with a resize cursor.
   if ((await page.locator('.panel:visible > .resize-handle').evaluate((el) => getComputedStyle(el).cursor)) !== 'col-resize') throw new Error('no col-resize cursor')
 })

@@ -5,6 +5,7 @@ import { ConfirmHost } from './components/Modal'
 import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
 import { PagePanel } from './components/PagePanel'
+import { usePaneFit } from './components/ResizeHandle'
 import { Sidebar } from './components/Sidebar'
 import { api, toast, useApp } from './store'
 import { langSetting, setLanguage, t } from './i18n'
@@ -19,6 +20,7 @@ export function App() {
   const theme = useApp((s) => s.settings.theme)
   const glass = useApp((s) => !!s.settings.glass)
   const sidebarOpen = useApp((s) => s.sidebarOpen)
+  usePaneFit(sidebarOpen)
   const page = useApp((s) => s.page)
   const platform = useApp((s) => s.platform)
   const toasts = useApp((s) => s.toasts)
