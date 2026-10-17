@@ -13,6 +13,9 @@ const TYPES = ['user', 'feedback', 'project', 'reference'] as const
 export class ProjectMemory {
   constructor(private readonly root: string) {}
 
+  /** Called after an entry is written or removed (the app tells open memory views). */
+  onChange?: (projectId: string) => void
+
   private dir(projectId: string): string {
     const d = join(this.root, 'projects', safe(projectId), 'memory')
     mkdirSync(d, { recursive: true })
@@ -42,6 +45,7 @@ export class ProjectMemory {
     if (body.length > 4000) throw new Error('单条记忆不能超过 4000 字，请拆分或精简')
     const text = `---\nname: ${name}\ndescription: ${description}\ntype: ${type}\n---\n\n${body}\n`
     writeFileSync(join(this.dir(projectId), `${name}.md`), text)
+    this.onChange?.(projectId)
     return this.read(projectId, name)!
   }
 
@@ -49,6 +53,7 @@ export class ProjectMemory {
     const f = join(this.dir(projectId), `${slug(name)}.md`)
     if (!existsSync(f)) return false
     rmSync(f)
+    this.onChange?.(projectId)
     return true
   }
 

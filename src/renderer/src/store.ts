@@ -34,6 +34,8 @@ interface State {
   routines: Routine[]
   /** Messages between threads (see PeerMessage). */
   peerMessages: PeerMessage[]
+  /** Bumped when a project's memory changes, so its memory view reloads. */
+  memoryVersion: Record<string, number>
   settings: AppSettings
   backends: BackendSummary[]
   /** Each backend's install and sign-in state, as last checked (see refreshAccount). */
@@ -71,6 +73,7 @@ export const useApp = create<State>((set, get) => ({
   conversations: [],
   routines: [],
   peerMessages: [],
+  memoryVersion: {},
   settings: { defaultBackendId: '', theme: 'system', userName: '' },
   backends: [],
   accounts: {},
@@ -162,6 +165,8 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
       if (!list) return
       return set({ messages: { ...s.messages, [e.conversationId]: list.filter((m) => m.id !== e.id) } })
     }
+    case 'memory-changed':
+      return set({ memoryVersion: { ...s.memoryVersion, [e.projectId]: (s.memoryVersion[e.projectId] ?? 0) + 1 } })
     case 'routine':
       return set({ routines: upsert(s.routines, e.routine) })
     case 'peer-message':

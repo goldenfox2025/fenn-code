@@ -1,0 +1,166 @@
+/* Sidebar folder groups: the 「+」 shows on hover, as in Claude. */
+.folder-head .icon-btn {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.folder-head:hover .icon-btn,
+.folder-head .icon-btn:focus-visible {
+  opacity: 1;
+}
+.folder-head .grow {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.nav-item.more-row .label {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.chat-group + .chat-group {
+  margin-top: 18px;
+}
+.chat-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-2);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.chat-group-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* A sub-conversation, nested under the chat that started it with a └ connector. */
+.nav-item.nested {
+  padding-left: 30px;
+  position: relative;
+}
+.nav-item.nested::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 4px;
+  width: 8px;
+  height: 11px;
+  border-left: 1.5px solid var(--border-strong);
+  border-bottom: 1.5px solid var(--border-strong);
+  border-bottom-left-radius: 4px;
+}
+
+/* A sub-conversation's opening: where it came from and the task it was handed. */
+.handoff {
+  margin: var(--space-2) 0 18px;
+}
+.handoff-from {
+  font-size: 14px;
+  color: var(--text-3);
+  margin-bottom: var(--space-4);
+}
+.handoff-from .link {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+}
+.handoff-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.handoff-toggle,
+.handoff-ctx {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) 14px var(--space-2);
+  font-size: 13.5px;
+  color: var(--text-3);
+}
+.handoff-ctx {
+  width: 100%;
+  padding: 9px 14px;
+  border-top: 1px solid var(--border);
+}
+.handoff-toggle .rot {
+  transform: rotate(-90deg);
+}
+.handoff-ctx .rot90 {
+  transform: rotate(90deg);
+}
+.handoff-task {
+  padding: var(--space-2) 14px var(--space-6);
+  font-size: 14.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.handoff-task.ctx {
+  color: var(--text-2);
+  padding-top: 0;
+}
+
+/* 「已放在 <文件夹>」 under a reply that made files */
+.placed-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-sm);
+  color: var(--text-3);
+}
+.placed-line .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+}
+.placed-line .link:hover {
+  color: var(--text);
+}
+
+/* Tooltips (Tooltip.tsx): a small dark bubble, like Claude's. */
+.tooltip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 240px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  font-size: var(--font-xs);
+  line-height: 17px;
+  font-weight: 450;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  box-shadow: var(--tip-shadow);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.tooltip.below {
+  transform: translateY(-2px);
+}
+.tooltip.on {
+  opacity: 1;
+  transform: none;
+}
+:root[data-theme='glass'] .tooltip,
+:root[data-theme='glass-light'] .tooltip {
+  -webkit-backdrop-filter: var(--frost);
+  backdrop-filter: var(--frost);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tooltip { transition: none; transform: none; }
+}

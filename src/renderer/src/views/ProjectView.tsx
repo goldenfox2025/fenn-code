@@ -473,11 +473,11 @@ function MemoryPanel({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const [editing, setEditing] = useState<Partial<MemoryEntry> | null>(null)
   const reload = () => api().listMemory(projectId).then(setItems)
+  // Reloads when an agent or the user changes the memory, instead of polling.
+  const version = useApp((s) => s.memoryVersion[projectId] ?? 0)
   useEffect(() => {
     void reload()
-    const t = setInterval(reload, 4000)
-    return () => clearInterval(t)
-  }, [projectId])
+  }, [projectId, version])
   if (editing)
     return (
       <div style={{ padding: 16 }}>

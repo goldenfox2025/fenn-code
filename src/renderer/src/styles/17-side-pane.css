@@ -1,0 +1,254 @@
+/* ---------- the pane beside a chat: files and background ---------- */
+.side-pane {
+  position: relative;
+  flex: none;
+  width: 44%;
+  min-width: 360px;
+  max-width: min(960px, var(--panel-cap, 960px));
+  margin: var(--space-0) var(--space-4) var(--space-4) var(--space-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.side-pane.sized {
+  width: var(--panel-w);
+  max-width: var(--panel-cap, none);
+}
+.side-pane-toggle {
+  position: relative;
+}
+.side-pane-toggle.on {
+  background: var(--bg-active);
+}
+.run-dot {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.bg-command .title {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+
+/* ---------- files (a chat's folder, a project's 库) ---------- */
+.files-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.files-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5) var(--space-2) var(--space-6);
+}
+.files-root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--text-2);
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+.files-root span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.files-tree {
+  flex: none;
+  width: clamp(200px, 38%, 300px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.files-pane.narrow .files-tree {
+  flex: 1;
+  width: auto;
+  border-right: none;
+}
+.files-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-4);
+}
+.files-filter {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 30px;
+  padding: var(--space-0) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-3);
+}
+.files-filter:focus-within {
+  border-color: var(--focus-border);
+}
+.files-filter input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+}
+.files-tools .chip {
+  height: 30px;
+  padding: var(--space-0) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  flex: none;
+}
+.files-tools .chip.on {
+  background: var(--bg-active);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.files-rows {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-0) var(--space-3) var(--space-6);
+}
+.tree-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 28px;
+  padding: var(--space-0) var(--space-3) var(--space-0) calc(var(--space-3) + var(--depth, 0) * var(--space-7));
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: var(--font-sm);
+  text-align: left;
+}
+.tree-row:hover {
+  background: var(--bg-hover);
+}
+.tree-row.active {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.tree-caret {
+  flex: none;
+  width: 14px;
+  color: var(--text-4);
+}
+.tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+.tree-row.change {
+  height: auto;
+  min-height: 28px;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+}
+.tree-row.change .tree-meta {
+  flex-basis: 100%;
+  padding-left: calc(var(--space-3) * 2 + var(--space-5) + var(--space-1));
+  color: var(--text-4);
+  font-size: var(--font-xs);
+}
+.tree-row.gone .tree-name {
+  text-decoration: line-through;
+  color: var(--text-4);
+}
+.files-note {
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-3);
+  font-size: var(--font-sm);
+}
+.files-preview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.files-preview > .empty {
+  flex: 1;
+  padding: var(--space-9);
+}
+.files-pane > .empty {
+  flex: 1;
+}
+.preview-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border);
+}
+.preview-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.preview-name {
+  font-size: var(--font-md);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.preview-code {
+  margin: var(--space-0);
+  padding: var(--space-6) var(--space-7);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre;
+  tab-size: 2;
+}
+.preview-md {
+  padding: var(--space-6) var(--space-8);
+}
+.preview-image {
+  display: block;
+  max-width: 100%;
+  margin: var(--space-7) auto;
+  border-radius: var(--radius-md);
+}

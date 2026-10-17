@@ -1,0 +1,168 @@
+/* ---------- main ---------- */
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.topbar {
+  height: 44px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-4) 0 var(--space-6);
+  gap: var(--space-3);
+}
+.winctl {
+  display: flex;
+  margin-left: var(--space-4);
+}
+.winctl button {
+  width: 44px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+.winctl button:hover {
+  background: var(--bg-hover);
+}
+.winctl button.close:hover {
+  background: #e81123;
+  color: white;
+}
+.workspace {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0;
+}
+.center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat-header {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-7) 0 var(--space-8);
+}
+.chat-title {
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px var(--space-4);
+  border-radius: 7px;
+  max-width: 50%;
+}
+.chat-title:hover {
+  background: var(--bg-hover);
+}
+.chat-title-input {
+  font-size: 15px;
+  font-weight: 500;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: var(--space-1) var(--space-4);
+  background: var(--bg-input);
+  outline: none;
+}
+.proj-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  flex: none;
+}
+.spacer {
+  flex: 1;
+}
+.pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 30px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.pill-btn:hover {
+  background: var(--bg-hover);
+}
+.pill-btn.active {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--bg-hover);
+}
+.btn.primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: transparent;
+}
+.btn.primary:hover {
+  opacity: 0.88;
+}
+.btn.accent {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.btn.danger {
+  color: var(--red);
+}
+.btn.danger-solid {
+  /* One deep red in every theme, so white text always reads. */
+  background: #c4423b;
+  border-color: transparent;
+  color: #fff;
+}
+.btn.danger-solid:hover {
+  opacity: 0.9;
+}
+.modal:focus {
+  outline: none;
+}
+.modal.confirm {
+  width: min(420px, calc(100vw - 32px));
+}
+.confirm-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

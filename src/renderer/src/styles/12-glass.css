@@ -1,0 +1,182 @@
+/* ---------- 太空玻璃 ---------- */
+/* The backdrop: a faint nebula and a sparse starfield, painted once on a fixed layer. */
+:root[data-theme='glass'] body {
+  background:
+    radial-gradient(1200px 800px at 85% -10%, rgba(88, 102, 196, 0.22), transparent 60%),
+    radial-gradient(900px 700px at -10% 110%, rgba(76, 150, 190, 0.14), transparent 60%),
+    radial-gradient(700px 500px at 40% 60%, rgba(120, 80, 170, 0.07), transparent 70%),
+    linear-gradient(180deg, #090a12 0%, #05060a 100%);
+  background-attachment: fixed;
+}
+:root[data-theme='glass'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.7;
+  /* Tiles of different prime-ish sizes, so the stars never line up in a grid. */
+  background-image:
+    radial-gradient(1px 1px at 37px 61px, rgba(255, 255, 255, 0.75), transparent 70%),
+    radial-gradient(1px 1px at 211px 149px, rgba(220, 228, 255, 0.6), transparent 70%),
+    radial-gradient(1.4px 1.4px at 113px 283px, rgba(255, 255, 255, 0.7), transparent 70%),
+    radial-gradient(1px 1px at 389px 97px, rgba(255, 236, 214, 0.55), transparent 70%),
+    radial-gradient(1px 1px at 523px 431px, rgba(255, 255, 255, 0.45), transparent 70%),
+    radial-gradient(1.8px 1.8px at 647px 211px, rgba(200, 212, 255, 0.8), transparent 70%);
+  background-size: 307px 307px, 419px 419px, 521px 521px, 613px 613px, 769px 769px, 997px 997px;
+}
+/* With the OS blurring the desktop behind the window, tint instead of painting. */
+:root.native-glass body {
+  background: linear-gradient(180deg, rgba(9, 10, 18, 0.62), rgba(5, 6, 10, 0.72));
+}
+:root.native-glass body::before {
+  opacity: 0.25;
+}
+:root[data-theme='glass'] #root {
+  isolation: isolate;
+}
+
+/* Frosted surfaces. Only a few large, fixed panels blur; cards in scrolling lists stay plain translucent so long chats scroll smoothly. */
+:root[data-theme='glass'] .sidebar,
+:root[data-theme='glass'] .panel,
+:root[data-theme='glass'] .side-pane,
+:root[data-theme='glass'] .page-panel {
+  backdrop-filter: var(--frost);
+  box-shadow: var(--hairline-top);
+}
+:root[data-theme='glass'] .panel.floating,
+:root[data-theme='glass'] .panel.maximized {
+  box-shadow: var(--shadow);
+}
+/* Full screen covers the project chat: nothing shows through it. */
+:root:is([data-theme='glass'], [data-theme='glass-light']) .panel.maximized {
+  background-color: var(--bg-floating);
+}
+:root[data-theme='glass'] .composer {
+  backdrop-filter: var(--frost);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme='glass'] .composer:focus-within {
+  border-color: rgba(143, 157, 255, 0.5);
+  box-shadow: var(--shadow), 0 0 24px rgba(143, 157, 255, 0.14);
+}
+:root[data-theme='glass'] .menu,
+:root[data-theme='glass'] .toast {
+  background: rgba(20, 22, 33, 0.82);
+  backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+/* Dialogs hold forms: nearly solid, so nothing behind shows through the text. */
+:root[data-theme='glass'] .modal,
+:root[data-theme='glass'] .onboarding-card {
+  background: rgba(17, 19, 29, 0.96);
+  backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+:root[data-theme='glass'] .overlay {
+  background: rgba(2, 3, 8, 0.6);
+  backdrop-filter: blur(8px);
+}
+:root[data-theme='glass'] .onboarding {
+  background: transparent;
+}
+:root[data-theme='glass'] :is(.card, .board-card, .thread-card, .status-card, .decision, .perm, .page-card, .choice) {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.09);
+  box-shadow: var(--hairline-top);
+}
+:root[data-theme='glass'] :is(.chip, .attach-chip, .decision-opt) {
+  background: rgba(255, 255, 255, 0.04);
+}
+:root[data-theme='glass'] :is(.chip, .attach-chip, .decision-opt, .card, .board-card, .thread-card):hover {
+  background: rgba(255, 255, 255, 0.075);
+}
+:root[data-theme='glass'] .bubble {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--hairline-top);
+}
+:root[data-theme='glass'] :is(.btn, .dropdown, .input, .textarea, .select, .search) {
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: var(--hairline-top);
+}
+:root[data-theme='glass'] :focus-visible {
+  outline: 2px solid rgba(178, 189, 255, 0.95);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgba(143, 157, 255, 0.22);
+}
+:root[data-theme='glass'] :is(input, textarea, [contenteditable]):focus-visible {
+  /* Text fields light up their own border (the composer its whole box): no second ring. */
+  outline: none;
+  box-shadow: none;
+}
+:root[data-theme='glass'] .menu-item:focus-visible {
+  outline-offset: -2px;
+}
+:root[data-theme='glass'] :is(.input, .textarea):focus {
+  border-color: rgba(143, 157, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(143, 157, 255, 0.14);
+}
+:root[data-theme='glass'] .menu-item.active,
+:root[data-theme='glass'] .nav-item.selected,
+:root[data-theme='glass'] .seg-control button.on {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+:root[data-theme='glass'] .menu-check,
+:root[data-theme='glass'] .logo {
+  color: var(--accent);
+}
+:root[data-theme='glass'] .logo {
+  filter: drop-shadow(0 0 10px rgba(143, 157, 255, 0.45));
+}
+:root[data-theme='glass'] .send-btn:not(:disabled) {
+  color: #0a0c18;
+  box-shadow: 0 0 16px rgba(143, 157, 255, 0.35);
+}
+:root[data-theme='glass'] .btn.accent {
+  color: #0a0c18;
+}
+:root[data-theme='glass'] .switch.on {
+  box-shadow: 0 0 12px rgba(143, 157, 255, 0.35);
+}
+:root[data-theme='glass'] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  background-clip: content-box;
+}
+.glass-toggle.on {
+  color: var(--accent);
+  filter: drop-shadow(0 0 6px rgba(143, 157, 255, 0.6));
+}
+
+/* No GPU compositing: skip the blur, and make the panels a little more solid instead. */
+:root.no-blur[data-theme='glass'] * {
+  backdrop-filter: none !important;
+}
+:root.no-blur[data-theme='glass'] :is(.sidebar, .panel, .side-pane, .page-panel, .composer) {
+  background-color: rgba(18, 20, 30, 0.82);
+}
+:root.no-blur[data-theme='glass'] .panel.floating,
+:root.no-blur[data-theme='glass'] .panel.maximized {
+  background-color: var(--bg-floating);
+}
+:root.no-blur[data-theme='glass'] :is(.menu, .modal, .onboarding-card, .toast) {
+  background: rgba(22, 24, 36, 0.97);
+}
+.msg-error-detail {
+  color: var(--text-3);
+  font-size: 12.5px;
+  margin-top: var(--space-2);
+}
+.msg-error-detail summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.msg-error-detail code {
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.msg-error.interrupted {
+  color: var(--text-3);
+}

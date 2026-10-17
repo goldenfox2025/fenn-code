@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+// @ts-expect-error plain ESM script without types
+import { readStyles } from '../scripts/style-check.mjs'
 
 /**
  * A modifier class on a component (`.panel.floating`) must not share its name
@@ -15,7 +16,7 @@ const ALLOWED = new Set([
 ])
 
 function selectors(): string[] {
-  const css = readFileSync('src/renderer/src/styles.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const css = readStyles('src/renderer/src/styles.css').replace(/\/\*[\s\S]*?\*\//g, '')
   return [...css.matchAll(/([^{}]+)\{/g)]
     .flatMap((m) => m[1].split(','))
     .map((s) => s.trim())

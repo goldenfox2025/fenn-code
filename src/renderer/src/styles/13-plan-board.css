@@ -1,0 +1,582 @@
+/* Live plan under a conversation's title */
+.plan-line {
+  flex: none;
+  margin: calc(-1 * var(--space-3)) var(--space-8) var(--space-2);
+  font-size: 12.5px;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.plan-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  border-radius: inherit;
+  color: inherit;
+}
+.plan-summary .chev {
+  margin-left: auto;
+}
+.plan-summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+.plan-text,
+.plan-blocker {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.plan-blocker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--amber);
+}
+.plan-blocker::before {
+  content: '·';
+  color: var(--text-3);
+  margin-right: var(--space-1);
+}
+.plan-line .chev {
+  flex: none;
+  transition: transform 0.15s;
+}
+.plan-line.open .chev {
+  transform: rotate(90deg);
+}
+.plan-body {
+  padding: 0 var(--space-5) var(--space-4);
+  max-height: 40vh;
+  overflow: auto;
+}
+.plan-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  white-space: normal;
+  line-height: 1.5;
+}
+.plan-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.plan-step-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.plan-step.doing {
+  color: var(--text);
+}
+.plan-step.done .plan-step-text {
+  color: var(--text-3);
+}
+.plan-step-time {
+  flex: none;
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.step-icon {
+  flex: none;
+}
+.step-icon.done {
+  fill: var(--text-3);
+  color: var(--bg-floating);
+}
+.step-icon.doing {
+  color: var(--accent);
+}
+.step-icon.doing.live {
+  animation: spin 1.2s linear infinite;
+}
+.step-icon.waiting {
+  color: var(--amber);
+}
+.step-icon.pending {
+  color: var(--text-4);
+}
+.step-icon.pending circle {
+  stroke-dasharray: 2.6 2.6;
+}
+.plan-current-blocker {
+  margin-top: var(--space-4);
+  color: var(--text-2);
+}
+.plan-current-blocker .label {
+  color: var(--amber);
+  margin-right: var(--space-3);
+}
+.plan-history {
+  margin-top: var(--space-3);
+}
+.plan-history summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.plan-history-item {
+  margin-top: var(--space-2);
+  color: var(--text-2);
+}
+.thread-card .plan-headline {
+  flex-basis: 100%;
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  padding-left: var(--thread-indent);
+}
+.thread-card .plan-headline.blocked {
+  color: var(--amber);
+}
+.select-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-2);
+  margin-bottom: var(--space-2);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.list-row.picked {
+  background: var(--bg-active);
+}
+.check-box {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-xs);
+  border: 1.5px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.check-box.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.thread-view .plan-line {
+  margin: var(--space-3) 14px 0;
+}
+
+/* ---- project progress board ---- */
+.ps.todo { color: var(--text-3); }
+.ps.doing { color: var(--blue); }
+.ps.blocked { color: var(--amber); }
+.ps.done { color: var(--green); }
+.progress-head { padding: var(--space-6) var(--space-4) var(--space-3); }
+.progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  margin-top: var(--space-4);
+}
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.2s;
+}
+.progress-group {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.progress-group:last-of-type { border-bottom: none; }
+.progress-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+}
+.progress-row:hover { background: var(--bg-hover); }
+.progress-row.task { padding-left: var(--space-10); }
+.progress-row .icon-btn.sm { opacity: 0; }
+.progress-row:hover .icon-btn.sm,
+.progress-row .icon-btn.sm:focus-visible,
+.progress-row.suggested .icon-btn.sm { opacity: 1; }
+.progress-row .status-btn {
+  display: inline-flex;
+  padding: 1px;
+  border-radius: 50%;
+  margin-top: 1px;
+}
+.progress-row.suggested > svg { margin-top: var(--space-1); flex: none; }
+.progress-text { flex: 1; min-width: 0; }
+.progress-title { line-height: 1.45; word-break: break-word; }
+.progress-row.milestone .progress-title { font-weight: 500; }
+.progress-row.is-done .progress-title { color: var(--text-3); }
+.progress-row.task.is-done .progress-title { text-decoration: line-through; }
+.progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.progress-meta .due.late { color: var(--red); }
+.progress-meta .note { flex-basis: 100%; }
+.link-chip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 7px;
+}
+.link-chip:hover { background: var(--bg-hover); color: var(--text); }
+.progress-suggested {
+  margin: var(--space-2) 0 var(--space-4);
+  padding: var(--space-2) 0;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+}
+.progress-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4);
+}
+.progress-form-row { display: flex; gap: var(--space-4); }
+.progress-form-row > * { flex: 1; min-width: 0; }
+.progress-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  text-align: left;
+  margin-top: var(--space-5);
+  padding: 7px var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.progress-summary:hover { background: var(--bg-hover); }
+.progress-summary .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archived-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin: var(--space-4) var(--space-7) 0;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.archived-banner .grow { flex: 1; }
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-9) 0 var(--space-5);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.section-toggle .chev { transition: transform 0.15s; }
+.section-toggle .chev.closed { transform: rotate(-90deg); }
+.card.archived { opacity: 0.75; }
+.card .progress-bar { margin: 0 0 var(--space-4); }
+
+/* ---- folder suggestions ---- */
+.folder-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) var(--space-4);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  border-radius: 10px;
+  background: var(--bg-hover);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.folder-hint .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-hint .btn { height: 28px; padding: 0 var(--space-5); font-size: 12.5px; }
+.folder-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.folder-suggest .link-chip { display: inline-flex; align-items: center; gap: var(--space-2); padding: 1px var(--space-4); }
+
+.select-btn .mode-note { color: var(--text-3); }
+.account-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); margin-top: var(--space-3); }
+.account-line > * { white-space: nowrap; line-height: 20px; }
+.account-line { min-height: 22px; }
+.select-btn .mode-note.warn { color: var(--amber); }
+.upgrade-log {
+  margin: var(--space-4) 0 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.account-line .text-link:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.settings-modal {
+  position: relative;
+}
+.settings-close {
+  position: absolute;
+  top: 12px;
+  z-index: 2;
+}
+.settings-close.right {
+  right: 12px;
+}
+.settings-close.left {
+  left: 12px;
+}
+/* On macOS the close button sits top-left, above the 设置 title. */
+.settings-modal.mac .settings-nav {
+  padding-top: 52px;
+}
+
+/* Computer-control access prompt: one row per app with its tier. */
+.perm .detail.prose {
+  font-family: inherit;
+  font-size: 13px;
+  background: none;
+  padding: 0;
+  max-height: none;
+}
+.perm-apps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-5);
+}
+.perm-app {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+.perm-app .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.perm-app .muted {
+  color: var(--text-3);
+  margin-left: var(--space-2);
+  font-size: 12px;
+}
+.perm-apps .help {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.seg-control.sm button {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+.computer-backends {
+  margin-top: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.computer-backends .no {
+  color: var(--amber);
+}
+.reenter-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: 18px;
+  padding: var(--space-6) 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  font-size: 13px;
+}
+.reenter-banner ul {
+  margin: var(--space-3) 0 0;
+  padding-left: 18px;
+}
+
+/* Results the agent handed over: a file or link card under the reply, and the project's library. */
+.output-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 420px;
+  margin: var(--space-2) 0 var(--space-5);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.output-card:hover {
+  border-color: var(--accent);
+}
+.output-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 9px;
+  text-align: left;
+}
+.output-main .ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outputs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-6);
+  overflow: auto;
+}
+.output-row .output-card {
+  max-width: none;
+  margin-bottom: var(--space-1);
+}
+.output-row .text-link {
+  margin: 0 0 var(--space-4) var(--space-5);
+}
+.thread-outputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.output-row .text-link {
+  color: var(--text-3);
+}
+.output-row .text-link:hover {
+  color: var(--text);
+}
+
+/* ‹ 2 / 3 › under an edited or regenerated turn: always visible, like Claude's. */
+.version-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.msg-actions:has(.version-switch) {
+  opacity: 1;
+}
+
+/* A reply the agent corrected in place later. */
+.edited-mark {
+  margin-top: var(--space-1);
+}
+
+/* The exact command an install or upgrade will run, shown before asking. */
+.confirm-code {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-code);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 260px;
+  overflow: auto;
+}
+.modal.confirm.has-code {
+  width: min(560px, calc(100vw - 32px));
+}
+.choice .rec {
+  margin-left: var(--space-4);
+}
+.backend-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.backend-card-head > .btn,
+.backend-card-head > .status-chip {
+  flex: none;
+}
+.account-line .account-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Chats page: a row opens the chat; its delete button shows on hover, as in Claude. */
+.list-row.chat-row {
+  padding: 0 var(--space-5) 0 0;
+}
+.chat-row-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-6);
+  text-align: left;
+}
+.chat-row > .icon-btn {
+  opacity: 0;
+}
+.chat-row:hover > .icon-btn,
+.chat-row > .icon-btn:focus-visible {
+  opacity: 1;
+}
+/* An input with a button beside it; both keep the same height. */
+.field-row {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  gap: var(--space-4);
+}
+.field-row > .btn {
+  flex: none;
+  height: auto;
+  min-height: 38px;
+}
+/* A menu takes focus to drive its keyboard navigation; the highlighted item shows where it is, not a ring. */
+.menu:focus-visible,
+:root[data-theme='glass'] .menu:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-pop);
+}

@@ -1,0 +1,54 @@
+/* ---------- home ---------- */
+.home {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Anchored from the top, not centred: a hint, a taller composer or a longer
+     model name below must never make the greeting and the composer jump. */
+  justify-content: flex-start;
+  padding: max(48px, calc(40vh - 110px)) var(--space-9) var(--space-9);
+  overflow-y: auto;
+}
+.greeting {
+  font-family: var(--font-serif);
+  font-size: 38px;
+  font-weight: 400;
+  margin: 0 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  letter-spacing: -0.01em;
+}
+.greeting .logo {
+  color: var(--accent);
+}
+.home .composer-wrap {
+  width: 100%;
+  padding: 0;
+}
+.home .composer {
+  max-width: 680px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: center;
+  margin-top: var(--space-7);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 32px;
+  padding: 0 var(--space-6);
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 13.5px;
+  background: var(--bg);
+}
+.chip:hover {
+  background: var(--bg-hover);
+}

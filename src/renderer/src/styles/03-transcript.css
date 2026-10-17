@@ -1,0 +1,519 @@
+/* ---------- transcript ---------- */
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.transcript {
+  max-width: calc(var(--turn-width) + 2 * var(--turn-gutter));
+  margin: 0 auto;
+  padding: var(--space-4) var(--turn-gutter) var(--space-11);
+}
+.day-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  color: var(--text-3);
+  font-size: 12.5px;
+  margin: var(--space-4) 0 18px;
+}
+.day-divider::before,
+.day-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--border-strong);
+}
+.msg {
+  margin: 0 0 var(--space-8);
+  position: relative;
+}
+.msg-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.bubble {
+  background: var(--bg-user);
+  /* Glass draws a hairline here; every look keeps its width so nothing moves when glass is switched. */
+  border: 1px solid transparent;
+  border-radius: var(--radius-xl);
+  padding: var(--space-5) var(--space-7);
+  max-width: 82%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.msg-system {
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+.md {
+  font-size: var(--font-body);
+  line-height: var(--line-body);
+  color: var(--text);
+  word-break: break-word;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0 0 var(--space-6);
+}
+.md ul,
+.md ol {
+  margin: 0 0 var(--space-6);
+  padding-left: var(--space-9);
+}
+.md li {
+  margin: var(--space-2) 0;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-weight: 600;
+  margin: var(--space-8) 0 var(--space-5);
+  line-height: 1.35;
+}
+.md h1 {
+  font-size: 22px;
+}
+.md h2 {
+  font-size: 18px;
+}
+.md h3 {
+  font-size: 16px;
+}
+.md a {
+  color: var(--link);
+  text-decoration: none;
+}
+.md a:hover {
+  text-decoration: underline;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 1px var(--space-2);
+}
+.md pre {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6) var(--space-7);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.md pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+}
+.md blockquote {
+  margin: 0 0 var(--space-6);
+  padding: var(--space-1) var(--space-7);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0 0 var(--space-6);
+  font-size: 14px;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: var(--space-3) var(--space-5);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--space-8) 0;
+}
+.spark {
+  color: var(--accent);
+  animation: spin 2.4s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fold {
+  margin: 0 0 var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.fold-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-4) var(--space-6);
+  color: var(--text-2);
+  font-size: 13.5px;
+  text-align: left;
+}
+.fold-head:hover {
+  background: var(--bg-hover);
+}
+.fold-head .t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fold-body {
+  border-top: 1px solid var(--border);
+  padding: var(--space-5) var(--space-6);
+  font-size: 13px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+}
+.fold-body.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+/* Thinking and tool calls, as in Claude: no card, just a muted line that opens into steps along a thin rail. */
+.steps-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--turn-row);
+  padding: 0;
+  color: var(--text-3);
+  font-size: var(--font-md);
+  line-height: var(--line-ui);
+  background: none;
+}
+.steps-toggle:hover {
+  color: var(--text-2);
+}
+.steps-chevron {
+  transition: transform 0.15s ease;
+}
+.steps.open .steps-chevron {
+  transform: rotate(90deg);
+}
+.steps-toggle.live span {
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-3) 40%, var(--text) 50%, var(--text-3) 60%, var(--text-3) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: steps-shimmer 1.8s linear infinite;
+}
+@keyframes steps-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+.steps-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 640px;
+}
+/* The rail: process steps, the plan and quiet notices all hang off the same thin line. */
+.steps-body,
+.notice {
+  margin: var(--space-3) 0 0 var(--space-1);
+  padding: 0 0 0 var(--space-7);
+  border-left: 2px solid var(--border);
+}
+.steps-body {
+  max-height: 520px;
+  overflow: auto;
+}
+.step-thought {
+  font-size: var(--font-sm);
+  color: var(--text-3);
+  line-height: var(--step-line);
+  white-space: pre-wrap;
+  padding: var(--space-1) 0;
+}
+.status-ic {
+  flex: none;
+  display: inline-flex;
+}
+.status-ic.completed {
+  color: var(--green);
+}
+.status-ic.failed {
+  color: var(--red);
+}
+.status-ic.running,
+.status-ic.pending {
+  color: var(--text-3);
+}
+.tools-group {
+  margin: 0 0 var(--space-6);
+}
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
+  color: var(--text-3);
+  font-size: var(--font-sm);
+  line-height: var(--step-line);
+  width: 100%;
+  text-align: left;
+}
+.tool-row:hover {
+  color: var(--text);
+}
+.tool-row .t {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-detail {
+  margin: var(--space-1) 0 var(--space-4) 22px;
+  border-radius: var(--radius-md);
+  background: var(--bg-code);
+  padding: var(--space-4) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 260px;
+  overflow: auto;
+  color: var(--text-2);
+}
+.steps-body .plan {
+  padding: var(--space-1) 0 var(--space-3);
+}
+.plan-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  font-size: 14px;
+  padding: 1px 0;
+  color: var(--text-3);
+}
+.plan-item.in_progress {
+  color: var(--text);
+}
+.plan-item.completed {
+  color: var(--text-3);
+}
+.plan-item .mark {
+  width: 16px;
+  flex: none;
+  text-align: center;
+}
+.notice {
+  font-size: 14px;
+  color: var(--text-3);
+}
+.notice.warning {
+  color: var(--amber);
+  border-left-color: currentColor;
+}
+.notice.error,
+.msg-error {
+  color: var(--red);
+  border-left: 2px solid currentColor;
+  margin: var(--space-3) 0 var(--space-6) var(--space-1);
+  padding: 0 0 0 14px;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+}
+.msg-actions {
+  display: flex;
+  align-items: center;
+  height: var(--turn-row);
+  gap: var(--space-1);
+  opacity: 0;
+  transition: opacity 0.12s;
+  position: absolute;
+  left: calc(-1 * var(--space-2));
+  bottom: calc(-1 * var(--turn-space));
+  z-index: 1;
+}
+.msg:hover .msg-actions {
+  opacity: 1;
+}
+.msg-user .msg-actions {
+  left: auto;
+  right: 0;
+}
+.reactions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.reactions.on-user {
+  justify-content: flex-end;
+  margin-top: calc(-1 * var(--space-3));
+  position: relative;
+  z-index: 1;
+}
+.reaction {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0 var(--space-4);
+  font-size: 13px;
+  line-height: 22px;
+  background: var(--bg-elevated);
+}
+
+/* thread card in project chat */
+.thread-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+  margin: 0;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  width: 100%;
+  text-align: left;
+  font-size: 13.5px;
+}
+.thread-card:hover {
+  border-color: var(--border-strong);
+}
+.thread-card .t {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A message between two threads: on the sender's reply, and in the receiving thread. */
+.peer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  font-size: var(--font-sm);
+}
+.peer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.peer-head > svg {
+  flex: none;
+}
+.peer-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+}
+.peer-link {
+  color: var(--text);
+  font-weight: 500;
+}
+.peer-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.peer-card .btn {
+  height: auto;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--font-xs);
+}
+.peer-card .chev {
+  transition: transform 0.15s;
+}
+.peer-card .chev.open {
+  transform: rotate(90deg);
+}
+.peer-preview,
+.peer-text {
+  padding-left: var(--thread-indent);
+  color: var(--text-3);
+}
+.peer-text {
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.peer-outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 0 var(--thread-indent);
+}
+.peer-output {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-size: var(--font-xs);
+}
+.peer-output:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.peer-card.state-cancelled,
+.peer-card.state-failed {
+  opacity: 0.7;
+}
+/* In the receiving thread it stands where a user message would, on its own. */
+.msg-peer {
+  /* The same space below as the turn above leaves before it. */
+  margin: 0 0 var(--turn-space);
+}
+.status-chip {
+  font-size: 12px;
+  padding: 1px var(--space-4);
+  border-radius: 10px;
+  background: var(--bg-hover);
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.status-chip.working {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.status-chip.waiting {
+  color: var(--amber);
+  background: rgba(183, 121, 31, 0.12);
+}
+.status-chip.done {
+  color: var(--green);
+  background: rgba(63, 138, 79, 0.1);
+}
+.status-chip.error {
+  color: var(--red);
+  background: rgba(196, 66, 59, 0.1);
+}

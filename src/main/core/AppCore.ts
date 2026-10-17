@@ -67,6 +67,7 @@ export class AppCore {
     this.chat = new ChatService(store, backends, publish)
     if (store.settings.acpDebugLog) setAcpDebugLog(this.logDir)
     this.memory = new ProjectMemory(store.dir)
+    this.memory.onChange = (projectId) => this.publish({ type: 'memory-changed', projectId })
     this.files = new ProjectFiles(store.dir)
     this.artifacts = new Artifacts(store.dir)
     this.orchestrator = new Orchestrator(store, this.chat, tools, this.memory, this.files, this.artifacts, backends)

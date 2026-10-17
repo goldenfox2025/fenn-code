@@ -445,6 +445,8 @@ export type AppEvent =
   | { type: 'message-removed'; conversationId: string; id: string }
   | { type: 'routine'; routine: Routine }
   | { type: 'routine-removed'; id: string }
+  /** A project's memory was written or an entry removed. */
+  | { type: 'memory-changed'; projectId: string }
   | { type: 'peer-message'; message: PeerMessage }
   | { type: 'settings'; settings: AppSettings }
   | { type: 'backends'; backends: BackendSummary[] }
