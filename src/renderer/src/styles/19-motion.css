@@ -45,6 +45,24 @@ a,
 .side-pane {
   animation: slide-in var(--dur-3) var(--ease);
 }
+/* Work under way (a reply's steps, loading models, compacting): the words shimmer, as Claude's do. */
+.shimmer,
+.steps-toggle.live span {
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-3) 40%, var(--text) 50%, var(--text-3) 60%, var(--text-3) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
 /* Dragging a pane wider or narrower follows the pointer exactly. */
 body.resizing * {
   transition: none !important;

@@ -143,6 +143,10 @@ export class Store {
     }
     return list
   }
+  /** A conversation's messages without keeping them loaded (for a pass over every chat). */
+  peekMessages(conversationId: string): Message[] {
+    return this.messages.get(conversationId) ?? readJson<Message[]>(join(this.dir, 'messages', `${conversationId}.json`)) ?? []
+  }
   message(conversationId: string, id: string): Message | undefined {
     return this.messagesOf(conversationId).find((m) => m.id === id)
   }

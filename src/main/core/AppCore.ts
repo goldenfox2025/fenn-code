@@ -7,8 +7,9 @@ import { existsSync, mkdirSync, readdirSync, rmdirSync, statSync, writeFileSync 
 import { join } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
-import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate } from '../../shared/model'
+import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageDay } from '../../shared/model'
 import { removeTurn } from '../../shared/usage'
+import { UsageCalendar } from './UsageCalendar'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import type { ToolServer } from '../tools/ToolServer'
@@ -37,6 +38,8 @@ import { classifyError } from '../../shared/errors'
 /** An unanswered request to control the computer gives up after this long. */
 const ASK_TIMEOUT_MS = 3 * 60_000
 // A model picked before a chat starts: its own choices are read once the user has stopped picking for this long.
+/** How long the model picker waits for an agent that is still starting (Antigravity takes 15–25 s on Windows). */
+const PROBE_TIMEOUT_MS = 90_000
 const PROBE_SETTLE_MS = 1500
 
 export class AppCore {
@@ -46,6 +49,7 @@ export class AppCore {
   readonly scheduler: Scheduler
   readonly peers: PeerMail
   readonly memory: ProjectMemory
+  private readonly calendar: UsageCalendar
   readonly files: ProjectFiles
   readonly artifacts: Artifacts
   computer?: ComputerControl
@@ -70,6 +74,8 @@ export class AppCore {
     this.chat = new ChatService(store, backends, publish)
     if (store.settings.acpDebugLog) setAcpDebugLog(this.logDir)
     this.memory = new ProjectMemory(store.dir)
+    this.calendar = new UsageCalendar(store)
+    this.chat.turnEndListeners.add((id) => this.calendar.add(store.messagesOf(id).findLast((m) => m.role === 'assistant')))
     this.memory.onChange = (projectId) => this.publish({ type: 'memory-changed', projectId })
     this.files = new ProjectFiles(store.dir)
     this.artifacts = new Artifacts(store.dir)
@@ -647,7 +653,7 @@ export class AppCore {
   private probeModels(backendId: string, modelId: string | undefined): Promise<BackendModelCatalog> {
     const key = `${backendId}\0${modelId ?? ''}`
     const pending = this.modelProbes.get(key)
-    if (pending) return pending
+    if (pending) return this.notTooLong(key, backendId, pending)
     const probe = this.backends.modelCatalog(backendId, modelId).then((info) => {
       const catalog = { models: info.models ?? [], current: info.currentModelId, options: info.options }
       this.chat.rememberModels(backendId, catalog.models, catalog.current, catalog.options)
@@ -659,7 +665,29 @@ export class AppCore {
       throw err
     }).finally(() => this.modelProbes.delete(key))
     this.modelProbes.set(key, probe)
-    return probe
+    return this.notTooLong(key, backendId, probe)
+  }
+
+  /**
+   * The picker stops waiting after a while and offers 重试; the probe itself goes on, and the
+   * models it finds later are kept, so the retry answers from them (or joins the same probe).
+   */
+  private probeWaits = new Map<string, Promise<BackendModelCatalog>>()
+
+  private notTooLong(key: string, backendId: string, probe: Promise<BackendModelCatalog>): Promise<BackendModelCatalog> {
+    const waiting = this.probeWaits.get(key)
+    if (waiting) return waiting
+    let timer: NodeJS.Timeout | undefined
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(t('{0} 启动太久了，还没给出模型列表。', this.backends.nameOf(backendId)))), PROBE_TIMEOUT_MS)
+      timer.unref()
+    })
+    const wait = Promise.race([probe, late]).finally(() => {
+      clearTimeout(timer)
+      this.probeWaits.delete(key)
+    })
+    this.probeWaits.set(key, wait)
+    return wait
   }
 
   /** Set by the Electron shell: open a file with its default app, or show it in its folder. */
@@ -1262,6 +1290,10 @@ export class AppCore {
 
   async convertToThread(conversationId: string, messageId: string): Promise<void> {
     this.orchestrator.convertToThread(conversationId, messageId)
+  }
+
+  usageCalendar(): Promise<UsageDay[]> {
+    return this.calendar.list()
   }
 
   appInfo(): AppInfo {

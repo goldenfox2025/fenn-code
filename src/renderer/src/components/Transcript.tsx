@@ -158,7 +158,7 @@ export const MessageView = memo(function MessageView({
   // A button's turn (压缩上下文) reads as one line; only a failure shows the reply.
   if (m.action) {
     if (m.role === 'user') return null
-    const line = <div className="day-divider">{m.state === 'streaming' ? t('正在压缩上下文…') : m.state === 'done' ? t('已压缩上下文') : t('压缩上下文')}</div>
+    const line = <div className="day-divider">{m.state === 'streaming' ? <span className="shimmer">{t('正在压缩上下文…')}</span> : m.state === 'done' ? t('已压缩上下文') : t('压缩上下文')}</div>
     if (m.state === 'streaming' || m.state === 'done') return line
     return (
       <>

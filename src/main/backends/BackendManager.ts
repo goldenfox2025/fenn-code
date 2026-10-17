@@ -97,7 +97,7 @@ export class BackendManager {
     await this.restart(backendId, t('{0} 的设置已更改，已重新启动。请点「重试」。', this.nameOf(backendId)))
   }
 
-  private nameOf(backendId: string): string {
+  nameOf(backendId: string): string {
     return this.opts.plugins.find((p) => p.id === backendId)?.name ?? backendId
   }
 

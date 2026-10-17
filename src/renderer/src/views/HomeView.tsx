@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
 import { Composer } from '../components/Composer'
+import { UsageHeatmap } from '../components/UsageHeatmap'
 import type { Attachment } from '@shared/model'
 import { api, useApp, toastError } from '../store'
 import { greeting } from '../util'
@@ -81,6 +82,7 @@ export function HomeView({ folder: initialFolder }: { folder?: string }) {
           <FolderKanban size={15} />
           {t('新建项目')}</button>
       </div>
+      <UsageHeatmap />
     </div>
   )
 }

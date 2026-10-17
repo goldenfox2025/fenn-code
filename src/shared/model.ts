@@ -58,6 +58,14 @@ export const searchable = (q: string): boolean => {
   return t.length >= 2 || /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/.test(t)
 }
 
+/** One day's usage across every chat: new input plus output, as replies reported them. */
+export interface UsageDay {
+  /** Local date, YYYY-MM-DD. */
+  day: string
+  tokens: number
+  replies: number
+}
+
 export interface Message {
   id: string
   conversationId: string
@@ -593,6 +601,8 @@ export interface AncoraApi {
   reloadBackends(): Promise<{ backends: BackendSummary[]; error?: string }>
   backendsConfigStatus(): Promise<{ error?: string; example: string }>
   appInfo(): Promise<AppInfo>
+  /** Tokens used per day across every chat (the home page's heatmap). */
+  usageCalendar(): Promise<UsageDay[]>
   /** Moves a request the project chat answered inline into a new thread. */
   convertToThread(conversationId: string, messageId: string): Promise<void>
   checkForUpdates(): Promise<UpdateCheck>

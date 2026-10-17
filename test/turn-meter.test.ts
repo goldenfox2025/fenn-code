@@ -17,11 +17,15 @@ describe('observed streaming timings', () => {
     chunk(3200)
     expect(m.finish({ output: 11 }, 'end_turn')).toEqual({ firstResponseMs: 2000, streamMs: 1200, outputTokens: 11, tpotMs: 120 })
   })
-  it('gives no speed for a reply that arrives in one burst (buffered output)', () => {
+  it('times a reply that arrives in one burst (buffered output) from the send', () => {
     const { m, chunk } = meter()
     chunk(1000)
     chunk(1031)
-    expect(m.finish({ output: 380 }, 'end_turn')).toEqual({ firstResponseMs: 1000 })
+    expect(m.finish({ output: 380 }, 'end_turn')).toEqual({ firstResponseMs: 1000, streamMs: 1031, outputTokens: 380, tpotMs: 1031 / 379 })
+    const quick = meter()
+    quick.chunk(300)
+    quick.chunk(310)
+    expect(quick.m.finish({ output: 380 }, 'end_turn')).toEqual({ firstResponseMs: 300 })
   })
   it('does not derive TPOT from missing counts, partial replies, a single chunk, or untrusted counts', () => {
     const { m, chunk } = meter()

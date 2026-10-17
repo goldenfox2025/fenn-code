@@ -158,7 +158,7 @@ function CommandEntry({ command: b, owner }: { command: BackgroundCommand; owner
               {output}
             </pre>
           ) : (
-            <div className="preview">{output == null ? t('正在读取输出…') : running ? t('还没有输出') : t('没有输出')}</div>
+            <div className="preview">{output == null ? <span className="shimmer">{t('正在读取输出…')}</span> : running ? t('还没有输出') : t('没有输出')}</div>
           )}
         </>
       )}

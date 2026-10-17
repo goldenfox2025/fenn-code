@@ -46,8 +46,11 @@ export class TurnMeter {
     if (this.first === undefined) return undefined
     const timing: GenerationTiming = { firstResponseMs: Math.max(0, this.first - this.started) }
     const output = usage?.output
-    const genMs = this.last! - this.first - this.toolMs
-    if (reliableTokens && stop === 'end_turn' && !this.interrupted && !this.open.size && this.chunks > 1 &&
+    let genMs = this.last! - this.first - this.toolMs
+    // Output that arrives in one burst (an agent that buffers it) says nothing about speed on its own:
+    // time it from the send instead, which counts the model's thinking before the burst.
+    if (genMs < MIN_STREAM_MS) genMs = this.last! - this.started - this.toolMs
+    if (reliableTokens && stop === 'end_turn' && !this.interrupted && !this.open.size &&
       output !== undefined && Number.isSafeInteger(output) && output > 1 && genMs >= MIN_STREAM_MS) {
       timing.streamMs = genMs
       timing.outputTokens = output

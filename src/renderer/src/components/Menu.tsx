@@ -14,6 +14,8 @@ export interface MenuItem {
   checked?: boolean
   /** A line of information, not a choice (shown at full strength, never clickable). */
   info?: boolean
+  /** Work under way (loading the models): the label shimmers. */
+  busy?: boolean
   /** A key (shown muted on the right) that picks this item while the menu is open, as in Claude's model menu. */
   shortcut?: string
   /** Muted text on the right, e.g. the current value of a submenu. */
@@ -272,7 +274,7 @@ export function Menu({
           >
             {it.icon}
             <span className="menu-text">
-              {it.label}
+              {it.busy ? <span className="shimmer">{it.label}</span> : it.label}
               {it.sub && <span className="sub">{it.sub}</span>}
             </span>
             {it.hint && <span className="menu-hint">{it.hint}</span>}

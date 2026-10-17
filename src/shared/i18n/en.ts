@@ -970,4 +970,13 @@ export const en: Record<string, string> = {
   "没有输出": "No output",
   "自动压缩上下文": "Auto-compacting context",
   "搜索了 {0} 次网页": "Searched the web {0} {0:time|times}",
+  "{0} 启动太久了，还没给出模型列表。": "{0} is taking too long to start and hasn't listed its models yet.",
+  "正在启动 {0}…": "Starting {0}…",
+  "第一次可能要半分钟": "The first start can take half a minute",
+  "每天的 token 用量": "Tokens per day",
+  "{0} 天有用量": "{0} active {0:day|days}",
+  "少": "Less",
+  "多": "More",
+  "{0}：{1} tokens · {2} 条回复": "{0}: {1} tokens · {2} {2:reply|replies}",
+  "{0}：没有用量": "{0}: no usage",
 }

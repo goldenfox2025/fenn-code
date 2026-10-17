@@ -124,8 +124,11 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
   const [name, setName] = useState(existing?.name ?? '')
   const [prompt, setPrompt] = useState(existing?.prompt ?? '')
   const [target, setTarget] = useState(existing?.target.projectId ?? projectId ?? '')
+  const defaultBackend = useApp((s) => s.settings.defaultBackendId)
   const [backendId, setBackendId] = useState(existing?.backendId ?? '')
   const usableForRoutine = useUsableBackends(backendId)
+  // A backend is always named: the default one to start with, else the first that works.
+  const shownBackend = backendId || (usableForRoutine.find((b) => b.id === defaultBackend) ?? usableForRoutine[0])?.id || ''
   const [schedule, setSchedule] = useState<Schedule>(existing?.schedule ?? { kind: 'daily', time: '09:00' })
 
   const save = async () => {
@@ -136,7 +139,8 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
       prompt: prompt.trim(),
       schedule,
       target: target ? { projectId: target } : {},
-      backendId: backendId || undefined,
+      // Results in a project go to its chat, which has its own backend.
+      backendId: target ? existing?.backendId : shownBackend || undefined,
       enabled: existing?.enabled ?? true
     } as Routine)
     toast(existing ? t('已保存定时任务') : t('已创建定时任务'))
@@ -233,14 +237,12 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
           ]}
         />
       </div>
-      <div className="field">
-        <label>{t('Agent 后端')}</label>
-        <Dropdown
-          value={backendId}
-          onChange={setBackendId}
-          options={[{ value: '', label: t('默认') }, ...usableForRoutine.map(backendOption)]}
-        />
-      </div>
+      {!target && (
+        <div className="field">
+          <label>{t('Agent 后端')}</label>
+          <Dropdown value={shownBackend} onChange={setBackendId} options={usableForRoutine.map(backendOption)} />
+        </div>
+      )}
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
           {t('取消')}</button>
@@ -439,7 +441,7 @@ function AboutSettings() {
             <label>{t('检查更新')}</label>
             <div className="help">
               {check === 'checking'
-                ? t('正在检查…')
+                ? <span className="shimmer">{t('正在检查…')}</span>
                 : check?.status === 'latest'
                   ? t('已是最新版本（{0}）', check.version)
                   : check?.status === 'available'
@@ -822,7 +824,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
             if (el) el.scrollTop = el.scrollHeight
           }}
         >
-          {output || t('正在启动…')}
+          {output || <span className="shimmer">{t('正在启动…')}</span>}
         </pre>
       )}
       {failed && !running && (

@@ -253,6 +253,14 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     }
   }, [bid, wanted, conversation?.id, conversation?.sessionRef?.sessionId, busy, currentBackend?.installed, accounts[bid]?.signedIn, retry])
   const loadingModels = catalog.loading || catalog.for !== bid
+  // Some agents take a while to start (Antigravity: 15–25 s on Windows): after a few seconds, say so.
+  const [slowStart, setSlowStart] = useState(false)
+  useEffect(() => {
+    setSlowStart(false)
+    if (!loadingModels) return
+    const timer = setTimeout(() => setSlowStart(true), 4000)
+    return () => clearTimeout(timer)
+  }, [loadingModels, bid])
   catalogFor.current = { id: catalog.for, needsLogin: catalog.needsLogin }
 
   // One choice at a time; the message waits until it has been applied.
@@ -330,7 +338,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     const items: MenuItem[] = []
     if (signedOut) items.push({ label: t('{0} 还没登录', currentBackend!.name), hint: t('去登录'), onClick: manageItem.onClick })
     else if (!models.length) {
-      if (loadingModels) items.push({ label: t('正在加载模型…'), info: true })
+      if (loadingModels)
+        items.push(slowStart ? { label: t('正在启动 {0}…', currentBackend?.name ?? bid), sub: t('第一次可能要半分钟'), info: true, busy: true } : { label: t('正在加载模型…'), info: true, busy: true })
       else if (catalog.error) items.push({ label: t('无法加载模型列表'), hint: t('重试'), onClick: () => setRetry((n) => n + 1) })
     }
     const setModel = (id: string) => {
@@ -361,7 +370,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     return items
   }
   // An open menu shows the models as soon as they arrive.
-  useEffect(() => updateMenu(menuFor.current === 'model' ? modelItems() : backendItems()), [models.length, loadingModels, catalog.error, catalog.needsLogin, bid])
+  useEffect(() => updateMenu(menuFor.current === 'model' ? modelItems() : backendItems()), [models.length, loadingModels, slowStart, catalog.error, catalog.needsLogin, bid])
   const menuFor = useRef<'model' | 'backend'>('model')
   const open = (which: 'model' | 'backend', el: HTMLElement) => {
     menuFor.current = which

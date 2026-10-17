@@ -35,7 +35,6 @@ function timingLine(timing: GenerationTiming): string {
   const parts = [t('首个回复 {0}', seconds(timing.firstResponseMs))]
   const speed = tokensPerSecond(timing)
   if (speed !== undefined) parts.push(rate(speed))
-  if (speed !== undefined && timing.tpotMs !== undefined) parts.push(t('每个 token {0}', seconds(timing.tpotMs)))
   return parts.join(' · ')
 }
 
@@ -99,12 +98,11 @@ export function tokensPerSecond(timing?: GenerationTiming): number | undefined {
   return timing.outputTokens / (timing.streamMs / 1000)
 }
 
-/** One line of the panel: a label (with a colored dot for a share) and its figure on the right. */
-function Row({ label, value, dot, note, tip }: { label: ReactNode; value?: ReactNode; dot?: string; note?: ReactNode; tip?: string }) {
+/** One line of the panel: a label and its figure on the right. */
+function Row({ label, value, note, tip }: { label: ReactNode; value?: ReactNode; note?: ReactNode; tip?: string }) {
   return (
     <div className="usage-row">
       <span className="usage-label">
-        {dot && <i className={'usage-dot part-' + dot} />}
         {label}
         {note && <span className="usage-note">{note}</span>}
       </span>
@@ -119,9 +117,9 @@ function Row({ label, value, dot, note, tip }: { label: ReactNode; value?: React
  * output) on one stacked bar, then cost and speed. Only reported figures.
  */
 function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timing?: GenerationTiming }) {
-  const rounds = u ? u.turns + u.unreported : 0
   const hasCtx = u?.contextUsed !== undefined
-  if (!u || (rounds === 0 && !hasCtx))
+  const cost = u?.cost && u.cost.amount > 0 ? u.cost : undefined
+  if (!u || (!hasCtx && !cost && !timing))
     return (
       <div className="usage-panel">
         <div className="usage-head">{scope}</div>
@@ -129,17 +127,7 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
       </div>
     )
   const from = [u.contextSource && t(SOURCE[u.contextSource]), u.contextSizeSource === 'table' && t(SOURCE.table)].filter(Boolean).join(' · ')
-  const parts = (
-    [
-      ['cache', tk('缓存读取'), u.cachedRead ?? 0],
-      ['write', tk('缓存写入'), u.cachedWrite ?? 0],
-      ['input', tk('新输入'), u.input],
-      ['output', tk('输出'), u.output]
-    ] as const
-  ).filter(([, , v]) => v > 0)
-  const all = parts.reduce((n, [, , v]) => n + v, 0)
   const speed = tokensPerSecond(timing)
-  const share = (v: number) => (v / all >= 0.995 ? '100%' : percent(v, all))
   return (
     <div className="usage-panel">
       <div className="usage-head">{scope}</div>
@@ -153,39 +141,19 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
           {u.contextSize ? <Meter label={t('上下文')} used={u.contextUsed!} total={u.contextSize} colored /> : <div className="usage-foot">{t('不知道窗口大小，所以不显示百分比')}</div>}
         </div>
       )}
-      {u.turns > 0 && all > 0 ? (
+      {cost && (
         <div className="usage-section">
-          <Row label={t('累计 tokens')} note={t('共 {0} 轮', rounds)} value={formatTokens(all)} />
-          <span className="usage-stack" aria-hidden="true">
-            {parts.map(([key, , v]) => (
-              <span key={key} className={'usage-dot part-' + key} style={{ width: `${(v / all) * 100}%` }} />
-            ))}
-          </span>
-          {parts.map(([key, label, v]) => (
-            <Row
-              key={key}
-              dot={key}
-              label={t(label)}
-              note={key === 'output' && u.thought ? t('含思考 {0}', formatTokens(u.thought)) : undefined}
-              value={`${formatTokens(v)} · ${share(v)}`}
-            />
-          ))}
-          {/* Every model call in a turn reads the whole context again; a turn with many tool calls counts it many times. */}
-          {u.contextUsed !== undefined && all > u.contextUsed * 2 && (
-            <div className="usage-foot">{t('agent 每调用一次模型都会把上下文重新读一遍，一轮里调用工具越多，累计就越多；其中读缓存的部分便宜得多。')}</div>
-          )}
-        </div>
-      ) : (
-        rounds > 0 && (
-          <div className="usage-section">
-            <Row label={t('共 {0} 轮', rounds)} />
-            <div className="usage-foot">{t('这个 agent 只报告上下文，不报告每轮的 token 数。')}</div>
-          </div>
-        )
-      )}
-      {u.cost && u.cost.amount > 0 && (
-        <div className="usage-section">
-          <Row label={t('费用')} note={t('按标价估算')} value={formatCost(u.cost)} tip={t('订阅账号不实际扣费')} />
+          <Row label={t('费用')} note={t('按标价估算')} value={formatCost(cost)} tip={t('订阅账号不实际扣费')} />
+          {(u.unreported > 0 && u.turns > 0) || u.costSkipped ? (
+            <div className="usage-foot">
+              {[
+                u.unreported > 0 && u.turns > 0 ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : '',
+                u.costSkipped ? t('另有 {0} 轮的费用用的是别的币种，没有计入', u.costSkipped) : ''
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          ) : null}
         </div>
       )}
       {timing && (
@@ -193,19 +161,8 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
           <div className="usage-head">{t('最近一次回复')}</div>
           <Row label={t('首个回复')} value={seconds(timing.firstResponseMs)} />
           {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Ancora 看到的输出时间计算，不含工具运行的时间')} />}
-          {speed !== undefined && timing.tpotMs !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs)} />}
         </div>
       )}
-      {(u.unreported > 0 && u.turns > 0) || u.costSkipped ? (
-        <div className="usage-foot">
-          {[
-            u.unreported > 0 && u.turns > 0 ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : '',
-            u.costSkipped ? t('另有 {0} 轮的费用用的是别的币种，没有计入', u.costSkipped) : ''
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -222,7 +179,7 @@ const BUCKET: Record<string, string> = { Plan: tk('套餐'), 'Add-on': tk('加�
 export function creditsMenu(quota: CreditQuota | undefined, name: string, loading: boolean): MenuItem[] {
   const items: MenuItem[] = [{ heading: t('{0} 账户额度', name) }]
   if (!quota) {
-    items.push({ label: loading ? t('正在查询额度…') : t('后端未提供'), info: true })
+    items.push({ label: loading ? t('正在查询额度…') : t('后端未提供'), info: true, busy: loading })
     return items
   }
   for (const b of quota.buckets) {

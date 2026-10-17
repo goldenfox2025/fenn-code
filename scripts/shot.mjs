@@ -18,6 +18,24 @@ if (process.env.MANY_BACKENDS) {
   writeFileSync(join(dataDir, 'backends.json'), JSON.stringify(names.slice(0, Number(process.env.MANY_BACKENDS)).map((name, i) => ({ id: 'extra' + i, name, command: process.execPath, args: [agent] }))))
 }
 declareTestAgent(dataDir)
+// A year of earlier replies, so the home page's usage heatmap has something to show.
+if (scenario.includes('heatmap')) {
+  const now = Date.now()
+  const day = 86400000
+  let seed = 7
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const messages = []
+  for (let d = 330; d >= 0; d--) {
+    const weekend = new Date(now - d * day).getDay() % 6 === 0
+    if (rand() < (weekend ? 0.7 : 0.25)) continue
+    const n = 1 + Math.floor(rand() * (d < 60 ? 12 : 5))
+    for (let i = 0; i < n; i++)
+      messages.push({ id: `seed-${d}-${i}`, conversationId: 'seed', role: 'assistant', state: 'done', createdAt: now - d * day + i * 60000, blocks: [{ type: 'text', text: '…' }], usage: { input: Math.floor(rand() * 40000), output: Math.floor(rand() * 6000) } })
+  }
+  mkdirSync(join(dataDir, 'messages'), { recursive: true })
+  writeFileSync(join(dataDir, 'messages', 'seed.json'), JSON.stringify(messages))
+  writeFileSync(join(dataDir, 'state.json'), JSON.stringify({ version: 1, projects: [], routines: [], conversations: [{ id: 'seed', kind: 'chat', title: '去年的对话', backendId: 'mock', status: 'idle', createdAt: now - 330 * day, updatedAt: now - 330 * day }], settings: { onboarded: true }, backendSettings: {} }))
+}
 const app = await electron.launch({
   ...(process.env.APP_PATH ? { executablePath: process.env.APP_PATH, args: ['--no-sandbox'] } : { args: ['.', '--no-sandbox'] }),
   env: { ...process.env, ANCORA_DATA_DIR: dataDir },
@@ -622,6 +640,16 @@ const scenarios = {
     await shot('10-project')
   },
   // The files and background pane beside a chat, and the / menu.
+  async heatmap() {
+    await page.setViewportSize({ width: 1400, height: 900 })
+    await page.click('.sidebar .nav-item:has-text("新建")')
+    await page.waitForSelector('.heatmap')
+    await wait(400)
+    await shot('heatmap')
+    await page.hover('.heatmap-week:nth-last-child(3) .heat-cell.l3, .heatmap-week:nth-last-child(3) .heat-cell.l4, .heatmap-week:nth-last-child(3) .heat-cell.l2')
+    await wait(500)
+    await shot('heatmap-tip')
+  },
   async bubbles() {
     await page.setViewportSize({ width: 1200, height: 800 })
     const c = await page.evaluate(() => window.ancora.startChat({ text: '你好', backendId: 'mock' }))
