@@ -25,12 +25,13 @@ if (scenario.includes('heatmap')) {
   let seed = 7
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
   const messages = []
+  const MODELS = [{ backendId: 'mock', id: 'mock-smart', name: 'Mock Smart' }, { backendId: 'mock', id: 'mock-fast', name: 'Mock Fast' }, { backendId: 'codex', id: 'gpt', name: 'GPT' }, { backendId: 'grok', id: 'grok', name: 'Grok' }, { backendId: 'claude', id: 'sonnet', name: 'Sonnet' }, { backendId: 'qoder', id: 'auto', name: 'Auto' }]
   for (let d = 330; d >= 0; d--) {
     const weekend = new Date(now - d * day).getDay() % 6 === 0
     if (rand() < (weekend ? 0.7 : 0.25)) continue
     const n = 1 + Math.floor(rand() * (d < 60 ? 12 : 5))
     for (let i = 0; i < n; i++)
-      messages.push({ id: `seed-${d}-${i}`, conversationId: 'seed', role: 'assistant', state: 'done', createdAt: now - d * day + i * 60000, blocks: [{ type: 'text', text: '…' }], usage: { input: Math.floor(rand() * 40000), output: Math.floor(rand() * 6000) } })
+      messages.push({ id: `seed-${d}-${i}`, conversationId: 'seed', role: 'assistant', state: 'done', createdAt: now - d * day + i * 60000, blocks: [{ type: 'text', text: '…' }], usage: { input: Math.floor(rand() * 40000), output: Math.floor(rand() * 6000) }, model: MODELS[Math.floor(rand() * rand() * MODELS.length)] })
   }
   mkdirSync(join(dataDir, 'messages'), { recursive: true })
   writeFileSync(join(dataDir, 'messages', 'seed.json'), JSON.stringify(messages))
@@ -646,7 +647,7 @@ const scenarios = {
     await page.waitForSelector('.heatmap')
     await wait(400)
     await shot('heatmap')
-    await page.hover('.heatmap-week:nth-last-child(3) .heat-cell.l3, .heatmap-week:nth-last-child(3) .heat-cell.l4, .heatmap-week:nth-last-child(3) .heat-cell.l2')
+    await page.hover('.heatmap-week:nth-last-child(3) .heat-cell.l3, .heatmap-week:nth-last-child(3) .heat-cell.l4, .heatmap-week:nth-last-child(3) .heat-cell.l2 >> nth=0')
     await wait(500)
     await shot('heatmap-tip')
   },

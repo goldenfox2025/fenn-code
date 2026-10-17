@@ -19,14 +19,17 @@ describe('the usage calendar', () => {
     store.putMessage(reply('b', now - day + 1000, 50, 5))
     store.putMessage({ id: 'u', conversationId: 'c', role: 'user', blocks: [], createdAt: now } as Message)
     const cal = new UsageCalendar(store)
-    expect(await cal.list()).toEqual([{ day: dayKey(now - day), tokens: 175, replies: 2 }])
-    const late = reply('d', now, 10, 1)
+    expect((await cal.summary()).days).toEqual([{ day: dayKey(now - day), tokens: 175, replies: 2 }])
+    const late = { ...reply('d', now, 10, 1), model: { backendId: 'mock' } }
     store.putMessage(late)
     cal.add(late)
     cal.add(late)
-    expect(await cal.list()).toEqual([
+    const { days, models } = await cal.summary()
+    expect(days).toEqual([
       { day: dayKey(now - day), tokens: 175, replies: 2 },
       { day: dayKey(now), tokens: 11, replies: 1 }
     ])
+    // Replies without a recorded model count under the chat's backend.
+    expect(models).toEqual([{ backendId: 'mock', tokens: 186, replies: 3 }])
   })
 })

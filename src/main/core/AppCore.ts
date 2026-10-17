@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, rmdirSync, statSync, writeFileSync 
 import { join } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
-import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageDay } from '../../shared/model'
+import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
 import { removeTurn } from '../../shared/usage'
 import { UsageCalendar } from './UsageCalendar'
 import type { BackendManager } from '../backends/BackendManager'
@@ -1292,8 +1292,8 @@ export class AppCore {
     this.orchestrator.convertToThread(conversationId, messageId)
   }
 
-  usageCalendar(): Promise<UsageDay[]> {
-    return this.calendar.list()
+  usageCalendar(): Promise<UsageSummary> {
+    return this.calendar.summary()
   }
 
   appInfo(): AppInfo {

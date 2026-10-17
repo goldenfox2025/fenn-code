@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, TurnResult } from '../../shared/contract'
 import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
-import type { AppEvent, Attachment, Block, Conversation, Message, QueuedMessage } from '../../shared/model'
+import type { AppEvent, Attachment, Block, Conversation, Message, QueuedMessage, ReplyModel } from '../../shared/model'
 import { addTurn, emptyTotals, type MessageUsage, type UsageTotals } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
@@ -377,6 +377,7 @@ export class ChatService {
     }
     const usage = turnUsageOf(result, costAtStart, live?.cost)
     if (usage) reply.usage = usage
+    if (usage) reply.model = this.replyModel(conversationId, live?.backendId)
     reply.timing = this.meters.get(conversationId)?.finish(result.usage, result.stopReason,
       !this.backends.list().find((b) => b.id === conv!.backendId)?.credits)
     this.meters.delete(conversationId)
@@ -693,6 +694,15 @@ export class ChatService {
     if (keep) this.withdrawn.add(conversationId)
     else this.restartSession(conversationId)
     return variant
+  }
+
+  /** The agent and model a reply came from, named as the model menu named it. */
+  private replyModel(conversationId: string, backendId?: string): ReplyModel | undefined {
+    const conv = this.store.conversation(conversationId)
+    if (!conv) return undefined
+    const id = conv.modelId ?? conv.models?.[0]?.id
+    const name = conv.models?.find((m) => m.id === id)?.name
+    return { backendId: backendId ?? conv.backendId, ...(id ? { id } : {}), ...(name ? { name } : {}) }
   }
 
   /** Commands still running when their reply ended are background work from now on. */

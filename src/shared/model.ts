@@ -66,6 +66,18 @@ export interface UsageDay {
   replies: number
 }
 
+/** One model's share of the usage across every chat. */
+export interface ModelUsage extends ReplyModel {
+  tokens: number
+  replies: number
+}
+
+export interface UsageSummary {
+  days: UsageDay[]
+  /** Most used first. */
+  models: ModelUsage[]
+}
+
 export interface Message {
   id: string
   conversationId: string
@@ -102,6 +114,14 @@ export interface Message {
   /** Replies: the tokens (and cost) the backend reported for this turn; absent when it reported none. */
   usage?: MessageUsage
   timing?: GenerationTiming
+  /** Replies: the agent and model that wrote it (for the home page's model ranking). */
+  model?: ReplyModel
+}
+
+export interface ReplyModel {
+  backendId: string
+  id?: string
+  name?: string
 }
 
 export type ConversationKind = 'chat' | 'project' | 'thread'
@@ -602,7 +622,7 @@ export interface AncoraApi {
   backendsConfigStatus(): Promise<{ error?: string; example: string }>
   appInfo(): Promise<AppInfo>
   /** Tokens used per day across every chat (the home page's heatmap). */
-  usageCalendar(): Promise<UsageDay[]>
+  usageCalendar(): Promise<UsageSummary>
   /** Moves a request the project chat answered inline into a new thread. */
   convertToThread(conversationId: string, messageId: string): Promise<void>
   checkForUpdates(): Promise<UpdateCheck>

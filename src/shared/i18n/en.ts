@@ -980,4 +980,13 @@ export const en: Record<string, string> = {
   "{0}：{1} tokens · {2} 条回复": "{0}: {1} tokens · {2} {2:reply|replies}",
   "{0}：没有用量": "{0}: no usage",
   "{0} 没有 /{1} 这个命令。输入「/」可以看它有哪些命令。": "{0} has no /{1} command. Type / to see the ones it has.",
+  "过去一年": "Past year",
+  "过去 {0} 周": "Past {0} weeks",
+  "{0}的 tokens": "Tokens, {0}",
+  "有用量的天数": "Active days",
+  "{0} 天": "{0} {0:day|days}",
+  "最长连续": "Longest streak",
+  "其他 {0} 个": "{0} more",
+  "常用模型": "Most used models",
+  "{0} tokens · {1} 条回复": "{0} tokens · {1} {1:reply|replies}",
 }
