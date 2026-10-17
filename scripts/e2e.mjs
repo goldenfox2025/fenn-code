@@ -16,7 +16,11 @@ const page = await app.firstWindow()
 await page.setViewportSize({ width: 1400, height: 900 })
 await page.waitForSelector('.sidebar')
 // The checks use Chinese labels, whatever the machine's language.
-await page.evaluate(() => localStorage.setItem('oc-lang', 'zh'))
+await page.evaluate(() => {
+  localStorage.setItem('oc-lang', 'zh')
+  // Pane widths from an earlier run would move everything.
+  for (const k of Object.keys(localStorage)) if (k.startsWith('oc-width-')) localStorage.removeItem(k)
+})
 await page.reload()
 await page.waitForSelector('.sidebar')
 // The first-run guide covers the app; scenarios that aren't about it skip it.
@@ -25,7 +29,10 @@ if (!process.env.KEEP_ONBOARDING && (await page.locator('.onboarding').count()))
   await page.waitForSelector('.onboarding', { state: 'detached' })
 }
 let failed = 0
+// E2E_ONLY=<regex> runs only the matching checks (keep the ones they build on).
+const only = process.env.E2E_ONLY && new RegExp(process.env.E2E_ONLY)
 async function check(name, fn) {
+  if (only && !only.test(name)) return
   try {
     await fn()
     console.log('✓', name)
@@ -51,6 +58,54 @@ await check('thanks in a project chat shows the coordinator 👍 on the message'
   await page.waitForSelector('.panel')
   await send('谢谢')
   await page.waitForSelector('.msg-user .reactions .reaction:has-text("👍")', { timeout: 15000 })
+})
+
+await check('the sidebar and the thread panel resize from their inner edge, remember it, reset on double-click, and the sidebar folds away when dragged narrow', async () => {
+  const width = async (sel) => (await page.locator(sel).boundingBox()).width
+  const drag = async (sel, dx) => {
+    const h = await page.locator(sel).boundingBox()
+    const x = h.x + h.width / 2
+    const y = h.y + 300
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx / 2, y, { steps: 4 })
+    await page.mouse.move(x + dx, y, { steps: 4 })
+    await page.mouse.up()
+    await page.waitForTimeout(250)
+  }
+  const step = (what) => console.log('   …', what)
+  const near = (a, b, what) => { if (Math.abs(a - b) > 3) throw new Error(`${what}: ${a} vs ${b}`) }
+  const s0 = await width('.sidebar')
+  const rest = async () => (await width('.center .workspace > .center')) + (await width('.panel:visible'))
+  const rest0 = await rest()
+  await drag('.sidebar > .resize-handle', 80)
+  near(await width('.sidebar'), s0 + 80, 'sidebar after drag')
+  near(await rest(), rest0 - 80, 'the rest of the window reflows by the same amount')
+  await drag('.sidebar > .resize-handle', 600)
+  near(await width('.sidebar'), 440, 'sidebar stops at its maximum')
+  await page.reload()
+  await page.waitForSelector('.sidebar')
+  near(await width('.sidebar'), 440, 'sidebar width remembered after a reload')
+  await page.dblclick('.sidebar > .resize-handle')
+  await page.waitForTimeout(250)
+  near(await width('.sidebar'), s0, 'double-click resets the sidebar')
+  await drag('.sidebar > .resize-handle', -s0)
+  if (!(await page.locator('.sidebar.closed').count())) throw new Error('sidebar did not fold away')
+  await page.keyboard.press('Control+b')
+  await page.waitForTimeout(300)
+  near(await width('.sidebar'), s0, 'sidebar opens again at its width')
+  await page.click('.sidebar .nav-item:has-text("端到端"), .sidebar .project-item:has-text("端到端"), .sidebar :text("端到端")')
+  await page.waitForSelector('.panel')
+  const p0 = await width('.panel:visible')
+  await drag('.panel:visible > .resize-handle', -120)
+  near(await width('.panel:visible'), p0 + 120, 'thread panel after drag')
+  await drag('.panel:visible > .resize-handle', 2000)
+  near(await width('.panel:visible'), 360, 'thread panel stops at its minimum')
+  await page.dblclick('.panel:visible > .resize-handle')
+  await page.waitForTimeout(250)
+  near(await width('.panel:visible'), p0, 'double-click resets the thread panel')
+  // A tooltip-free separator with a resize cursor.
+  if ((await page.locator('.panel:visible > .resize-handle').evaluate((el) => getComputedStyle(el).cursor)) !== 'col-resize') throw new Error('no col-resize cursor')
 })
 
 await check('one Chinese character finds a message, and the hit scrolls to it', async () => {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ResizeHandle, paneStyle, usePaneWidth } from '../components/ResizeHandle'
 import { useShallow } from 'zustand/react/shallow'
 import {
   ArrowLeft,
@@ -51,6 +52,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
   const userName = useApp((s) => s.settings.userName)
   const [panelOpen, setPanelOpen] = useState(true)
   const [wide, setWide] = useState(false)
+  const panelWidth = usePaneWidth('panel')
   const [menu, openMenu] = useMenu({ align: 'right' })
   if (!project || !conv) return <div className="empty">{t('项目不存在或已被删除')}</div>
 
@@ -126,7 +128,8 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
       </div>
 
       {panelOpen && (
-        <aside className={'panel' + (wide ? ' wide' : '')}>
+        <aside className={'panel' + (wide ? ' wide' : '') + (panelWidth && !wide ? ' sized' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
+          <ResizeHandle pane="panel" edge="left" onResize={() => setWide(false)} />
           {threadId ? (
             <ThreadView threadId={threadId} onBack={() => go({})} wide={wide} setWide={setWide} />
           ) : (

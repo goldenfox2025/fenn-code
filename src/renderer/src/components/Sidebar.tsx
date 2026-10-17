@@ -25,9 +25,11 @@ import { useMenu } from './Menu'
 import { t } from '../i18n'
 import { confirmDialog, promptDialog } from './Modal'
 import { groupByFolder, isNested } from '../folderGroups'
+import { ResizeHandle, paneStyle, usePaneWidth } from './ResizeHandle'
 
 export function Sidebar() {
   const s = useApp()
+  const width = usePaneWidth('sidebar')
   const [menu, openMenu] = useMenu({ align: 'left' })
   const q = s.search.trim().toLowerCase()
   const route = s.route
@@ -149,7 +151,8 @@ export function Sidebar() {
   }
 
   return (
-    <aside className={'sidebar' + (s.sidebarOpen ? '' : ' closed')}>
+    <aside className={'sidebar' + (s.sidebarOpen ? '' : ' closed') + (width ? ' sized' : '')} style={paneStyle('sidebar', width)}>
+      <ResizeHandle pane="sidebar" edge="right" onCollapse={() => s.set({ sidebarOpen: false })} />
       <div className="sidebar-top drag">
         {s.platform !== 'darwin' && (
           <button className="icon-btn" data-tip={t('菜单')} onClick={() => s.set({ settingsOpen: 'general' })}>

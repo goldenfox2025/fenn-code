@@ -805,4 +805,5 @@ export const en: Record<string, string> = {
   "这个 agent 不报告上下文用量": "This agent doesn’t report context usage",
   "{0} 未登录，本次用 {1}": "{0} is signed out; using {1} this time",
   "已切换后端，旧的会话不再使用。": "The backend was switched; the old session is no longer used.",
+  "拖动调整宽度，双击恢复默认": "Drag to resize, double-click to reset",
 }

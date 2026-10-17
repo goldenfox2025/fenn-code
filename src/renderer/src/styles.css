@@ -71,7 +71,8 @@ select {
 }
 
 .sidebar {
-  width: 284px;
+  position: relative;
+  width: var(--sidebar-w);
   flex: none;
   display: flex;
   flex-direction: column;
@@ -80,7 +81,54 @@ select {
   transition: margin-left 0.18s ease;
 }
 .sidebar.closed {
-  margin-left: -284px;
+  margin-left: calc(-1 * var(--sidebar-w));
+}
+.sidebar.closed .resize-handle {
+  display: none;
+}
+
+/* A pane's drag handle: a wide invisible strip with a thin line on hover, as in Claude. */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--resize-hit);
+  cursor: col-resize;
+  z-index: 5;
+  -webkit-app-region: no-drag;
+  touch-action: none;
+}
+.resize-handle.edge-right {
+  right: calc(var(--resize-hit) / -2);
+}
+.resize-handle.edge-left {
+  left: 0;
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc((var(--resize-hit) - var(--resize-line)) / 2);
+  width: var(--resize-line);
+  background: var(--border-strong);
+  opacity: 0;
+  transition: opacity 0.15s ease 0.1s;
+}
+.resize-handle.edge-left::after {
+  left: 0;
+}
+.resize-handle:hover::after,
+.resize-handle.active::after {
+  opacity: 1;
+}
+body.resizing,
+body.resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.resizing .sidebar {
+  transition: none;
 }
 .sidebar-top {
   height: 44px;
@@ -1162,6 +1210,13 @@ select {
 }
 .panel.wide {
   width: 62%;
+  max-width: none;
+}
+.panel {
+  position: relative;
+}
+.panel.sized {
+  width: var(--panel-w);
   max-width: none;
 }
 .panel-head {

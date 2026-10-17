@@ -4,6 +4,10 @@
  * styles.css builds on these; see test/style-tokens.test.ts.
  */
 :root {
+  /* Pane widths (the user can drag them; see ResizeHandle). */
+  --sidebar-w: 284px;
+  --resize-hit: 8px;
+  --resize-line: 2px;
   --bg: #faf9f5;
   --bg-sidebar: #f5f4ef;
   --bg-elevated: #ffffff;
