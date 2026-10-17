@@ -439,6 +439,8 @@ export interface AppSettings {
   recentFolders?: string[]
   /** Where a chat that makes files gets its own folder; Documents/Ancora when unset. */
   autoFolderRoot?: string
+  /** The widgets on the new-conversation page by id, in order; unset shows the built-in set. */
+  homeWidgets?: string[]
 }
 
 export interface AppInfo {

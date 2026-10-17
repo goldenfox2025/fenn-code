@@ -580,6 +580,12 @@ const scenarios = {
     await wait(2500)
     await shot('79-lazy-thread')
   },
+  // The new-chat page before there is any usage: no widgets, only the greeting and the composer.
+  async homeEmpty() {
+    await page.setViewportSize({ width: 1400, height: 900 })
+    await wait(300)
+    await shot('home-empty')
+  },
   async chatsEmpty() {
     await page.click('.nav-item:has-text("对话")')
     await wait(200)
@@ -650,6 +656,14 @@ const scenarios = {
     await page.hover('.heatmap-week:nth-last-child(3) .heat-cell.l3, .heatmap-week:nth-last-child(3) .heat-cell.l4, .heatmap-week:nth-last-child(3) .heat-cell.l2 >> nth=0')
     await wait(500)
     await shot('heatmap-tip')
+    await page.hover('.widget.usage-stats')
+    await page.click('.widget.usage-stats .widget-more')
+    await wait(300)
+    await shot('widget-menu')
+    await page.keyboard.press('Escape')
+    await page.setViewportSize({ width: 960, height: 800 })
+    await wait(400)
+    await shot('widgets-narrow')
   },
   async bubbles() {
     await page.setViewportSize({ width: 1200, height: 800 })

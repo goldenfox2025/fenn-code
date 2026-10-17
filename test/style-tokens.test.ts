@@ -9,7 +9,7 @@ const css = join(__dirname, '../src/renderer/src/styles.css')
  * Raw spacing, radius and color values still left in styles.css from before
  * the tokens. The number only ever goes down: new CSS uses tokens.css.
  */
-const LEGACY = 217
+const LEGACY = 214
 
 /** Rules that make up a turn of the conversation; these must use tokens only. */
 const TURN = /\.(turn|working-|steps|step-|placed-line|thread-card|tooltip|transcript|msg-actions|md)\b/

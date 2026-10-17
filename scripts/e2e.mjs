@@ -468,7 +468,11 @@ await check('the home composer shows the model name, as inside a chat', async ()
 
 await check('the new-chat page keeps the greeting and composer in place', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
-  const top = async () => Math.round((await page.locator('.home .composer').boundingBox()).y)
+  // A taller draft grows the composer upwards, as in a chat: its bottom edge stays put.
+  const top = async () => {
+    const box = (await page.locator('.home .composer').boundingBox())
+    return Math.round(box.y + box.height)
+  }
   const greet = async () => Math.round((await page.locator('.home .greeting').boundingBox()).y)
   const [c0, g0] = [await top(), await greet()]
   await page.locator('.composer-row .backend-chip').click()
@@ -595,10 +599,10 @@ await check('every 「…」 menu opens next to its button, inside the window', 
   await page.keyboard.press('Enter')
   await page.waitForTimeout(400)
   const near = async (btn, label) => {
-    const b = await btn.boundingBox()
     await page.waitForSelector('.menu', { timeout: 2000 })
     await page.waitForTimeout(80)
-    const m = await page.locator('.menu').boundingBox()
+    // Both measured in the same frame: the button may have moved since the click, and the menu follows it.
+    const [b, m] = await page.evaluate((el) => [el.getBoundingClientRect(), document.querySelector('.menu').getBoundingClientRect()].map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height })), btn)
     const vp = page.viewportSize()
     const vertical = Math.min(Math.abs(m.y - (b.y + b.height)), Math.abs(m.y + m.height - b.y))
     const horizontal = Math.min(Math.abs(m.x - b.x), Math.abs(m.x + m.width - (b.x + b.width)))
@@ -611,17 +615,19 @@ await check('every 「…」 menu opens next to its button, inside the window', 
   const n = await rows.count()
   if (n < 2) throw new Error('expected chat and project rows, got ' + n)
   for (let i = 0; i < n; i++) {
-    const row = rows.nth(i)
+    // Hold the elements themselves: rows reorder while a reply streams, and nth(i) would then name another row.
+    const row = await rows.nth(i).elementHandle()
     await row.hover()
-    // Hold the element itself: rows reorder while a reply streams, and nth(i) would then name another row.
-    const btn = await row.locator('.trail .icon-btn').elementHandle()
+    const btn = await row.$('.trail .icon-btn')
     const label = (await row.innerText()).trim()
-    await btn.click()
+    // Opened from the keyboard: the row may move from under the mouse, which hides its button again.
+    await btn.focus()
+    await page.keyboard.press('Enter')
     await near(btn, 'sidebar row ' + label)
   }
   const header = page.locator('.chat-header .icon-btn:has(.lucide-ellipsis), .chat-header .icon-btn:has(.lucide-more-horizontal)').last()
   await header.click()
-  await near(header, 'chat header')
+  await near(await header.elementHandle(), 'chat header')
   await page.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
 })
 
@@ -832,6 +838,24 @@ await check('a mode picked on the new-chat page applies to that chat only', asyn
   await page.waitForSelector('.menu-item:has-text("权限模式") .menu-hint', { timeout: 2000 })
   if (await page.locator('.menu-item:has-text("权限模式") .menu-hint:has-text("全部允许")').count()) throw new Error('the mode stuck to the next new chat')
   await page.keyboard.press('Escape')
+})
+
+await check('the new-chat page shows usage widgets that can be removed and brought back', async () => {
+  await page.click('.sidebar .nav-item:has-text("新建")')
+  // The demo agent's replies above count as usage.
+  await page.waitForSelector('.widget', { timeout: 8000 })
+  const before = await page.locator('.widget').count()
+  if (before !== 3) throw new Error(`${before} widgets`)
+  const first = page.locator('.widget').first()
+  await first.hover()
+  await first.locator('.widget-more').click()
+  await page.click('.menu .menu-item:has-text("移除小组件")')
+  await page.waitForFunction((n) => document.querySelectorAll('.widget').length === n - 1, before, { timeout: 3000 })
+  const rest = page.locator('.widget').first()
+  await rest.hover()
+  await rest.locator('.widget-more').click()
+  await page.click('.menu .menu-item:has-text("恢复默认小组件")')
+  await page.waitForFunction((n) => document.querySelectorAll('.widget').length === n, before, { timeout: 3000 })
 })
 
 await app.close()

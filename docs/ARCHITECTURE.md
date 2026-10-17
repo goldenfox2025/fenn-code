@@ -78,6 +78,7 @@ flowchart TB
 | Shared renderer actions | `src/renderer/src/actions.ts`, `routes.ts` | Deleting chats and projects, where a conversation opens |
 | Styles | `src/renderer/src/tokens.css`, `styles.css` → `styles/NN-area.css` | Files load in cascade order; values come from tokens. Motion: `--ease` and `--dur-1/2/3`, entrances in `19-motion.css` |
 | Strings | `src/shared/i18n/` | `node scripts/i18n-add.mjs '{"中文":"English"}'` |
+| New-chat page widgets | `src/renderer/src/widgets/` | One file per widget in `builtin/`; see "Adding a widget" |
 
 ## Adding an API method
 
@@ -90,6 +91,15 @@ The compiler checks the rest:
 - a method missing from AppCore, or one whose parameters don't match, fails in `src/main/index.ts`.
 
 The preload and the IPC handlers come from the list, so you don't touch them. Errors reach the renderer as the core's own message: use `.catch(toastError)`.
+
+## Adding a widget
+
+The new-chat page is laid out like a chat: the composer sits where a chat's does, and the room above holds widgets (usage figures, the daily heatmap, the most used models). Each widget is self-contained: it fetches what it shows (`widgets/usage.ts` shares one usage fetch among them) and renders inside `WidgetCard`, or renders nothing while it has nothing to show.
+
+1. Add `src/renderer/src/widgets/builtin/<name>.tsx` whose default export is a `Widget` (`registry.ts`): an `id`, a `title` for the menus, `size` `'wide'` or `'half'`, an `order` among the built-ins, and its `Component`.
+2. That is all: built-ins are found at build time. Code that loads later (a plugin) calls `registerWidget(widget)`, which also replaces a widget with the same id and returns a function that removes it.
+
+The user's layout is `settings.homeWidgets` (ids in order; unset shows every widget). Each card's 「…」 menu moves, removes, adds and restores widgets. A widget that throws disappears instead of taking the page with it.
 
 ## Adding a tool for agents
 

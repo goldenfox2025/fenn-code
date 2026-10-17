@@ -1,41 +1,43 @@
-/* ---------- home ---------- */
+/* ---------- home: laid out like a chat, widgets where the conversation will be ---------- */
 .home {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  /* Anchored from the top, not centred: a hint, a taller composer or a longer
-     model name below must never make the greeting and the composer jump. */
-  justify-content: flex-start;
-  padding: max(48px, calc(40vh - 110px)) var(--space-9) var(--space-9);
-  overflow-y: auto;
+  min-height: 0;
+}
+.home-board-inner {
+  /* The transcript's column, so the conversation takes the widgets' place. */
+  max-width: calc(var(--turn-width) + 2 * var(--turn-gutter));
+  margin: 0 auto;
+  /* Anchored from the top, not centred: a taller draft in the composer below must
+     never move the greeting or the widgets. */
+  padding: max(var(--space-11), calc(22vh - 2 * var(--space-11))) var(--turn-gutter) var(--space-9);
+  container-type: inline-size;
 }
 .greeting {
   font-family: var(--font-serif);
-  font-size: 38px;
+  font-size: 34px;
   font-weight: 400;
-  margin: 0 0 28px;
+  margin: 0 0 var(--space-10);
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  gap: var(--space-6);
   letter-spacing: -0.01em;
 }
 .greeting .logo {
   color: var(--accent);
 }
-.home .composer-wrap {
-  width: 100%;
-  padding: 0;
-}
-.home .composer {
-  max-width: 680px;
+.home-dock {
+  flex: none;
 }
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
   justify-content: center;
-  margin-top: var(--space-7);
+  padding: 0 var(--space-9);
+  margin-bottom: var(--space-6);
 }
 .chip {
   display: inline-flex;
@@ -53,13 +55,24 @@
   background: var(--bg-hover);
 }
 
-/* ---------- usage card: tokens per day (as on a GitHub profile) and the most used models ---------- */
-.usage-card-box {
-  width: 100%;
-  max-width: 680px;
-  margin-top: var(--space-10);
+/* ---------- widgets: cards of the same make, two to a row (one when narrow) ---------- */
+.widget-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
 }
-.usage-card {
+@container (width < 560px) {
+  .widget-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.widget-restore {
+  display: flex;
+  justify-content: center;
+}
+.widget {
+  position: relative;
+  min-width: 0;
   padding: var(--space-8) var(--space-9);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -69,10 +82,36 @@
   line-height: var(--line-ui);
   animation: rise-in var(--dur-3) var(--ease);
 }
+.widget.wide {
+  grid-column: 1 / -1;
+}
+.widget-title {
+  margin-bottom: var(--space-6);
+  color: var(--text-2);
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+.widget-more {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.widget:hover .widget-more,
+.widget-more:focus-visible {
+  opacity: 1;
+}
 .usage-stats {
-  display: flex;
-  gap: var(--space-10);
-  margin-bottom: var(--space-7);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Spread down the card, so it ends level with the one beside it. */
+  align-content: space-between;
+  gap: var(--space-8) var(--space-9);
+}
+.usage-stats .widget-title {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
 }
 .usage-stat-value {
   color: var(--text);
@@ -148,20 +187,9 @@
 .heatmap-legend .heat-cell {
   --heat-cell: 10px;
 }
-.top-models {
-  margin-top: var(--space-7);
-  padding-top: var(--space-6);
-  border-top: 1px solid var(--border);
-}
-.top-models-head {
-  margin-bottom: var(--space-4);
-  color: var(--text-2);
-  font-size: var(--font-sm);
-  font-weight: 500;
-}
 .top-model {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 36px;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) 36px;
   align-items: center;
   gap: var(--space-6);
   min-height: var(--turn-row);

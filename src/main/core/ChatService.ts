@@ -293,7 +293,11 @@ export class ChatService {
     this.updateMessage(reply)
     this.recount(conversationId)
     // The user wrote: whatever the agent was waiting on them for is answered.
-    conv = this.patchConversation(conversationId, { status: 'working', updatedAt: Date.now(), ...(!opts.hidden && !opts.housekeeping ? { needsUser: undefined } : {}) })!
+    conv = this.patchConversation(conversationId, {
+      status: 'working',
+      updatedAt: Date.now(),
+      ...(!opts.hidden && !opts.housekeeping ? { needsUser: undefined, ...(stalePlan(conv) ? { checklist: undefined } : {}) } : {})
+    })!
 
     let result: TurnResult
     let live: Live | undefined
@@ -971,10 +975,10 @@ export class ChatService {
     const reply = this.current.get(conversationId)
     if (!reply) return
     this.meters.get(conversationId)?.observe(event)
-    // The agent's own task plan (ACP `plan`) is the conversation's live plan too.
-    if (event.kind === 'plan' && event.entries.length) {
+    // The agent's own task plan (ACP `plan`) is the conversation's live plan too; an empty one withdraws it.
+    if (event.kind === 'plan') {
       const conv = this.store.conversation(conversationId)
-      if (conv) this.patchConversation(conversationId, { checklist: planChecklist(conv.title, event.entries), checklistAuto: false })
+      if (conv) this.patchConversation(conversationId, { checklist: event.entries.length ? planChecklist(conv.title, event.entries) : undefined, checklistAuto: false })
     }
     applyEvent(reply.blocks, event)
     this.scheduleEmit(reply)
@@ -1004,6 +1008,19 @@ export class ChatService {
     clearTimeout(this.emitTimers.get(m.id))
     this.emitTimers.delete(m.id)
   }
+}
+
+/**
+ * A chat's plan that no longer applies once the user writes again: one whose steps are all
+ * done (it was for the task just finished), or one another agent made (the chat has since
+ * moved to a different backend, which never saw it). A thread's checklist is its status
+ * on the project board and stays.
+ */
+export function stalePlan(conv: Conversation): boolean {
+  if (conv.kind !== 'chat' || !conv.checklist) return false
+  if (conv.sessionRef && conv.sessionRef.backendId !== conv.backendId) return true
+  const steps = conv.checklist.split('\n').map((l) => l.replace(/\*\*/g, '').trim()).filter((l) => /^[✓✱○⊙]/.test(l))
+  return steps.length > 0 && steps.every((l) => l.startsWith('✓'))
 }
 
 /** An ACP plan in the app's checklist format. */

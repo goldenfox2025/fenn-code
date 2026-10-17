@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
 import { Composer } from '../components/Composer'
-import { UsageHeatmap } from '../components/UsageHeatmap'
+import { WidgetBoard } from '../widgets/WidgetBoard'
 import type { Attachment } from '@shared/model'
 import { api, useApp, toastError } from '../store'
 import { greeting } from '../util'
@@ -43,46 +43,54 @@ export function HomeView({ folder: initialFolder }: { folder?: string }) {
     }
   }
 
+  // Laid out like a chat, so starting one moves nothing: the composer sits where a chat's
+  // does, and the room above, where the conversation will be, holds the widgets.
   return (
     <div className="home">
-      <h1 className="greeting">
-        <Sparkles size={34} className="logo" />
-        {greeting(settings.userName)}
-      </h1>
-      <Composer
-        key={seed}
-        placeholder={t('今天想聊点什么？')}
-        autoFocus
-        onSubmit={start}
-        backendId={backendId}
-        onBackendChange={(id) => {
-          setBackendId(id)
-          setModelId(undefined)
-        }}
-        modelId={modelId}
-        onModelChange={setModelId}
-        folder={folder}
-        onFolderChange={setFolder}
-      />
-      <div className="chips">
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s.label}
-            className="chip"
-            onClick={() => {
-              sessionStorage.setItem('draft:new', s.text)
-              setSeed(seed + 1)
-            }}
-          >
-            {s.icon}
-            {s.label}
-          </button>
-        ))}
-        <button className="chip" onClick={() => useApp.getState().set({ settingsOpen: 'new-project' })}>
-          <FolderKanban size={15} />
-          {t('新建项目')}</button>
+      <div className="scroll home-board">
+        <div className="home-board-inner">
+          <h1 className="greeting">
+            <Sparkles size={30} className="logo" />
+            {greeting(settings.userName)}
+          </h1>
+          <WidgetBoard />
+        </div>
       </div>
-      <UsageHeatmap />
+      <div className="home-dock">
+        <div className="chips">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s.label}
+              className="chip"
+              onClick={() => {
+                sessionStorage.setItem('draft:new', s.text)
+                setSeed(seed + 1)
+              }}
+            >
+              {s.icon}
+              {s.label}
+            </button>
+          ))}
+          <button className="chip" onClick={() => useApp.getState().set({ settingsOpen: 'new-project' })}>
+            <FolderKanban size={15} />
+            {t('新建项目')}</button>
+        </div>
+        <Composer
+          key={seed}
+          placeholder={t('今天想聊点什么？')}
+          autoFocus
+          onSubmit={start}
+          backendId={backendId}
+          onBackendChange={(id) => {
+            setBackendId(id)
+            setModelId(undefined)
+          }}
+          modelId={modelId}
+          onModelChange={setModelId}
+          folder={folder}
+          onFolderChange={setFolder}
+        />
+      </div>
     </div>
   )
 }
