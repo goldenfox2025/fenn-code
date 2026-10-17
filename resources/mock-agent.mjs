@@ -269,7 +269,8 @@ const handlers = {
       ...(mode === 'no-cost' ? {} : { cost: { amount: s.cost, currency: "USD" } }) });
     return {
       stopReason: abort.aborted ? "cancelled" : "end_turn",
-      usage: { inputTokens: input, outputTokens: output, totalTokens: input + output, cachedReadTokens: 0 },
+      // MOCK_CACHE=1: later turns read most of their input from the cache, as real agents do.
+      usage: { inputTokens: input, outputTokens: output, totalTokens: input + output, cachedReadTokens: process.env.MOCK_CACHE && s.turns > 1 ? 4000 * s.turns : 0 },
     };
   },
   // Kept, so a closed session can still be resumed (as agents keep their history).
@@ -683,11 +684,19 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
   if (/#搜新闻/.test(text)) {
     await stream(sessionId, "我会按新闻发布时间和事件发生时间核对，整理最近值得关注的动向。", abort);
     const tool = (i, title, rawInput) => notify(sessionId, { sessionUpdate: "tool_call", toolCallId: `news${s.turns}-${i}`, title, kind: "other", status: "completed", rawInput });
+    const search = { search_query: [{ q: "扎克伯格 最新 动向" }] };
     tool(0, "Guardian Review", {});
-    tool(1, "mcp.codex_apps.search_service.web_run", { search_query: [{ q: "扎克伯格 最新 动向" }] });
+    tool(1, "Start subagent verify_latest", {});
+    tool(2, "mcp.codex_apps.search_service.web_run", search);
     await stream(sessionId, "\n\n**Gathering news sources**\n\nI'm considering how to find suitable recent news. I need about four to five substantive pieces from trustworthy outlets.", abort, "agent_thought_chunk");
-    tool(2, "mcp.codex_apps.search_service.web_run", { open: [{ ref_id: "https://example.com/news/1" }] });
-    tool(3, "Guardian Review", {});
+    tool(3, "mcp.codex_apps.search_service.web_run", { open: [{ ref_id: "https://example.com/news/1" }] });
+    tool(4, "Guardian Review", {});
+    tool(5, "mcp.codex_apps.search_service.web_run", search);
+    tool(6, "mcp.codex_apps.search_service.web_run", search);
+    tool(7, "Interact with subagent verify_latest", {});
+    tool(8, "Guardian Review", {});
+    await stream(sessionId, "\n\n**Checking dates**\n\nThe subagent confirmed the publication dates.", abort, "agent_thought_chunk");
+    tool(9, "Complete subagent verify_latest", {});
     await stream(sessionId, "最近有三件事值得关注：\n\n1. **新眼镜发布**：发布会上展示了新一代产品。\n2. **AI 投入**：公司继续加大数据中心投资。\n3. **播客访谈**：谈到了开源模型的路线。", abort);
     return;
   }

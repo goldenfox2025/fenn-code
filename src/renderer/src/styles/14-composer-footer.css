@@ -22,18 +22,49 @@
 .context-ring .ring-track {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.4;
-  opacity: 0.7;
+  stroke-width: 2;
+  opacity: 0.3;
 }
-.context-ring .ring-fill {
-  fill: currentColor;
+/* How full the context is: an arc in the same colors as the popover's bar, moving as the figure changes. */
+.context-ring .ring-arc {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--dur-3) var(--ease), stroke var(--dur-3) var(--ease);
 }
+.context-ring.high .ring-arc { stroke: var(--amber); }
+.context-ring.full .ring-arc { stroke: var(--red); }
 .context-ring.none .ring-track {
+  stroke-width: 1.4;
   stroke-dasharray: 2 2.15;
   opacity: 0.55;
 }
-.context-ring.high { color: var(--amber); }
-.context-ring.full { color: var(--red); }
+
+/* The running figures under a conversation's composer: quiet, one line, a click opens the usage popover. */
+.usage-strip {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-8);
+  max-width: 800px;
+  width: 100%;
+  margin: var(--space-3) auto calc(-1 * var(--space-4));
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.usage-strip:hover {
+  color: var(--text-2);
+}
+.usage-strip > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
 
 .effort-pop {
   position: fixed;
@@ -261,6 +292,11 @@
   max-width: 280px;
   padding: 5px;
   border-radius: var(--radius-lg);
+}
+/* A usage panel sets its own width. */
+.menu.compact:has(> .menu-panel) {
+  max-width: none;
+  overflow-x: hidden;
 }
 .menu.compact .menu-item {
   min-height: 34px;

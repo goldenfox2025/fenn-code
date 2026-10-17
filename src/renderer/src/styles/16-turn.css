@@ -26,14 +26,15 @@
 .turn > .tool-run {
   margin-bottom: calc(var(--space-5) - var(--turn-gap)) !important;
 }
-.turn > .tool-run .tool-row {
-  font-size: var(--font-md);
-}
 .turn > .tool-run:last-child {
   margin-bottom: 0 !important;
 }
+/* Thinking lines, tool lines and folded runs next to each other are one list of equal rows. */
 .turn > :is(.steps, .tool-run):has(+ :is(.steps, .tool-run)) {
-  margin-bottom: calc(var(--space-1) - var(--turn-gap)) !important;
+  margin-bottom: calc(-1 * var(--turn-gap)) !important;
+}
+.turn > .steps.open:has(+ :is(.steps, .tool-run)) {
+  margin-bottom: calc(var(--space-2) - var(--turn-gap)) !important;
 }
 .working-mark {
   display: flex;

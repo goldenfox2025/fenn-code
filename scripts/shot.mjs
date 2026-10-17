@@ -178,7 +178,9 @@ const scenarios = {
     await page.click('.sidebar .nav-item >> text=/搜新闻/')
     await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
     await wait(400)
+    await shot('news-steps')
     await page.click('.turn .steps-toggle')
+    await page.locator('.turn .steps-toggle').nth(1).click()
     await wait(300)
     await shot('news-steps-open')
   },
@@ -339,9 +341,12 @@ const scenarios = {
     await shot('99-install-not-found')
   },
   async usage() {
-    await page.fill('.composer textarea', '你好')
-    await page.keyboard.press('Enter')
-    await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
+    for (const text of ['你好', '#大上下文 再说一点', '谢谢']) {
+      await page.fill('.composer textarea', text)
+      await page.keyboard.press('Enter')
+      await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
+      await wait(300)
+    }
     await page.hover('.msg-assistant')
     await wait(300)
     await shot('97-usage-message')

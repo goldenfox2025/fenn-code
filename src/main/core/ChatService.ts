@@ -702,8 +702,9 @@ export class ChatService {
 
   async compactContext(conversationId: string): Promise<void> {
     const conv = this.store.conversation(conversationId)
-    const live = this.live.get(conversationId)
-    if (!conv?.compactCommand || !live) throw new Error(t('这个 agent 现在不能手动压缩上下文'))
+    // After a restart the session isn't open yet; sending the command resumes it first, as any message does.
+    if (!conv?.compactCommand || (!this.live.has(conversationId) && conv.sessionRef?.backendId !== conv.backendId))
+      throw new Error(t('这个 agent 现在不能手动压缩上下文'))
     const done = (id: string) => {
       if (id !== conversationId) return
       this.turnEndListeners.delete(done)

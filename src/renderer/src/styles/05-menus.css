@@ -96,6 +96,125 @@
   height: 100%;
   border-radius: 2px;
   background: var(--accent);
+  transform-origin: left;
+  transition: width var(--dur-3) var(--ease), background-color var(--dur-3) var(--ease);
+  animation: meter-grow var(--dur-3) var(--ease);
+}
+@keyframes meter-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+/* The context: blue while there is room, amber when it fills, red when nearly full (the ring does the same). */
+.menu-meter.colored {
+  height: 6px;
+  border-radius: var(--radius-pill);
+}
+.menu-meter.colored > span {
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+.menu-meter.colored.high > span {
+  background: var(--amber);
+}
+.menu-meter.colored.full > span {
+  background: var(--red);
+}
+
+/* ---------- usage popover, laid out as Claude's ---------- */
+.menu-panel {
+  padding: var(--space-3) var(--space-5) var(--space-2);
+}
+.usage-panel {
+  width: 280px;
+  font-size: var(--font-sm);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.usage-head {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  margin-bottom: var(--space-3);
+}
+.usage-empty {
+  color: var(--text-3);
+  line-height: var(--line-ui);
+}
+.usage-section + .usage-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+.usage-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-6);
+  min-height: var(--step-line);
+  line-height: var(--step-line);
+}
+.usage-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.usage-note {
+  color: var(--text-3);
+  font-size: var(--font-xs);
+}
+.usage-value {
+  flex: none;
+  color: var(--text-2);
+}
+.usage-foot {
+  margin-top: var(--space-2);
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  line-height: var(--line-ui);
+}
+.usage-panel > .usage-foot {
+  margin-top: var(--space-5);
+}
+.usage-section .menu-meter {
+  margin: var(--space-3) 0 0;
+}
+/* Where the tokens went: one bar in parts, each part's color on its row's dot. */
+.usage-stack {
+  display: flex;
+  gap: var(--space-1);
+  height: 6px;
+  margin: var(--space-3) 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--border);
+}
+.usage-stack > .usage-dot {
+  height: 100%;
+  min-width: var(--space-1);
+  border-radius: 0;
+  transform-origin: left;
+  animation: meter-grow var(--dur-3) var(--ease);
+}
+.usage-dot {
+  flex: none;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--text-4);
+}
+.usage-dot.part-cache {
+  background: color-mix(in srgb, var(--blue) 35%, transparent);
+}
+.usage-dot.part-write {
+  background: var(--amber);
+}
+.usage-dot.part-input {
+  background: var(--blue);
+}
+.usage-dot.part-output {
+  background: var(--green);
 }
 .menu-meter-sub {
   display: block;

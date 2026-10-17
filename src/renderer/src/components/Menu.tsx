@@ -20,13 +20,15 @@ export interface MenuItem {
   hint?: string
   /** Opens beside the menu on hover, click or →. */
   submenu?: MenuItem[]
+  /** A block of its own (a usage panel): shown as is, never a choice. */
+  panel?: ReactNode
 }
 
 /** The button whose menu item was chosen last: a dialog that item opens returns focus there. */
 let lastAnchor: HTMLElement | null = null
 export const lastMenuAnchor = () => lastAnchor
 
-const actionable = (it: MenuItem) => !it.separator && !it.heading && !it.disabled && !it.info
+const actionable = (it: MenuItem) => !it.separator && !it.heading && !it.disabled && !it.info && !it.panel
 const inAnyMenu = (target: EventTarget | null) => !!(target as Element | null)?.closest?.('.menu')
 
 /**
@@ -229,6 +231,10 @@ export function Menu({
       {items.map((it, i) =>
         it.separator ? (
           <div key={i} className="menu-sep" role="separator" />
+        ) : it.panel ? (
+          <div key={i} className="menu-panel">
+            {it.panel}
+          </div>
         ) : it.heading ? (
           <div key={i} className="menu-label">
             {it.heading}

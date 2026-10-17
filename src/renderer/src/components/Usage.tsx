@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Gauge } from 'lucide-react'
+import { Coins, Database, Gauge, Minimize2 } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
 import { formatCost, formatTokens, headline, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
@@ -33,7 +33,8 @@ const seconds = (ms: number) => (ms < 1000 ? t('{0} 毫秒', Math.round(ms)) : t
 /** How fast the last reply streamed, as the app saw it (not the provider's own timing). */
 function timingLine(timing: GenerationTiming): string {
   const parts = [t('首个回复 {0}', seconds(timing.firstResponseMs))]
-  if (timing.tpotMs !== undefined && Math.round(timing.tpotMs) > 0) parts.push(t('平均每个 token {0}', seconds(timing.tpotMs)))
+  const speed = tokensPerSecond(timing)
+  if (speed !== undefined) parts.push(t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1)))
   return parts.join(' · ')
 }
 
@@ -55,12 +56,22 @@ export function MessageUsageLabel({ m }: { m: Message }) {
   )
 }
 
-/** A thin bar for a share of something (context window, plan credits). */
-function Meter({ label, used, total }: { label: string; used: number; total: number }) {
-  const pct = Math.max(0, Math.min(100, (used / total) * 100))
+/** How full a share is, as a tone: the bar and the ring turn amber, then red, as the context fills. */
+const tone = (share: number) => (share >= 0.9 ? 'full' : share >= 0.75 ? 'high' : '')
+
+/** A thin bar for a share of something (context window, plan credits); it grows into place and follows live figures. */
+function Meter({ label, used, total, colored }: { label: string; used: number; total: number; colored?: boolean }) {
+  const share = Math.max(0, Math.min(1, used / total))
   return (
-    <span className="menu-meter" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={total} aria-valuenow={Math.min(used, total)}>
-      <span style={{ width: `${pct}%` }} />
+    <span
+      className={'menu-meter' + (colored ? ' colored ' + tone(share) : '')}
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={Math.min(used, total)}
+    >
+      <span style={{ width: `${share * 100}%` }} />
     </span>
   )
 }
@@ -77,67 +88,122 @@ const SOURCE: Record<string, string> = {
   table: tk('窗口大小来自模型上限表')
 }
 
-/** The context row: N / M (P%) with a bar, or 已用 N when the window size is unknown. */
-function contextItem(u: UsageTotals): MenuItem | undefined {
-  if (u.contextUsed === undefined) return undefined
-  const used = u.contextUsed
-  const from = [u.contextSource && t(SOURCE[u.contextSource]), u.contextSizeSource === 'table' && t(SOURCE.table)].filter(Boolean).join(' · ')
-  if (!u.contextSize)
-    return { label: t('上下文 已用 {0}', formatTokens(used)), sub: [from, t('不知道窗口大小，所以不显示百分比')].filter(Boolean).join(' · '), info: true }
-  return {
-    label: t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(u.contextSize), percent(used, u.contextSize)),
-    sub: (
-      <span className="menu-meter-sub">
-        <Meter label={t('上下文')} used={used} total={u.contextSize} />
-        {from && <span>{from}</span>}
+/** Output tokens per second over the last uninterrupted stream, when the agent reported its output. */
+export function tokensPerSecond(timing?: GenerationTiming): number | undefined {
+  if (!timing?.streamMs || !timing.outputTokens) return undefined
+  return timing.outputTokens / (timing.streamMs / 1000)
+}
+
+/** The share of input read from the cache, when the agent reported cache reads. */
+export function cacheHit(u: UsageTotals): number | undefined {
+  const read = u.cachedRead ?? 0
+  return read > 0 ? read / (read + u.input) : undefined
+}
+
+/** One line of the panel: a label (with a colored dot for a share) and its figure on the right. */
+function Row({ label, value, dot, note, tip }: { label: ReactNode; value?: ReactNode; dot?: string; note?: ReactNode; tip?: string }) {
+  return (
+    <div className="usage-row">
+      <span className="usage-label">
+        {dot && <i className={'usage-dot part-' + dot} />}
+        {label}
+        {note && <span className="usage-note">{note}</span>}
       </span>
-    ),
-    info: true
-  }
+      {value !== undefined && <span className="usage-value" data-tip={tip}>{value}</span>}
+    </div>
+  )
 }
 
 /**
- * The items of a usage popover: context, then this conversation's new input,
- * output and cache figures on separate rows, and cost only when the agent
- * reported one. Nothing is estimated.
+ * A conversation's usage, laid out as Claude's usage popover: how full the
+ * context is, where this conversation's tokens went (cache, new input,
+ * output) on one stacked bar, then cost and speed. Only reported figures.
  */
+function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timing?: GenerationTiming }) {
+  const rounds = u ? u.turns + u.unreported : 0
+  const hasCtx = u?.contextUsed !== undefined
+  if (!u || (rounds === 0 && !hasCtx))
+    return (
+      <div className="usage-panel">
+        <div className="usage-head">{scope}</div>
+        <div className="usage-empty">{t('第一条回复完成后，这里会显示 agent 报告的用量。')}</div>
+      </div>
+    )
+  const from = [u.contextSource && t(SOURCE[u.contextSource]), u.contextSizeSource === 'table' && t(SOURCE.table)].filter(Boolean).join(' · ')
+  const parts = (
+    [
+      ['cache', tk('缓存读取'), u.cachedRead ?? 0],
+      ['write', tk('缓存写入'), u.cachedWrite ?? 0],
+      ['input', tk('新输入'), u.input],
+      ['output', tk('输出'), u.output]
+    ] as const
+  ).filter(([, , v]) => v > 0)
+  const all = parts.reduce((n, [, , v]) => n + v, 0)
+  const speed = tokensPerSecond(timing)
+  const share = (v: number) => (v / all >= 0.995 ? '100%' : percent(v, all))
+  return (
+    <div className="usage-panel">
+      <div className="usage-head">{scope}</div>
+      {hasCtx && (
+        <div className="usage-section">
+          <Row
+            label={t('上下文')}
+            value={u.contextSize ? `${formatTokens(u.contextUsed!)} / ${formatTokens(u.contextSize)} · ${percent(u.contextUsed!, u.contextSize)}` : t('已用 {0}', formatTokens(u.contextUsed!))}
+            tip={from || undefined}
+          />
+          {u.contextSize ? <Meter label={t('上下文')} used={u.contextUsed!} total={u.contextSize} colored /> : <div className="usage-foot">{t('不知道窗口大小，所以不显示百分比')}</div>}
+        </div>
+      )}
+      {u.turns > 0 && all > 0 ? (
+        <div className="usage-section">
+          <Row label={t('共 {0} 轮', rounds)} value={t('{0} tokens', formatTokens(all))} />
+          <span className="usage-stack" aria-hidden="true">
+            {parts.map(([key, , v]) => (
+              <span key={key} className={'usage-dot part-' + key} style={{ width: `${(v / all) * 100}%` }} />
+            ))}
+          </span>
+          {parts.map(([key, label, v]) => (
+            <Row
+              key={key}
+              dot={key}
+              label={t(label)}
+              note={key === 'output' && u.thought ? t('含思考 {0}', formatTokens(u.thought)) : undefined}
+              value={`${formatTokens(v)} · ${share(v)}`}
+            />
+          ))}
+        </div>
+      ) : (
+        rounds > 0 && (
+          <div className="usage-section">
+            <Row label={t('共 {0} 轮', rounds)} />
+            <div className="usage-foot">{t('这个 agent 只报告上下文，不报告每轮的 token 数。')}</div>
+          </div>
+        )
+      )}
+      {((u.cost && u.cost.amount > 0) || timing) && (
+        <div className="usage-section">
+          {u.cost && u.cost.amount > 0 && <Row label={t('费用')} note={t('按标价估算')} value={formatCost(u.cost)} tip={t('订阅账号不实际扣费')} />}
+          {speed !== undefined && <Row label={t('输出速度')} note={t('最近一次回复')} value={t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1))} />}
+          {timing && <Row label={t('首个回复')} note={t('最近一次回复')} value={seconds(timing.firstResponseMs)} />}
+        </div>
+      )}
+      {(u.unreported > 0 && u.turns > 0) || u.costSkipped ? (
+        <div className="usage-foot">
+          {[
+            u.unreported > 0 && u.turns > 0 ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : '',
+            u.costSkipped ? t('另有 {0} 轮的费用用的是别的币种，没有计入', u.costSkipped) : ''
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** The usage popover's items: the panel, laid out on its own (nothing in it is a choice). */
 export function usageMenu(u: UsageTotals | undefined, scope: string, timing?: GenerationTiming): MenuItem[] {
-  const items: MenuItem[] = [{ heading: scope }]
-  const ctx = u && contextItem(u)
-  if (!u || (u.turns + u.unreported === 0 && !ctx)) {
-    items.push({ label: t('还没有用量'), sub: t('第一条回复完成后，这里会显示 agent 报告的用量。'), info: true })
-    return items
-  }
-  if (ctx) items.push(ctx)
-  // [label, value, shown even when zero]
-  const rows: [string, number | undefined, boolean][] = [
-    [tk('新输入'), u.input, true],
-    [tk('输出'), u.output, true],
-    [tk('思考'), u.thought || undefined, false],
-    [tk('缓存读取'), u.cachedRead, false],
-    [tk('缓存写入'), u.cachedWrite, false]
-  ]
-  // Only real per-turn figures: an agent that reports just the context leaves these at zero.
-  if (u.turns > 0 && rows.some(([, v]) => !!v)) {
-    // Cache rows only when there was any; new input and output always.
-    for (const [label, v, always] of rows) if (v !== undefined && (v > 0 || always)) items.push({ label: t(label), hint: formatTokens(v), info: true })
-  } else if (!ctx) {
-    items.push({ label: t('这个 agent 不提供用量'), sub: t('它没有报告 token 数，所以这里不显示数字。'), info: true })
-  }
-  if (u.cost && u.cost.amount > 0)
-    items.push({
-      label: t('费用'),
-      hint: formatCost(u.cost),
-      sub: [t('按标价估算，订阅账号不实际扣费'), u.costSkipped ? t('另有 {0} 轮的费用用的是别的币种，没有计入', u.costSkipped) : ''].filter(Boolean).join(' · '),
-      info: true
-    })
-  if (timing) items.push({ label: t('最近一次回复'), sub: timingLine(timing), info: true })
-  items.push({
-    label: t('共 {0} 轮', u.turns + u.unreported),
-    sub: u.unreported && u.turns ? t('其中 {0} 轮后端未提供用量，未计入', u.unreported) : undefined,
-    info: true
-  })
-  return items
+  return [{ panel: <UsagePanel u={u} scope={scope} timing={timing} /> }]
 }
 
 const credits = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -287,17 +353,13 @@ export function ContextRing({ usage, scope, timing, onCompact }: { usage?: Usage
       : size
         ? t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(size), percent(used, size))
         : t('上下文 已用 {0}', formatTokens(used))
-  // A small static pie, like Claude's: an outline, filled as far as the context is.
-  const a = share * 2 * Math.PI
-  const r = 4.6
-  const end = [9 + r * Math.sin(a), 9 - r * Math.cos(a)]
-  const pie = share >= 0.999 ? <circle cx="9" cy="9" r={r} className="ring-fill" /> : share > 0 ? (
-    <path className="ring-fill" d={`M9 9 L9 ${9 - r} A${r} ${r} 0 ${share > 0.5 ? 1 : 0} 1 ${end[0].toFixed(2)} ${end[1].toFixed(2)} Z`} />
-  ) : null
+  // An arc around the ring, as far as the context is full; it turns amber, then red, and moves as the figure changes.
+  const r = 6.4
+  const length = 2 * Math.PI * r
   return (
     <>
       <button
-        className={'context-ring' + (share >= 0.9 ? ' full' : share >= 0.75 ? ' high' : '') + (used === undefined ? ' none' : '')}
+        className={'context-ring ' + tone(share) + (used === undefined ? ' none' : '')}
         data-tip={title}
         aria-label={title}
         onClick={(e) => {
@@ -305,13 +367,51 @@ export function ContextRing({ usage, scope, timing, onCompact }: { usage?: Usage
           // The agent's own compact command, when it has one, as Claude Code's /compact.
           // Nothing to compact before the first turn.
           const something = !!used || (usage?.turns ?? 0) + (usage?.unreported ?? 0) > 0
-          openMenu(e.currentTarget, [...usageMenu(usage, scope, timing), ...(onCompact && something ? [{ separator: true }, { label: t('压缩上下文'), onClick: onCompact }] : [])])
+          openMenu(e.currentTarget, [
+            ...usageMenu(usage, scope, timing),
+            ...(onCompact && something ? [{ separator: true }, { label: t('压缩上下文'), icon: <Minimize2 size={15} />, onClick: onCompact }] : [])
+          ])
         }}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-          <circle cx="9" cy="9" r="6.6" className="ring-track" />
-          {pie}
+          <circle cx="9" cy="9" r={r} className="ring-track" />
+          {share > 0 && <circle cx="9" cy="9" r={r} className="ring-arc" strokeDasharray={length} strokeDashoffset={length * (1 - share)} transform="rotate(-90 9 9)" />}
         </svg>
+      </button>
+      {menu}
+    </>
+  )
+}
+
+/**
+ * One quiet line under a conversation's composer with the running figures:
+ * rounds, the last reply's speed, tokens and cache hits. Only what the agent
+ * reported; click for the usage popover.
+ */
+export function UsageStrip({ usage, scope, timing }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming }) {
+  const [menu, openMenu] = useMenu({ align: 'left', placement: 'auto', compact: true })
+  if (!usage || usage.turns === 0 || !(usage.input || usage.output)) return null
+  const speed = tokensPerSecond(timing)
+  const hit = cacheHit(usage)
+  return (
+    <>
+      <button className="usage-strip" onClick={(e) => openMenu(e.currentTarget, usageMenu(usage, scope, timing))}>
+        <span>
+          <Gauge size={13} />
+          {t('{0} 轮', usage.turns + usage.unreported)}
+          {speed !== undefined && <> · {t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1))}</>}
+        </span>
+        <span>
+          <Database size={13} />
+          {t('{0} tokens', formatTokens(usage.total))}
+          {hit !== undefined && <> · {t('缓存命中 {0}', `${Math.round(hit * 100)}%`)}</>}
+        </span>
+        {usage.cost && usage.cost.amount > 0 && (
+          <span>
+            <Coins size={13} />
+            {formatCost(usage.cost)}
+          </span>
+        )}
       </button>
       {menu}
     </>
