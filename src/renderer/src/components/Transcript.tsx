@@ -33,7 +33,7 @@ import {
 } from 'lucide-react'
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
 import { planHeadline } from './PlanLine'
-import { api, toast, useApp } from '../store'
+import { api, refreshAccount, toast, useApp } from '../store'
 import { dayLabel, textOf } from '../util'
 import { markdownParts } from '../markdownParts'
 import { useMenu } from './Menu'
@@ -922,7 +922,11 @@ export function ErrorBar({ m, last = true, busy }: { m: Message; last?: boolean;
             {t('打开设置')}</button>
         )}
         {last && !busy && (
-          <button className="btn" onClick={() => void api().regenerate(m.conversationId)}>
+          <button className="btn" onClick={() => {
+            // Signed in elsewhere since: the composer's 未登录 should hear about it too.
+            if (needsLogin) void refreshAccount(backend.id)
+            void api().regenerate(m.conversationId)
+          }}>
             {t('重试')}</button>
         )}
       </div>

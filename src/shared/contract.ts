@@ -52,7 +52,7 @@ export type AgentEvent =
   /** How full the context window is, and what the session has cost so far (cumulative), as the backend reports. */
   | { kind: 'usage'; contextUsed?: number; contextSize?: number; cost?: Cost }
 
-export type StopReason = 'end_turn' | 'cancelled' | 'max_tokens' | 'refusal' | 'error'
+export type StopReason = 'end_turn' | 'cancelled' | 'max_tokens' | 'max_turn_requests' | 'refusal' | 'error'
 
 export interface Cost {
   amount: number
@@ -76,6 +76,8 @@ export interface SessionContext {
   turn?: TurnUsage & { cost?: Cost }
   /** Tells one logged turn from the next, so an old turn is never counted again. */
   turnKey?: string
+  /** The agent's latest compaction in its log, for agents that don't announce one (Qoder). */
+  compactionKey?: string
 }
 
 /** Tokens one turn used, exactly as the backend reported them. Fields it left out stay unset. */

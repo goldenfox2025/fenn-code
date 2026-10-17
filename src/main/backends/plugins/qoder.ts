@@ -50,6 +50,8 @@ const plugin = acpPlugin({
     }
   ],
   account: (config) => qoderAccount(config),
+  // Qoder reports no context over ACP and doesn't announce compaction; its own log has both.
+  sessionLog: 'qoder',
   // Qoder CLI is an npm package; npm follows the user's proxy settings.
   upgrade: {
     run: { command: 'npm', args: ['install', '-g', '@qoder-ai/qodercli@latest'] },

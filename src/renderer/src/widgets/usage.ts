@@ -1,27 +1,28 @@
 import { useEffect, useState } from 'react'
 import type { UsageSummary } from '@shared/model'
-import { api } from '../store'
+import { api, useApp } from '../store'
 
-/** Widgets shown together share one fetch; a page opened later fetches again. */
+/** Widgets shown together share one fetch; a page opened later, or a chat deleted, fetches again. */
 const FRESH_MS = 2000
-let last: { at: number; summary: Promise<UsageSummary> } | undefined
+let last: { at: number; chats: number; summary: Promise<UsageSummary> } | undefined
 
-function load(): Promise<UsageSummary> {
-  if (!last || Date.now() - last.at > FRESH_MS)
-    last = { at: Date.now(), summary: api().usageCalendar().catch(() => ({ days: [], models: [] })) }
+function load(chats: number): Promise<UsageSummary> {
+  if (!last || last.chats !== chats || Date.now() - last.at > FRESH_MS)
+    last = { at: Date.now(), chats, summary: api().usageCalendar().catch(() => ({ days: [], models: [] })) }
   return last.summary
 }
 
-/** Tokens per day and per model from every conversation; null while it loads. */
+/** Tokens per day and per model from every conversation; null while it first loads. */
 export function useUsageSummary(): UsageSummary | null {
   const [usage, setUsage] = useState<UsageSummary | null>(null)
+  const chats = useApp((s) => s.conversations.length)
   useEffect(() => {
     let live = true
-    void load().then((u) => live && setUsage(u))
+    void load(chats).then((u) => live && setUsage(u))
     return () => {
       live = false
     }
-  }, [])
+  }, [chats])
   return usage
 }
 

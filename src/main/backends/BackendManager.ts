@@ -186,7 +186,27 @@ export class BackendManager {
   }
 
   async newSession(backendId: string, opts: { cwd?: string; folder?: string; tools?: HostToolServer[]; system?: string } = {}): Promise<SessionInfo> {
-    return this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })
+    return this.signedInSince(backendId, () =>
+      this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system }))
+  }
+
+  /** Replies running now, per backend: a restart would stop them. */
+  private prompting = new Map<string, number>()
+
+  /**
+   * An agent that read its sign-in when it started (Qoder) doesn't see one made since, in a
+   * terminal or another app: when it says signed out and nothing is running on it, start it
+   * again and ask once more.
+   */
+  private async signedInSince<T>(backendId: string, open: () => Promise<T>): Promise<T> {
+    try {
+      return await open()
+    } catch (err) {
+      const kind = classifyError(err instanceof Error ? err.message : String(err))
+      if ((kind !== 'auth' && kind !== 'refresh') || this.prompting.get(backendId)) throw err
+      await this.restart(backendId)
+      return open()
+    }
   }
 
   /** Starts the agent ahead of the first message; sends nothing. */
@@ -196,8 +216,8 @@ export class BackendManager {
 
   /** No prompt or app tools: discover the models a new session actually offers. */
   async modelCatalog(backendId: string, modelId?: string): Promise<Omit<SessionInfo, 'sessionId'>> {
+    const { sessionId, ...catalog } = await this.signedInSince(backendId, () => this.get(backendId).newSession({ cwd: this.opts.defaultCwd }))
     const backend = this.get(backendId)
-    const { sessionId, ...catalog } = await backend.newSession({ cwd: this.opts.defaultCwd })
     const off = this.onAgentEvent((bid, sid, event) => {
       if (bid === backendId && sid === sessionId && event.kind === 'options') catalog.options = event.options
     })
@@ -225,7 +245,8 @@ export class BackendManager {
   }
 
   async prompt(backendId: string, sessionId: string, parts: PromptPart[]): Promise<TurnResult> {
-    const r = await this.get(backendId).prompt(sessionId, parts)
+    this.prompting.set(backendId, (this.prompting.get(backendId) ?? 0) + 1)
+    const r = await this.get(backendId).prompt(sessionId, parts).finally(() => this.prompting.set(backendId, this.prompting.get(backendId)! - 1))
     if (r.stopReason === 'error' && classifyError(r.error) === 'refresh') this.staleSignIn.add(backendId)
     else if (r.stopReason !== 'error') this.staleSignIn.delete(backendId)
     return r

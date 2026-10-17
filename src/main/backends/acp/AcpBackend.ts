@@ -781,7 +781,7 @@ function translateUpdate(u: acp.SessionNotification['update']): AgentEvent | nul
         toolId: u.toolCallId,
         title: u.title ?? undefined,
         status: u.status ? TOOL_STATUS[u.status] : undefined,
-        output: toolOutput(u.content) ?? stringify(u.rawOutput),
+        output: toolOutput(u.content) ?? terminalOutput(u._meta) ?? rawText(u.rawOutput),
         toolKind: u.kind ?? undefined,
         paths: toolPaths(u)
       }
@@ -803,15 +803,30 @@ function translateUpdate(u: acp.SessionNotification['update']): AgentEvent | nul
   }
 }
 
+/** A terminal entry adds nothing readable: its output comes in `_meta` or `rawOutput`. */
 function toolOutput(content: acp.ToolCallContent[] | null | undefined): string | undefined {
-  if (!content?.length) return undefined
-  return content
-    .map((c) => {
-      if (c.type === 'content') return c.content.type === 'text' ? c.content.text : `[${c.content.type}]`
-      if (c.type === 'diff') return `--- ${c.path}\n${c.newText}`
-      return `[terminal ${c.terminalId}]`
-    })
-    .join('\n')
+  const parts = (content ?? []).flatMap((c) => {
+    if (c.type === 'content') return [c.content.type === 'text' ? c.content.text : `[${c.content.type}]`]
+    if (c.type === 'diff') return [`--- ${c.path}\n${c.newText}`]
+    return []
+  })
+  return parts.length ? parts.join('\n') : undefined
+}
+
+/**
+ * A command the agent ran itself, shown as a terminal it never asked Ancora to open (Qoder,
+ * Claude Code's adapter): its output arrives as `_meta.terminal_output`.
+ */
+function terminalOutput(meta: unknown): string | undefined {
+  const data = (meta as { terminal_output?: { data?: unknown } } | null | undefined)?.terminal_output?.data
+  return typeof data === 'string' ? data : undefined
+}
+
+/** A tool's raw output: text blocks read as their text, anything else as JSON. */
+function rawText(v: unknown): string | undefined {
+  if (Array.isArray(v) && v.length && v.every((b) => b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string'))
+    return v.map((b) => b.text).join('\n')
+  return stringify(v)
 }
 
 function num(v: unknown): number | undefined {
@@ -860,7 +875,7 @@ function includesCache(u: TurnUsage, fallback: boolean): boolean {
 }
 
 function normalizeStop(r: string): TurnResult['stopReason'] {
-  return r === 'end_turn' || r === 'cancelled' || r === 'max_tokens' || r === 'refusal' ? r : 'end_turn'
+  return r === 'end_turn' || r === 'cancelled' || r === 'max_tokens' || r === 'max_turn_requests' || r === 'refusal' ? r : 'end_turn'
 }
 
 function stringify(v: unknown): string | undefined {

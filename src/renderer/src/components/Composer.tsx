@@ -11,6 +11,7 @@ const tr = t
 const NEED_TEXT = tk('请在命令后面写上要做的事')
 const NO_COMMAND = tk('{0} 的命令里没有 /{1}。要照原样发出去，再按一次 Enter。')
 const NEED_NAME = tk('请在 /rename 后面写上新名字')
+const RENAME_FIRST = tk('还没有对话可以重命名：先发一条消息开始对话，再用 /rename。')
 import { choiceLabel, optionLabel } from './sessionOptionLabels'
 import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
@@ -120,6 +121,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       void api().runCommand(conversation.id, app.command, app.text).catch(toastError)
       return
     }
+    // A new chat has nothing to rename yet, and the agent shouldn't get the command as its first message.
+    if (!conversation && /^\/rename(\s|$)/i.test(t)) return toast(tr(RENAME_FIRST), 'error')
     // Renaming is the app's to do when the agent has no /rename of its own (or hasn't said yet).
     if (conversation && !target && !files.length && /^\/rename(\s|$)/i.test(t) && !slashCommands(conversation).some((c) => c.name.toLowerCase() === 'rename')) {
       const name = t.slice(7).trim()

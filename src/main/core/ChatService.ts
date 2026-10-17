@@ -7,14 +7,14 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, TurnResult } from '../../shared/contract'
+import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, StopReason, TurnResult } from '../../shared/contract'
 import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
 import type { AppEvent, Attachment, Block, Conversation, Message, QueuedMessage, ReplyModel } from '../../shared/model'
 import { addTurn, emptyTotals, type MessageUsage, type UsageTotals } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
-import { t } from '../../shared/i18n'
+import { t, tk } from '../../shared/i18n'
 import { TurnMeter } from './TurnMeter'
 import { sessionOptionDefaults } from '../../shared/sessionOptions'
 
@@ -81,6 +81,8 @@ interface Live {
   compacted?: boolean
   /** The context the agent last reported, to notice a compaction it didn't announce. */
   contextUsed?: number
+  /** The latest compaction in the agent's log (Qoder), to notice the next one. */
+  compactionKey?: string
 }
 
 interface QueuedTurn {
@@ -373,12 +375,20 @@ export class ChatService {
     if (renamed) this.patchConversation(conversationId, { title: renamed, titleAuto: false })
     if (reply.state === 'done' && !reply.blocks.length && command && (opts.raw || renamed) && !opts.action)
       reply.blocks.push({ type: 'notice', level: 'info', text: renamed ? t('已重命名为「{0}」。', renamed) : t('{0} 已执行，没有返回内容。', command) })
+    // The agent stopped short of finishing on its own: say why, so a cut-off reply doesn't read as complete.
+    const short = STOPPED_SHORT[result.stopReason]
+    if (short) reply.blocks.push({ type: 'notice', level: 'warning', text: t(short) })
     // Agents that report little over ACP (Grok) write it to their own log: read the turn from there.
     let logged: SessionContext | undefined
     if (live && result.stopReason !== 'error' && (!result.usage || !live.reported)) {
       logged = await this.backends.sessionContext(live.backendId, live.sessionId)
       if (logged?.turnKey && logged.turnKey === live.turnKey) logged = { ...logged, turn: undefined }
       else if (logged?.turnKey) live.turnKey = logged.turnKey
+      // A compaction the agent logged but didn't announce: the next prompt carries the rules again.
+      if (logged?.compactionKey && logged.compactionKey !== live.compactionKey) {
+        live.compactionKey = logged.compactionKey
+        live.compacted = true
+      }
       if (logged?.turn && !result.usage) result = { ...result, usage: logged.turn }
     }
     const usage = turnUsageOf(result, costAtStart, live?.cost)
@@ -892,6 +902,7 @@ export class ChatService {
     const ctx = await this.backends.sessionContext(live.backendId, live.sessionId)
     if (!ctx || this.live.get(conversationId) !== live) return
     live.turnKey ??= ctx.turnKey
+    live.compactionKey ??= ctx.compactionKey
     if (ctx.used !== undefined && this.store.conversation(conversationId)?.usage?.contextSource !== 'agent') this.setLoggedContext(conversationId, ctx)
   }
 
@@ -1140,6 +1151,12 @@ export function linesOf(messages: Message[]): Line[] {
 /** Below this many tokens a smaller context is not taken for a compaction. */
 /** Commands kept in a conversation's 后台 list. */
 const BACKGROUND_KEPT = 12
+/** Why a turn ended before the agent was done, by its ACP stop reason. */
+const STOPPED_SHORT: Partial<Record<StopReason, string>> = {
+  max_tokens: tk('回复达到了长度上限，后面的内容被截断了。'),
+  max_turn_requests: tk('达到了轮次上限，回复停在这里。发一条消息可以让它继续。'),
+  refusal: tk('模型拒绝回答这个请求。')
+}
 
 /** The last `bytes` of a file as text; undefined when it can't be read. */
 async function readTail(path: string, bytes: number): Promise<string | undefined> {

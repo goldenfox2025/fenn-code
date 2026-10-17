@@ -1,6 +1,6 @@
 /**
  * Reads an agent CLI's own session log, read-only, to learn how full a
- * session's context is: when the agent sends no ACP usage_update (Grok), or
+ * session's context is: when the agent sends no ACP usage_update (Grok, Qoder), or
  * when an old conversation is reopened and nothing has been reported yet.
  * Each log is found by the ACP session id; nothing is guessed when it isn't there.
  */
@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type { SessionContext } from '../../shared/contract'
 import type { MessageUsage } from '../../shared/usage'
 
-export type SessionLogKind = 'codex' | 'claude' | 'grok'
+export type SessionLogKind = 'codex' | 'claude' | 'qoder' | 'grok'
 
 export type { SessionContext }
 
@@ -92,10 +92,17 @@ export function codexContext(lines: string[]): SessionContext | undefined {
 }
 
 /**
- * Claude Code: the last main-thread assistant entry. Its input does
- * not include the cache, so the context is input plus cache reads and writes.
+ * Claude Code, and Qoder, which keeps the same log: the last main-thread assistant entry.
+ * Its input does not include the cache, so the context is input plus cache reads and writes.
+ * The latest compact_boundary entry names the last compaction.
  */
 export function claudeContext(lines: string[]): SessionContext | undefined {
+  let compactionKey: string | undefined
+  for (let i = lines.length - 1; i >= 0 && !compactionKey; i--) {
+    if (!lines[i].includes('compact_boundary')) continue
+    const x = parse(lines[i])
+    if (x?.type === 'system' && x.subtype === 'compact_boundary' && !x.isSidechain) compactionKey = String(x.uuid ?? x.timestamp ?? i)
+  }
   for (let i = lines.length - 1; i >= 0; i--) {
     const x = parse(lines[i])
     if (x?.type !== 'assistant' || x.isSidechain) continue
@@ -106,9 +113,9 @@ export function claudeContext(lines: string[]): SessionContext | undefined {
     if (input === undefined) continue
     const used = input + (n(u.cache_read_input_tokens) ?? 0) + (n(u.cache_creation_input_tokens) ?? 0)
     if (!used) continue
-    return { used, model: typeof x.message.model === 'string' ? x.message.model : undefined }
+    return { used, model: typeof x.message.model === 'string' ? x.message.model : undefined, ...(compactionKey ? { compactionKey } : {}) }
   }
-  return undefined
+  return compactionKey ? { compactionKey } : undefined
 }
 
 /** The first object (depth-first, a few levels down) that passes `test`. */
@@ -176,6 +183,15 @@ export async function readSessionContext(kind: SessionLogKind, sessionId: string
       const root = join(process.env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'projects')
       const f = await inAnyFolder(root, `${sessionId}.jsonl`)
       return f ? claudeContext(await tailLines(f)) : undefined
+    }
+    if (kind === 'qoder') {
+      // QODER_CONFIG_DIR moves it; the China site keeps its own folder.
+      const roots = process.env.QODER_CONFIG_DIR ? [process.env.QODER_CONFIG_DIR] : [join(home, '.qoder'), join(home, '.qoder-cn')]
+      for (const root of roots) {
+        const f = await inAnyFolder(join(root, 'projects'), `${sessionId}.jsonl`)
+        if (f) return claudeContext(await tailLines(f))
+      }
+      return undefined
     }
     const root = join(home, '.grok', 'sessions')
     for (const d of await dirs(root)) {

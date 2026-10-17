@@ -1008,4 +1008,8 @@ export const en: Record<string, string> = {
   "输出速度 {0}，平均每个 token {1}": "Output {0}, {1} per token on average",
   "输出时平均每个 token 的间隔（TPOT）": "Average time between output tokens (TPOT)",
   "还有 {0} 个等您确认": "{0} more waiting for you",
+  "回复达到了长度上限，后面的内容被截断了。": "The reply hit its length limit and was cut off.",
+  "达到了轮次上限，回复停在这里。发一条消息可以让它继续。": "The agent hit its turn limit and stopped here. Send a message to let it continue.",
+  "模型拒绝回答这个请求。": "The model declined to answer this request.",
+  "还没有对话可以重命名：先发一条消息开始对话，再用 /rename。": "There is no chat to rename yet: send a message to start one, then use /rename.",
 }
