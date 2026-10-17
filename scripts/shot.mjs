@@ -611,6 +611,13 @@ const scenarios = {
     await page.fill('.composer textarea', '/')
     await wait(200)
     await shot('slash-menu')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('排查 ECONNRESET')
+    await wait(200)
+    await shot('slash-chip')
+    await page.keyboard.press('Enter')
+    await wait(1200)
+    await shot('slash-sent')
   },
   // The project panel at an ordinary laptop width: tabs, the library and routines.
   async panel() {

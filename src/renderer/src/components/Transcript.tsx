@@ -222,7 +222,7 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
           )}
         </div>
       )}
-      {text && <div className="bubble">{text}</div>}
+      {text && <div className="bubble">{commandToken(text)}</div>}
       {m.forwardedTo && <ForwardedNote m={m} />}
       {/* What a / command started from this message (a sub-chat, a thread). */}
       {m.blocks.some((b) => b.type === 'thread-card') && (
@@ -392,6 +392,18 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     </div>
   )
 })
+
+/** A message that starts with a / command shows the command as a token, not as plain text. */
+function commandToken(text: string): React.ReactNode {
+  const m = /^\/([^\s/]+)(\s[\s\S]*)?$/.exec(text)
+  if (!m) return text
+  return (
+    <>
+      <span className="cmd-token">/{m[1]}</span>
+      {m[2] ?? ''}
+    </>
+  )
+}
 
 function toolIcon(kind?: string) {
   switch (kind) {

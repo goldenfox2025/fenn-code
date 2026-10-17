@@ -17,7 +17,7 @@ import { ProjectFiles } from './ProjectFiles'
 import { addFile, changedFiles, inside, listFolder, readPreview } from './Library'
 import { Artifacts } from './Artifacts'
 import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
-import { ChatService, textOf } from './ChatService'
+import { ChatService, excerpt, textOf } from './ChatService'
 import { AutoAssigner } from './AutoAssigner'
 import { folderSafeName, moveContents, uniqueDir } from './autoFolder'
 import { isUnsafeFolder } from '../../shared/unsafeFolders'
@@ -185,6 +185,39 @@ export class AppCore {
     this.chat.forgetSession(conv.id)
     const reply = replyId ? this.store.messagesOf(conv.id).find((m) => m.id === replyId) : undefined
     if (reply) this.chat.updateMessage({ ...reply, blocks: [...reply.blocks, { type: 'placed', path: target }] })
+    return target
+  }
+
+  /**
+   * The 「在默认文件夹里新建」 button: a folder named after the chat or project
+   * under the default folder, with whatever the agent already made moved in.
+   */
+  async makeDefaultFolder(id: string): Promise<string> {
+    const root = this.autoFolderRoot()
+    mkdirSync(root, { recursive: true })
+    const project = this.store.projects.find((p) => p.id === id)
+    if (project) {
+      if (project.cwd) return project.cwd
+      const target = uniqueDir(root, folderSafeName(project.name, t('新项目')))
+      mkdirSync(target, { recursive: true })
+      await this.updateProject(id, { cwd: target })
+      return target
+    }
+    const conv = this.store.conversation(id)
+    if (!conv) throw new Error(t('对话不存在或已被删除'))
+    const has = this.chat.folderOf(conv)
+    if (has) return has
+    if (this.chat.isBusy(id)) throw new Error(t('等这条回复结束再建文件夹'))
+    const target = uniqueDir(root, folderSafeName(conv.title, t('新对话')))
+    mkdirSync(target, { recursive: true })
+    const scratch = this.chat.scratchPath(id)
+    if (existsSync(scratch)) {
+      moveContents(scratch, target)
+      try { rmdirSync(scratch) } catch { /* empty either way */ }
+      this.movedNotes.set(id, t('（应用说明：这个对话的文件已从 {0} 移到 {1}，之后请在 {1} 里工作。）', scratch, target))
+    }
+    this.chat.patchConversation(id, { cwd: target, autoFolder: true })
+    this.chat.forgetSession(id)
     return target
   }
 
@@ -383,7 +416,8 @@ export class AppCore {
     return conv
   }
 
-  send(conversationId: string, text: string, attachments?: Attachment[]): Promise<void> {
+  async send(conversationId: string, text: string, attachments?: Attachment[]): Promise<void> {
+    await this.takePendingBackend(conversationId)
     const conv = this.store.conversation(conversationId)
     // Writing in a resolved thread reopens it, as in Claude Projects.
     if (conv?.resolved) this.chat.patchConversation(conversationId, { resolved: false })
@@ -391,7 +425,6 @@ export class AppCore {
     const name = /^\/(\S+)/.exec(text.trim())?.[1]
     const raw = !!name && !!conv?.agentCommands?.some((c) => c.name === name) && !attachments?.length
     void this.chat.send(conversationId, text, { attachments, raw: raw || undefined })
-    return Promise.resolve()
   }
 
   /**
@@ -408,8 +441,11 @@ export class AppCore {
     if (command === 'subchat') {
       if (conv.kind !== 'chat' || conv.parentId) throw new Error(t('只有普通对话能开子对话，子对话里不能再开'))
       if (this.chat.isBusy(conv.id)) throw new Error(t('等这条回复结束再开子对话'))
+      // The new chat can't see this one: it starts with its latest lines, and can read more itself.
+      const recent = excerpt(this.store.messagesOf(conv.id).filter((m) => !m.hidden))
       this.chat.addMessage(conv.id, 'user', [{ type: 'text', text: typed }])
-      return this.orchestrator.startSubconversation(conv, '', task).id
+      const context = recent ? `主对话最近的内容（应用摘录，可能不完整；需要更多时用 read_parent_conversation 查看）：\n${recent}` : undefined
+      return this.orchestrator.startSubconversation(conv, '', task, context).id
     }
     const project = this.store.project(conv.projectId)
     if (conv.kind !== 'project' || !project) throw new Error(t('只有项目的主对话能开讨论串'))
@@ -421,6 +457,7 @@ export class AppCore {
     const list = this.store.messagesOf(conversationId)
     const lastUser = [...list].reverse().find((m) => m.role === 'user' && !m.hidden)
     if (!lastUser) return
+    await this.takePendingBackend(conversationId)
     const { text, attachments } = splitUserMessage(lastUser)
     const variant = await this.chat.rewind(conversationId, lastUser.id)
     void this.chat.send(conversationId, text, { attachments, variant })
@@ -429,6 +466,7 @@ export class AppCore {
   async editMessage(conversationId: string, messageId: string, text: string): Promise<void> {
     const m = this.store.message(conversationId, messageId)
     if (!m || m.role !== 'user') return
+    await this.takePendingBackend(conversationId)
     const { attachments } = splitUserMessage(m)
     const variant = await this.chat.rewind(conversationId, messageId)
     void this.chat.send(conversationId, text, { attachments, variant })
@@ -559,39 +597,60 @@ export class AppCore {
   /** The latest backend switch asked for in each conversation (see updateConversation). */
   private switches = new Map<string, number>()
 
+  /**
+   * Hands a conversation to another agent: a reply still running stops (what it said
+   * stays, marked as cut off by the switch); the new agent gets the conversation so far.
+   */
+  private async switchBackend(id: string, nextBackendId: string): Promise<void> {
+    // The latest choice wins: one made while an earlier switch waits for the reply to stop replaces it.
+    const seq = (this.switches.get(id) ?? 0) + 1
+    this.switches.set(id, seq)
+    const reply = this.chat.currentReply(id)
+    if (reply) {
+      await this.chat.stopTurn(id)
+      if (this.switches.get(id) !== seq) return
+      const m = this.store.messagesOf(id).find((x) => x.id === reply.id)
+      if (m && m.state === 'cancelled') this.chat.updateMessage({ ...m, switchedTo: this.backends.list().find((b) => b.id === nextBackendId)?.name ?? nextBackendId })
+    }
+    const before = this.store.conversation(id)
+    if (!before) return
+    this.chat.forgetSession(id)
+    this.chat.patchConversation(id, { backendId: nextBackendId, nextBackendId: undefined, sessionRef: undefined, models: undefined,
+      modelId: this.store.settings.backendModelDefaults?.[nextBackendId], sessionOptions: undefined, optionValues: undefined, status: 'idle',
+      // The ring shows the new agent's context, which starts empty.
+      usage: before.usage && { ...before.usage, contextUsed: undefined, contextSize: undefined, contextSource: undefined, contextSizeSource: undefined } })
+    if (before.kind === 'project') {
+      const project = this.store.project(before.projectId)
+      if (project) {
+        const next = { ...project, backendId: nextBackendId }
+        this.store.putProject(next)
+        this.publish({ type: 'project', project: next })
+      }
+    }
+  }
+
+  /** A backend picked during a reply takes over when the next message goes out. */
+  private async takePendingBackend(id: string): Promise<void> {
+    const next = this.store.conversation(id)?.nextBackendId
+    if (next && this.backends.has(next)) await this.switchBackend(id, next)
+    else if (next) this.chat.patchConversation(id, { nextBackendId: undefined })
+  }
+
   async updateConversation(id: string, patch: Partial<Conversation>): Promise<void> {
     const before = this.store.conversation(id)
     if (before?.kind === 'chat' && 'projectId' in patch) {
       const { projectId: _ignored, ...rest } = patch
       patch = rest
     }
-    if (before && patch.backendId !== undefined && patch.backendId !== before.backendId) {
-      const nextBackendId = patch.backendId
-      if (!this.backends.has(patch.backendId)) throw new Error(t('后端「{0}」已经不存在了', patch.backendId))
-      // Mid-reply: stop it (what it said so far stays, marked as cut off by the switch), then switch.
-      // The latest choice wins: one made while an earlier switch waits for the reply to stop replaces it.
-      const seq = (this.switches.get(id) ?? 0) + 1
-      this.switches.set(id, seq)
-      const reply = this.chat.currentReply(id)
-      if (reply) {
-        await this.chat.stopTurn(id)
-        if (this.switches.get(id) !== seq) return
-        const m = this.store.messagesOf(id).find((x) => x.id === reply.id)
-        if (m && m.state === 'cancelled') this.chat.updateMessage({ ...m, switchedTo: this.backends.list().find((b) => b.id === nextBackendId)?.name ?? nextBackendId })
-      }
-      this.chat.forgetSession(id)
-      patch = { ...patch, sessionRef: undefined, models: undefined, modelId: this.store.settings.backendModelDefaults?.[nextBackendId],
-        sessionOptions: undefined, optionValues: undefined, status: 'idle',
-        // The ring shows the new agent's context, which starts empty.
-        usage: before.usage && { ...before.usage, contextUsed: undefined, contextSize: undefined, contextSource: undefined, contextSizeSource: undefined } }
-      if (before.kind === 'project') {
-        const project = this.store.project(before.projectId)
-        if (project) {
-          const next = { ...project, backendId: nextBackendId }
-          this.store.putProject(next)
-          this.publish({ type: 'project', project: next })
-        }
-      }
+    if (before && patch.backendId !== undefined) {
+      const { backendId: next, ...rest } = patch
+      patch = rest
+      if (!this.backends.has(next)) throw new Error(t('后端「{0}」已经不存在了', next))
+      // Mid-reply the choice waits for the next message: that one stops the reply, if it still runs, then switches.
+      if (next === before.backendId) {
+        if (before.nextBackendId) this.chat.patchConversation(id, { nextBackendId: undefined })
+      } else if (this.chat.currentReply(id)) this.chat.patchConversation(id, { nextBackendId: next })
+      else await this.switchBackend(id, next)
     }
     // A title the user typed is theirs; the app stops improving it.
     if ('title' in patch) patch = { ...patch, titleAuto: false }
@@ -620,6 +679,16 @@ export class AppCore {
         }
       }
     }
+    // A deleted sub-conversation's card goes from its parent; a deleted parent's children become chats of their own.
+    const gone = this.store.conversation(id)
+    if (gone?.parentId) {
+      for (const m of this.store.messagesOf(gone.parentId)) {
+        const before = m.blocks.length
+        m.blocks = m.blocks.filter((b) => !(b.type === 'thread-card' && b.threadId === id))
+        if (m.blocks.length !== before) this.chat.updateMessage(m)
+      }
+    }
+    for (const child of this.store.conversations.filter((c) => c.parentId === id)) this.chat.patchConversation(child.id, { parentId: undefined })
     this.tools.revoke(id)
     this.computer?.forget(id)
     this.store.removeConversation(id)
@@ -635,6 +704,7 @@ export class AppCore {
     // The project chat keeps one line; the coordinator never sees it.
     this.chat.addMessage(coordinator.id, 'system', [{ type: 'thread-event', threadId, kind: 'forwarded', text: text.slice(0, 300) }])
     if (thread.resolved) this.chat.patchConversation(threadId, { resolved: false })
+    await this.takePendingBackend(threadId)
     await this.chat.send(threadId, text, { attachments })
   }
 

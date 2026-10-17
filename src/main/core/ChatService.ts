@@ -1025,6 +1025,18 @@ export function condense(messages: Message[], budget = 20_000): string {
  * verbatim (up to maxRecent messages and maxChars), and everything older
  * condensed. App bookkeeping turns are never replayed.
  */
+/** The latest lines of a conversation, whole messages only, up to maxChars (each message capped at perMessage). */
+export function excerpt(messages: Message[], maxChars = 3000, perMessage = 800): string {
+  const lines = linesOf(messages).map((l) => fmt(l, perMessage))
+  const out: string[] = []
+  let used = 0
+  for (let i = lines.length - 1; i >= 0 && used + lines[i].length <= maxChars; i--) {
+    out.unshift(lines[i])
+    used += lines[i].length + 2
+  }
+  return out.join('\n\n')
+}
+
 export function transcript(messages: Message[], maxChars = 24000, maxRecent = Infinity): string {
   const visible = messages.filter((m) => linesOf([m]).length)
   if (!visible.length) return ''

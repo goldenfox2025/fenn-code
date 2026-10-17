@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, FolderSearch, Plus, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, FolderPlus, FolderSearch, Plus, RefreshCw, Search } from 'lucide-react'
 import type { LibraryChange, LibraryEntry } from '@shared/model'
 import { api, toast, useApp } from '../store'
 import { t } from '../i18n'
@@ -98,6 +98,19 @@ export function FilesPane({ id }: { id: string }) {
     reload()
   }
   const picker = useRef<HTMLInputElement>(null)
+  const project = useApp((s) => s.projects.some((p) => p.id === id))
+  const fail = (e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error')
+  const choose = async () => {
+    const dir = await api().pickFolder()
+    if (!dir) return
+    try {
+      if (project) await api().updateProject(id, { cwd: dir })
+      else await api().updateConversation(id, { cwd: dir })
+      reload()
+    } catch (e) {
+      fail(e)
+    }
+  }
 
   if (root === undefined) return <div className="files-pane" ref={box} />
   if (root === null)
@@ -106,7 +119,17 @@ export function FilesPane({ id }: { id: string }) {
         <div className="empty">
           <FolderSearch size={22} />
           <div>{t('还没有文件夹')}</div>
-          <div className="small">{t('选好工作文件夹后，这里会列出它的文件，agent 改过的文件会标出来。')}</div>
+          <div className="small">{project ? t('给这个项目一个文件夹，这里就会列出它的文件。') : t('不选也行：agent 一做出文件，就会自动放进默认文件夹里以对话命名的文件夹。')}</div>
+          <div className="empty-actions">
+            <button className="btn sm" onClick={() => void api().makeDefaultFolder(id).then(reload).catch(fail)}>
+              <FolderPlus size={14} />
+              {t('在默认文件夹里新建')}
+            </button>
+            <button className="btn sm" onClick={() => void choose()}>
+              <FolderOpen size={14} />
+              {t('选择文件夹…')}
+            </button>
+          </div>
         </div>
       </div>
     )

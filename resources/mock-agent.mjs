@@ -117,7 +117,13 @@ const handlers = {
         modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] },
       };
     // Like Claude Code, offers /compact (sent once the session exists).
-    setTimeout(() => notify(sessionId, { sessionUpdate: "available_commands_update", availableCommands: [{ name: "compact", description: "Compact the conversation" }] }), 50);
+    setTimeout(() => notify(sessionId, { sessionUpdate: "available_commands_update", availableCommands: [
+      { name: "compact", description: "Compress conversation history to save context window" },
+      { name: "model", description: "Switch the model" },
+      { name: "context", description: "Show context window usage and session stats" },
+      { name: "clear", description: "Start over with an empty context" },
+      { name: "deep-research", description: "Research a question across many sources and write a report" }
+    ] }), 50);
     return { sessionId, configOptions: configOptions(FIRST_MODEL, sessions.get(sessionId)) };
   },
   "session/resume": ({ sessionId, cwd }) => {

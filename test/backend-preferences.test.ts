@@ -208,7 +208,7 @@ describe('switching backend mid-conversation', () => {
     } finally { await dispose() }
   }, 60000)
 
-  it('a backend switch during a reply stops it, keeps what it said, and tells the new agent where it stopped', async () => {
+  it('a backend picked during a reply waits: the next message stops the reply, keeps what it said, and tells the new agent where it stopped', async () => {
     const { core, store, dispose } = await makeCore()
     try {
       await core.backends.setPlugins([...loadPlugins(), acpPlugin({ id: 'other', name: 'Other agent',
@@ -218,13 +218,38 @@ describe('switching backend mid-conversation', () => {
       void core.send(c.id, '讲一个很长的故事')
       await until(() => store.messagesOf(c.id).some((m) => m.state === 'streaming' && JSON.stringify(m.blocks).length > 200))
       await core.updateConversation(c.id, { backendId: 'other' })
-      const cut = store.messagesOf(c.id).filter((m) => m.role === 'assistant').pop()!
-      expect(cut).toMatchObject({ state: 'cancelled', switchedTo: 'Other agent' })
-      expect(store.conversation(c.id)).toMatchObject({ backendId: 'other', status: 'idle' })
+      // The reply keeps going; the choice waits for the next message.
+      expect(store.conversation(c.id)).toMatchObject({ backendId: 'mock', nextBackendId: 'other', status: 'working' })
+      expect(store.messagesOf(c.id).filter((m) => m.role === 'assistant').pop()?.state).toBe('streaming')
       await core.send(c.id, '你看到了什么')
+      const cut = store.messagesOf(c.id).filter((m) => m.role === 'assistant')[1]!
+      expect(cut).toMatchObject({ state: 'cancelled', switchedTo: 'Other agent' })
+      expect(store.conversation(c.id)?.backendId).toBe('other')
+      expect(store.conversation(c.id)?.nextBackendId).toBeUndefined()
       await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).filter((m) => m.role === 'assistant').length >= 3)
       const seen = JSON.stringify(store.messagesOf(c.id).filter((m) => m.role === 'assistant').pop()!.blocks)
       expect(seen).toMatch(/(没说完|刚开始)就被中断了/)
+    } finally { await dispose() }
+  }, 60000)
+
+  it('a backend picked during a reply that then finishes takes over with the next message, nothing cut', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      await core.backends.setPlugins([...loadPlugins(), acpPlugin({ id: 'other', name: 'Other agent',
+        launch: () => ({ command: process.execPath, args: [join(__dirname, '../resources/mock-agent.mjs')] }) })])
+      const c = await core.startChat({ backendId: 'mock', text: '你好' })
+      await until(() => store.conversation(c.id)?.status === 'idle')
+      void core.send(c.id, '讲一个很长的故事')
+      await until(() => store.messagesOf(c.id).some((m) => m.state === 'streaming'))
+      await core.updateConversation(c.id, { backendId: 'other' })
+      await until(() => store.conversation(c.id)?.status === 'idle', 30000)
+      expect(store.messagesOf(c.id).filter((m) => m.role === 'assistant').pop()?.state).toBe('done')
+      expect(store.conversation(c.id)).toMatchObject({ backendId: 'mock', nextBackendId: 'other' })
+      // Picking the current one again drops the waiting choice.
+      await core.updateConversation(c.id, { backendId: 'mock' })
+      expect(store.conversation(c.id)?.nextBackendId).toBeUndefined()
+      await core.updateConversation(c.id, { backendId: 'other' })
+      expect(store.conversation(c.id)?.backendId).toBe('other')
     } finally { await dispose() }
   }, 60000)
 
@@ -242,6 +267,8 @@ describe('switching backend mid-conversation', () => {
       await new Promise((r) => setTimeout(r, 5))
       const second = core.updateConversation(c.id, { backendId: 'two' })
       await Promise.all([first, second])
+      expect(store.conversation(c.id)?.nextBackendId).toBe('two')
+      await core.send(c.id, '继续')
       expect(store.conversation(c.id)?.backendId).toBe('two')
     } finally { await dispose() }
   }, 60000)

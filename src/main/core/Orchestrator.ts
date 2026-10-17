@@ -18,7 +18,7 @@ import { currentBlocker, withBlocker, type Block, type Conversation, type Messag
 import { progressText, resolveItem, statusOf } from './progress'
 import type { Store } from '../store/Store'
 import { ToolContent, ToolRefusal, type ToolDef, type ToolServer } from '../tools/ToolServer'
-import { fmt, linesOf, textOf, transcript, type ChatService } from './ChatService'
+import { excerpt, fmt, linesOf, textOf, transcript, type ChatService } from './ChatService'
 import type { BackendManager } from '../backends/BackendManager'
 import type { ProjectMemory } from './ProjectMemory'
 import type { ProjectFiles } from './ProjectFiles'
@@ -804,6 +804,22 @@ export class Orchestrator {
           if (!now) throw new Error('对话已不存在')
           const child = this.startSubconversation(now, typeof title === 'string' ? title : '', str(task, 'task'), typeof context === 'string' ? context : undefined)
           return `已开启子对话「${child.title}」，它已经开始工作。用户会直接在那里和它沟通。`
+        }
+      })
+    if (conv.kind === 'chat' && conv.parentId)
+      common.push({
+        name: 'read_parent_conversation',
+        description: '读开出你的主对话（只读）。不带参数：最近的内容；带 query：包含这个词的消息。交接给你的背景不够时用。',
+        inputSchema: obj({ query: { type: 'string', description: '可选：要找的词' } }, []),
+        aliases: { query: ['search', 'keyword', 'q'] },
+        run: ({ query }) => {
+          const parent = this.store.conversation(conv.parentId!)
+          if (!parent) return '主对话已不存在。'
+          const list = this.store.messagesOf(parent.id).filter((m) => !m.hidden)
+          const q = typeof query === 'string' ? query.trim() : ''
+          if (!q) return excerpt(list, 12_000, 2_000) || '主对话里还没有内容。'
+          const hits = list.filter((m) => textOf(m).includes(q)).slice(-10)
+          return hits.length ? excerpt(hits, 12_000, 1_200) : `主对话里没有包含「${q}」的消息。`
         }
       })
     if (conv.kind === 'chat' && !conv.parentId && this.childrenOf(conversationId).length)

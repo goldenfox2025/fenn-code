@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp, ChevronDown, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Plus, Slash, Square, X } from 'lucide-react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ArrowUp, ChevronDown, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Plus, ScrollText, Settings2, Square, SquareTerminal, X } from 'lucide-react'
 import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp } from '../store'
@@ -93,6 +93,16 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (selecting) return
     const t = text.trim()
     if (!t && !files.length) return
+    if (picked && conversation) {
+      if (picked.app && !t) return toast(tr(NEED_TEXT), 'error')
+      setText('')
+      setPicked(null)
+      sessionStorage.removeItem(draftKey)
+      const fail = (e: unknown) => toast(String(e instanceof Error ? e.message : e), 'error')
+      if (picked.app) void api().runCommand(conversation.id, picked.app, t).catch(fail)
+      else void api().send(conversation.id, t ? `/${picked.name} ${t}` : `/${picked.name}`).catch(fail)
+      return
+    }
     const app = conversation && !target && appCommand(t, conversation)
     if (app) {
       if (!app.text) return toast(tr(NEED_TEXT), 'error')
@@ -144,37 +154,43 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   }
 
   // / opens the commands: the app's own (a sub-conversation, a thread) and the agent's.
-  const slashQuery = conversation && !target ? /^\/(\S*)$/.exec(text)?.[1] : undefined
+  // A picked command sits in the box as a chip; the text after it is its argument.
+  const [picked, setPicked] = useState<SlashCommand | null>(null)
+  useEffect(() => setPicked(null), [conversation?.id])
+  const slashQuery = conversation && !target && !picked ? /^\/(\S*)$/.exec(text)?.[1] : undefined
   const [slashAt, setSlashAt] = useState(0)
   const [slashClosed, setSlashClosed] = useState(false)
   useEffect(() => setSlashClosed(false), [slashQuery === undefined])
-  const commands = conversation ? slashCommands(conversation).filter((c) => c.name.toLowerCase().includes((slashQuery ?? '').toLowerCase())).slice(0, 12) : []
+  const commands = conversation ? matchCommands(slashCommands(conversation), slashQuery ?? '') : []
   const slashOpen = slashQuery !== undefined && !slashClosed && commands.length > 0
-  const pickCommand = (c: SlashCommand) => {
-    const next = `/${c.name} `
-    setText(next)
-    sessionStorage.setItem(draftKey, next)
+  const pickCommand = (c: SlashCommand, rest = '') => {
+    setPicked(c)
+    setText(rest)
+    sessionStorage.setItem(draftKey, rest)
     setSlashAt(0)
-    caretTo.current = next.length
+    caretTo.current = rest.length
   }
 
-  const bid = conversation?.backendId ?? backendId ?? ''
+  const bid = conversation?.nextBackendId ?? conversation?.backendId ?? backendId ?? ''
+  // A backend picked during a reply: until the next message it has no session here, so its saved choices show.
+  const staged = !!conversation?.nextBackendId
+  const session = staged ? undefined : conversation
   const currentBackend = backends.find((b) => b.id === bid)
   // Before a chat's first reply its own model list isn't known yet; use the one its backend offered last time.
   const settings = useApp((s) => s.settings)
   const remembered = settings.backendModels?.[bid]
   const savedModel = settings.backendModelDefaults?.[bid]
-  const models = conversation?.models?.length ? conversation.models : (remembered?.models ?? [])
-  const wanted = (conversation ? conversation.modelId : modelId) ?? savedModel ?? remembered?.current
+  const models = session?.models?.length ? session.models : (remembered?.models ?? [])
+  const wanted = (conversation ? session?.modelId : modelId) ?? savedModel ?? remembered?.current
   const currentModel = models.find((m) => m.id === wanted) ?? models.find((m) => m.id === remembered?.current) ?? models[0]
   // The session's other choices (mode, thinking level); before a session, the backend's last list and the defaults.
   const defaults = sessionOptionDefaults(settings, bid, currentModel?.id)
-  const options = visibleSessionOptions(conversation?.sessionOptions ?? remembered?.options ?? [], currentBackend?.optionPolicy)
+  const options = visibleSessionOptions(session?.sessionOptions ?? remembered?.options ?? [], currentBackend?.optionPolicy)
   // A mode picked before the first message belongs to that chat only, not to every later one.
   const [pending, setPending] = useState<Record<string, string>>({})
   useEffect(() => setPending({}), [bid, conversation?.id])
   const valueOf = (o: SessionOption) => {
-    const v = conversation?.sessionOptions !== undefined ? o.current : (conversation?.optionValues?.[o.id] ?? pending[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id]) ?? o.current)
+    const v = session?.sessionOptions !== undefined ? o.current : (session?.optionValues?.[o.id] ?? pending[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id]) ?? o.current)
     return o.choices.some((c) => c.value === v) ? v : o.current
   }
   // Thinking level gets its own slider beside the model, like Claude's effort control.
@@ -237,7 +253,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const setOptionValue = (o: SessionOption, value: string) => {
     if (!conversation && o.category === 'mode') return setPending((p) => ({ ...p, [o.id]: value }))
     // A thinking level carries over to new chats (the app remembers it); a mode stays with this conversation.
-    void choose(() => (conversation ? api().setOption(conversation.id, o.id, value) : api().setOptionDefault(bid, o.id, value)))
+    void choose(() => (session ? api().setOption(session.id, o.id, value) : api().setOptionDefault(bid, o.id, value)))
   }
 
   const canPick = !!(conversation || onModelChange)
@@ -265,8 +281,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       else onBackendChange?.(id)
     }
     const [top, rest] = firstFew(usable, (b) => b.id === bid)
-    // Mid-reply a switch stops the reply (what it said stays); the new agent gets the conversation so far.
-    const cuts = (id: string) => (busy && conversation && id !== bid ? t('会中断当前回复') : undefined)
+    // Mid-reply the reply keeps going; the picked agent takes over with the next message.
+    const cuts = (id: string) => (busy && conversation && id !== conversation.backendId && id !== bid ? t('下一条消息起换成这个') : undefined)
     const items: MenuItem[] = top.map((b, i) => ({ label: b.name, sub: cuts(b.id), checked: b.id === bid, shortcut: String(i + 1), onClick: () => pick(b.id) }))
     if (!usable.length) items.push({ label: t('还没有可用的 Agent 后端'), info: true })
     if (rest.length) items.push({ separator: true }, { label: t('更多后端'), submenu: rest.map((b) => ({ label: b.name, sub: cuts(b.id), checked: false, onClick: () => pick(b.id) })) })
@@ -284,13 +300,13 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     }
     const setModel = (id: string) =>
       void choose(async () => {
-        if (conversation) return api().setModel(conversation.id, id)
+        if (session) return api().setModel(session.id, id)
         await api().setModelDefault(bid, id)
         onModelChange?.(id)
       })
     const [top, rest] = firstFew(models, (m) => m.id === currentModel?.id)
     // Mid-reply a model change waits for the next turn; the reply keeps going.
-    const later = (id: string) => (busy && conversation && id !== currentModel?.id ? t('下一轮生效') : undefined)
+    const later = (id: string) => (busy && session && id !== currentModel?.id ? t('下一轮生效') : undefined)
     top.forEach((m, i) => items.push({ label: m.name, sub: later(m.id), checked: m.id === currentModel?.id, shortcut: String(i + 1), onClick: () => setModel(m.id) }))
     const more: MenuItem[] = []
     if (rest.length) more.push({ label: t('更多模型'), submenu: rest.map((m) => ({ label: m.name, sub: later(m.id), checked: false, onClick: () => setModel(m.id) })) })
@@ -319,7 +335,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const modelButton = (
     <span className="model-group">
       {canSwitch && (
-        <button className="footer-chip backend-chip" aria-haspopup="menu" data-tip={t('Agent 后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
+        <button className="footer-chip backend-chip" aria-haspopup="menu" data-tip={staged ? t('下一条消息起换成 {0}', currentBackend?.name ?? '') : t('Agent 后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
           {currentBackend?.name ?? t('选择后端')}
           <ChevronDown size={12} className="chip-caret" />
         </button>
@@ -447,21 +463,26 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           </div>
         )}
         {slashOpen && (
-          <div className="menu compact mention-menu slash-menu" role="listbox" aria-label={t('命令')}>
+          <div className="slash-pop" role="listbox" aria-label={t('命令')}>
             {commands.map((c, i) => (
-              <button
-                key={c.key}
-                role="option"
-                aria-selected={i === slashAt}
-                className={'menu-item' + (i === slashAt ? ' active' : '')}
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setSlashAt(i)}
-                onClick={() => pickCommand(c)}
-              >
-                {c.app ? c.app === 'thread' ? <MessagesSquare size={15} className="muted" /> : <GitBranch size={15} className="muted" /> : <Slash size={15} className="muted" />}
-                <span className="menu-text">/{c.name}</span>
-                {c.hint && <span className="menu-hint">{c.hint}</span>}
-              </button>
+              <Fragment key={c.key}>
+                {(i === 0 || !!commands[i - 1].app !== !!c.app) && (
+                  <div className="slash-group">{c.app ? 'Ancora' : (currentBackend?.name ?? 'Agent')}</div>
+                )}
+                <button
+                  role="option"
+                  aria-selected={i === slashAt}
+                  className={'slash-row' + (i === slashAt ? ' active' : '')}
+                  ref={i === slashAt ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setSlashAt(i)}
+                  onClick={() => pickCommand(c)}
+                >
+                  <CommandIcon c={c} />
+                  <span className="slash-name">{c.name}</span>
+                  {c.hint && <span className="slash-desc">{c.hint}</span>}
+                </button>
+              </Fragment>
             ))}
           </div>
         )}
@@ -489,6 +510,15 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           </div>
         )}
         <div className="composer-input">
+          {picked && (
+            <span className="mention-chip command-chip">
+              <CommandIcon c={picked} />
+              {picked.name}
+              <button className="icon-btn xs" aria-label={t('取消命令')} onClick={() => (setPicked(null), ta.current?.focus())}>
+                <X size={12} />
+              </button>
+            </span>
+          )}
           {target && (
             <span className="mention-chip">
               <CornerUpRight size={13} />
@@ -502,8 +532,12 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             ref={ta}
             rows={1}
             value={text}
-            placeholder={target ? t('发给「{0}」…', target.title) : (placeholder ?? (busy ? t('继续输入，消息会在当前回复结束后发送') : t('回复…')))}
+            placeholder={picked ? (picked.app === 'subchat' ? t('交给子对话做什么？') : picked.app === 'thread' ? t('让讨论串做什么？') : picked.hint ?? '') : target ? t('发给「{0}」…', target.title) : (placeholder ?? (busy ? t('继续输入，消息会在当前回复结束后发送') : t('回复…')))}
             onChange={(e) => {
+              // A whole command typed by hand ("/子对话 ") turns into the chip too.
+              const typed = !picked && conversation ? /^\/(\S+)\s([\s\S]*)$/.exec(e.target.value) : null
+              const known = typed && slashCommands(conversation!).find((c) => c.name === typed[1] || c.app === typed[1])
+              if (known) return pickCommand(known, typed![2])
               setText(e.target.value)
               sessionStorage.setItem(draftKey, e.target.value)
               findMention(e.target.value, e.target.selectionStart)
@@ -540,6 +574,11 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
                   e.preventDefault()
                   return pickMention(mentionable[Math.min(mentionAt, mentionable.length - 1)])
                 }
+              }
+              // Backspace at the very start drops the picked command.
+              if (e.key === 'Backspace' && picked && ta.current?.selectionStart === 0 && ta.current.selectionEnd === 0) {
+                e.preventDefault()
+                return setPicked(null)
               }
               // Backspace at the very start drops the thread the message was going to.
               if (e.key === 'Backspace' && target && ta.current?.selectionStart === 0 && ta.current.selectionEnd === 0) {
@@ -592,6 +631,24 @@ function slashCommands(conv: Conversation): SlashCommand[] {
   if (conv.kind === 'project') list.push({ key: 'app:thread', name: lang === 'en' ? 'thread' : '讨论串', hint: t('开一个讨论串去做'), app: 'thread' }) // i18n-ignore
   for (const c of conv.agentCommands ?? []) list.push({ key: 'agent:' + c.name, name: c.name, hint: c.description?.split('\n')[0] })
   return list
+}
+
+/** Agent commands that show or change settings, and ones that act on the session; the rest are prompts or skills. */
+const SETTING_COMMANDS = /^(model|models|config|settings|context|usage|cost|mcp|memory|memories|permissions?|status|session-info|always-approve|mode|effort|theme|login|logout|account)$/i
+const ACTION_COMMANDS = /^(clear|compact|compress|flush|init|review|feedback|resume|export|reset|new|undo|rewind|dream|quit|exit|help|doctor|bug)$/i
+
+/** An icon that says what kind of command it is, as in Claude's / menu. */
+function CommandIcon({ c }: { c: SlashCommand }) {
+  const Icon = c.app === 'thread' ? MessagesSquare : c.app === 'subchat' ? GitBranch : SETTING_COMMANDS.test(c.name) ? Settings2 : ACTION_COMMANDS.test(c.name) ? SquareTerminal : ScrollText
+  return <Icon size={15} className="slash-icon" />
+}
+
+/** Commands for what was typed after /: names that start with it first, then names and descriptions that contain it. */
+function matchCommands(all: SlashCommand[], query: string): SlashCommand[] {
+  const q = query.toLowerCase()
+  if (!q) return all
+  const rank = (c: SlashCommand) => (c.name.toLowerCase().startsWith(q) ? 0 : c.name.toLowerCase().includes(q) ? 1 : c.hint?.toLowerCase().includes(q) ? 2 : 3)
+  return all.map((c) => [c, rank(c)] as const).filter(([, r]) => r < 3).sort((a, b) => a[1] - b[1]).map(([c]) => c)
 }
 
 /** "/子对话 …" or "/讨论串 …" (or their English names): the app's command and the text after it. */

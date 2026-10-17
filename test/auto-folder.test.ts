@@ -91,4 +91,18 @@ describe('one default folder', () => {
       expect(store.settings.defaultCwd).toBeUndefined()
     } finally { await dispose() }
   })
+
+  it('「在默认文件夹里新建」 gives a talking chat its folder at once', async () => {
+    const { core, store, dir, dispose } = await makeCore()
+    try {
+      const c = await core.startChat({ text: '给我讲讲番茄怎么种', backendId: 'mock' })
+      await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).length >= 2)
+      const path = await core.makeDefaultFolder(c.id)
+      expect(path.startsWith(join(dir, 'Documents', 'Ancora'))).toBe(true)
+      expect(existsSync(path)).toBe(true)
+      expect(store.conversation(c.id)).toMatchObject({ cwd: path, autoFolder: true })
+      expect(await core.makeDefaultFolder(c.id)).toBe(path)
+      expect((await core.listLibrary(c.id))?.root).toBe(path)
+    } finally { await dispose() }
+  }, 30000)
 })

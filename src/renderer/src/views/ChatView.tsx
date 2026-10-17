@@ -19,7 +19,8 @@ export function ChatView({ conversationId }: { conversationId: string }) {
   const [menu, openMenu] = useMenu({ align: 'right' })
   if (!conv) return <div className="empty">{t('对话不存在或已被删除')}</div>
   const deleteChat = async () => {
-    if (!(await confirmDialog(t('删除「{0}」？', conv.title)))) return
+    const kept = useApp.getState().conversations.some((x) => x.parentId === conv.id) ? ' ' + t('它的子对话会保留，成为独立的对话。') : ''
+    if (!(await confirmDialog(t('删除「{0}」？', conv.title) + kept))) return
     try {
       await api().deleteConversation(conv.id)
       navigate({ view: 'home' })

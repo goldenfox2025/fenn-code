@@ -96,7 +96,8 @@ export function Sidebar() {
     ])
 
   const removeChat = async (c: Conversation) => {
-    if (!(await confirmDialog(t('删除「{0}」？此操作无法撤销。', c.title)))) return
+    const kept = s.conversations.some((x) => x.parentId === c.id) ? ' ' + t('它的子对话会保留，成为独立的对话。') : ''
+    if (!(await confirmDialog(t('删除「{0}」？此操作无法撤销。', c.title) + kept))) return
     void api().deleteConversation(c.id)
     if (route.view === 'chat' && route.conversationId === c.id) s.navigate({ view: 'home' })
   }

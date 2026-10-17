@@ -113,6 +113,8 @@ export interface Conversation {
   /** cwd is a folder the app made for this chat once it made files; listed with folderless chats. */
   autoFolder?: boolean
   backendId: string
+  /** A backend picked during a reply: it takes over when the next message goes out. */
+  nextBackendId?: string
   modelId?: string
   models?: ModelInfo[]
   /** The session's other choices (mode, thinking level…), as the agent last reported them. */
@@ -594,6 +596,8 @@ export interface AncoraApi {
   readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined>
   /** Opens a file of that folder with its app (folders and safe files), or shows it in its folder. */
   openLibraryPath(id: string, rel: string, reveal?: boolean): Promise<{ ok: boolean; error?: string }>
+  /** Gives a chat or project without a folder one under the default folder (named after it); returns its path. */
+  makeDefaultFolder(id: string): Promise<string>
   /** Copies files into a folder of it; names already taken get a number. */
   addToLibrary(id: string, rel: string, files: { name: string; data: string }[]): Promise<void>
   /** data is base64. */

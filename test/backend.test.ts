@@ -134,3 +134,20 @@ describe('a broken backends.json', () => {
     await mgr.disposeAll()
   }, 20000)
 })
+
+describe('stray replies from the agent', () => {
+  it('drops replies to requests Ancora never sent (Grok\'s "skills-reload"), keeps everything else', async () => {
+    const { dropStrayResponses } = await import('../src/main/backends/acp/AcpBackend')
+    const input = [
+      { jsonrpc: '2.0', id: 'skills-reload', result: {} },
+      { jsonrpc: '2.0', id: 3, result: { ok: true } },
+      { jsonrpc: '2.0', id: 'x1', method: 'session/request_permission', params: {} },
+      { jsonrpc: '2.0', method: 'session/update', params: {} }
+    ]
+    const out: unknown[] = []
+    await new ReadableStream({ start(c) { input.forEach((m) => c.enqueue(m)); c.close() } })
+      .pipeThrough(dropStrayResponses())
+      .pipeTo(new WritableStream({ write(m) { out.push(m) } }))
+    expect(out).toEqual(input.slice(1))
+  })
+})

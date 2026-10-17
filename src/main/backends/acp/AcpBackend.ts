@@ -185,10 +185,11 @@ export class AcpBackend implements AgentBackend {
     // Both directions pass through the opt-in debug log (a no-op while it is off).
     const toAgent = tap(this.name, 'out')
     toAgent.readable.pipeTo(Writable.toWeb(proc.stdin!) as WritableStream<Uint8Array>).catch(() => {})
-    const stream = acp.ndJsonStream(
+    const raw = acp.ndJsonStream(
       toAgent.writable,
       (Readable.toWeb(proc.stdout!) as ReadableStream<Uint8Array>).pipeThrough(tap(this.name, 'in'))
     )
+    const stream = { writable: raw.writable, readable: raw.readable.pipeThrough(dropStrayResponses()) }
     this.conn = new acp.ClientSideConnection(() => this.clientHandler(), stream)
 
     const init = await Promise.race([
@@ -569,6 +570,22 @@ export function windowsSafe(command: string, args: string[]): { command: string;
   if (!isScript && !isBare) return { command, args, shell: false }
   const q = (a: string) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a)
   return { command: q(command), args: args.map(q), shell: true }
+}
+
+/**
+ * Answers to requests Ancora never sent. Grok, for one, writes the replies to
+ * its own internal requests (id "skills-reload") to stdout; the SDK would log
+ * each as an error. Ancora numbers its requests, so a reply with any other id
+ * is not for it. Requests and notifications pass untouched.
+ */
+export function dropStrayResponses<T>(): TransformStream<T, T> {
+  return new TransformStream<T, T>({
+    transform(msg, controller) {
+      const m = msg as { id?: unknown; method?: unknown }
+      if (m && typeof m === 'object' && 'id' in m && !('method' in m) && typeof m.id !== 'number') return
+      controller.enqueue(msg)
+    }
+  })
 }
 
 /** The files a tool call works on: its locations and the files its diffs change. */
