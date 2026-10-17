@@ -68,6 +68,10 @@ interface Live {
   reported?: boolean
   /** The last turn read from the agent's own log, so it is never counted twice. */
   turnKey?: string
+  /** The app's notes are the session's system prompt (they survive compaction). */
+  systemApplied?: boolean
+  /** The agent compacted since the last prompt. */
+  compacted?: boolean
 }
 
 interface QueuedTurn {
@@ -276,7 +280,7 @@ export class ChatService {
         // Only a conversation the agent already worked in has history to hand over; a new thread's
         // ack (written by the app) is not a previous session.
         const resumed = prior.some((m) => m.role === 'user')
-        const pre = this.hooks.preamble?.(conv, resumed) ?? ''
+        const pre = live.systemApplied ? '' : (this.hooks.preamble?.(conv, resumed) ?? '')
         const history = resumed ? (this.hooks.history?.(conv, prior) ?? transcript(prior)) : ''
         // After the history: a handoff may already carry what the updates would say.
         const updates = this.hooks.beforePrompt?.(conv) ?? ''
@@ -284,7 +288,10 @@ export class ChatService {
       } else {
         const updates = this.hooks.beforePrompt?.(conv) ?? ''
         const note = this.withdrawn.delete(conversationId) ? WITHDRAWN : ''
-        promptText = [updates, note, text].filter(Boolean).join('\n\n')
+        // The agent compacted its context, and the notes were only in its first message: hand them over again, first.
+        const rules = live.compacted && !live.systemApplied ? this.hooks.preamble?.(conv, true) : ''
+        live.compacted = false
+        promptText = [rules, updates, note, text].filter(Boolean).join('\n\n')
       }
       this.withdrawn.delete(conversationId)
       const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
@@ -417,7 +424,8 @@ export class ChatService {
     // With a working folder the agent works there; without one it gets a private, empty
     // folder of its own, so it never lands in the user's home by default.
     const folder = this.folderOf(conv)
-    const opts = { cwd: folder ?? this.scratchDir(conv.id), folder, tools: this.hooks.tools?.(conv) }
+    // The app's notes go in as a system prompt where the agent takes one: they then outlive its compaction.
+    const opts = { cwd: folder ?? this.scratchDir(conv.id), folder, tools: this.hooks.tools?.(conv), system: this.hooks.preamble?.(conv, false) || undefined }
 
     // After a restart, reattach to the agent's own session when the backend can.
     let info: SessionInfo | null = null
@@ -431,7 +439,7 @@ export class ChatService {
       t('{0} 在 {1} 秒内没有连上。请确认它在终端里能正常运行，然后点重试。', name, CONNECT_TIMEOUT / 1000))
 
     stale()
-    const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, unprompted: { fresh } }
+    const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, unprompted: { fresh }, systemApplied: info.systemApplied }
     // A new session starts with an empty context; the old session's figures no longer apply.
     if (fresh) {
       const u = this.store.conversation(conv.id)?.usage
@@ -675,6 +683,11 @@ export class ChatService {
     // The agent changed its own options (e.g. left plan mode): show what is in effect now.
     if (event.kind === 'options') {
       this.patchConversation(conversationId, { sessionOptions: event.options })
+      return
+    }
+    if (event.kind === 'compacted') {
+      const live = this.live.get(conversationId)
+      if (live) live.compacted = true
       return
     }
     if (event.kind === 'usage') {

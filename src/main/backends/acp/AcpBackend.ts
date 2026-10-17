@@ -78,6 +78,8 @@ export class AcpBackend implements AgentBackend {
   private conn?: acp.ClientSideConnection
   private starting?: Promise<void>
   private modelSelectors = new Map<string, ModelSelector>()
+  /** Compactions already shown as a step. */
+  private compactions = new Set<string>()
   /** Each session's non-model choices; `legacy` marks ACP session modes (set with session/set_mode). */
   private sessionOptions = new Map<string, (SessionOption & { legacy?: boolean })[]>()
   private stderrTail: string[] = []
@@ -186,7 +188,8 @@ export class AcpBackend implements AgentBackend {
     const init = await Promise.race([
       this.conn.initialize({
         protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
+        // compaction: the agent says when it compacted, so the app can hand its notes over again.
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true, session: { compaction: {} } } as acp.ClientCapabilities,
         clientInfo: { name: 'ancora', version: '0.1.0' }
       }),
       exited
@@ -202,7 +205,17 @@ export class AcpBackend implements AgentBackend {
         if (this.replaying.has(sessionId)) return
         const ev = translateUpdate(update)
         if (ev) this.host.emit(sessionId, ev)
-        if (update.sessionUpdate === 'config_option_update') {
+        if (update.sessionUpdate === 'compaction_update') {
+          // Shown as a step in the reply, as the agent shows it to clients that don't ask for these updates.
+          const c = update as { compactionId: string; status?: string }
+          const status: ToolStatus = c.status === 'completed' ? 'completed' : c.status === 'in_progress' ? 'running' : 'failed'
+          const toolId = `compaction:${c.compactionId}`
+          if (!this.compactions.has(toolId)) {
+            this.compactions.add(toolId)
+            this.host.emit(sessionId, { kind: 'tool.start', toolId, title: t('压缩上下文'), toolKind: 'other', status })
+          } else this.host.emit(sessionId, { kind: 'tool.update', toolId, status })
+          if (c.status === 'completed') this.host.emit(sessionId, { kind: 'compacted' })
+        } else if (update.sessionUpdate === 'config_option_update') {
           const configOptions = (update as { configOptions?: unknown }).configOptions
           this.captureModels(sessionId, configOptions, undefined)
           this.captureOptions(sessionId, configOptions, undefined)
@@ -292,18 +305,18 @@ export class AcpBackend implements AgentBackend {
     await this.conn?.closeSession({ sessionId }).catch(() => {})
   }
 
-  async resumeSession({ cwd, folder, tools, sessionId }: NewSessionOptions & { sessionId: string }): Promise<SessionInfo | null> {
+  async resumeSession({ cwd, folder, tools, sessionId, system }: NewSessionOptions & { sessionId: string }): Promise<SessionInfo | null> {
     await this.start()
     this.workspaces.setRoot(sessionId, folder)
     const mcpServers = this.mcpServers(tools)
     let res: { configOptions?: unknown; models?: unknown; _meta?: Record<string, unknown> | null } | undefined
     try {
       if (this.caps?.sessionCapabilities?.resume) {
-        res = await this.conn!.resumeSession({ sessionId, cwd, mcpServers })
+        res = await this.conn!.resumeSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system) } as acp.ResumeSessionRequest)
       } else if (this.caps?.loadSession) {
         this.replaying.add(sessionId)
         try {
-          res = await this.conn!.loadSession({ sessionId, cwd, mcpServers })
+          res = await this.conn!.loadSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system) } as acp.LoadSessionRequest)
         } finally {
           this.replaying.delete(sessionId)
         }
@@ -315,15 +328,24 @@ export class AcpBackend implements AgentBackend {
     this.captureModels(sessionId, res?.configOptions, res?._meta?.modelState ?? res?.models)
     this.captureOptions(sessionId, res?.configOptions, (res as { modes?: unknown } | undefined)?.modes)
     const sel = this.modelSelectors.get(sessionId)
-    return { sessionId, models: sel?.models, currentModelId: sel?.current, options: this.optionsOf(sessionId) }
+    return { sessionId, models: sel?.models, currentModelId: sel?.current, options: this.optionsOf(sessionId), systemApplied: this.takesSystemPrompt(system) }
   }
 
-  async newSession({ cwd, folder, tools }: NewSessionOptions): Promise<SessionInfo> {
+  /** The agent accepts a client system prompt (ACP sessionCapabilities.systemPrompt), which survives its compaction. */
+  private takesSystemPrompt(system?: string): boolean {
+    return !!system && !!(this.caps?.sessionCapabilities as { systemPrompt?: unknown } | undefined)?.systemPrompt
+  }
+
+  private systemPrompt(system?: string): { systemPrompt?: { mode: 'append'; content: { type: 'text'; text: string }[] } } {
+    return this.takesSystemPrompt(system) ? { systemPrompt: { mode: 'append', content: [{ type: 'text', text: system! }] } } : {}
+  }
+
+  async newSession({ cwd, folder, tools, system }: NewSessionOptions): Promise<SessionInfo> {
     await this.start()
     const mcpServers = this.mcpServers(tools)
     let res: acp.NewSessionResponse
     try {
-      res = await this.conn!.newSession({ cwd, mcpServers })
+      res = await this.conn!.newSession({ cwd, mcpServers, ...this.systemPrompt(system) } as acp.NewSessionRequest)
     } catch (err) {
       const msg = errorText(err)
       if (classifyError(msg) === 'auth' || classifyError(msg) === 'refresh') {
@@ -337,7 +359,7 @@ export class AcpBackend implements AgentBackend {
     this.captureModels(res.sessionId, res.configOptions, meta?.modelState ?? (res as { models?: unknown }).models)
     this.captureOptions(res.sessionId, res.configOptions, (res as { modes?: unknown }).modes)
     const sel = this.modelSelectors.get(res.sessionId)
-    return { sessionId: res.sessionId, models: sel?.models, currentModelId: sel?.current, options: this.optionsOf(res.sessionId) }
+    return { sessionId: res.sessionId, models: sel?.models, currentModelId: sel?.current, options: this.optionsOf(res.sessionId), systemApplied: this.takesSystemPrompt(system) }
   }
 
   async prompt(sessionId: string, parts: PromptPart[]): Promise<TurnResult> {

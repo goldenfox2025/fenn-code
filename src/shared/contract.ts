@@ -22,6 +22,8 @@ export type AgentEvent =
   | { kind: 'options'; options: SessionOption[] }
   /** A status note; a later notice with the same key replaces it (e.g. retry progress). */
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string; key?: string }
+  /** The agent compacted the session's context (ACP compaction_update, completed). */
+  | { kind: 'compacted' }
   /** How full the context window is, and what the session has cost so far (cumulative), as the backend reports. */
   | { kind: 'usage'; contextUsed?: number; contextSize?: number; cost?: Cost }
 
@@ -115,6 +117,8 @@ export interface SessionInfo {
   models?: ModelInfo[]
   currentModelId?: string
   options?: SessionOption[]
+  /** The agent took NewSessionOptions.system as its system prompt, so it outlives compaction. */
+  systemApplied?: boolean
 }
 
 /** Whether the user is signed in to a backend, checked without starting a session. */
@@ -170,6 +174,8 @@ export interface NewSessionOptions {
    */
   folder?: string
   tools?: HostToolServer[]
+  /** The app's notes for this conversation, as a system prompt when the agent accepts one (ACP sessionCapabilities.systemPrompt). */
+  system?: string
 }
 
 export interface AgentBackend {

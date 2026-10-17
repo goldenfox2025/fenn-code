@@ -181,8 +181,8 @@ export class BackendManager {
     return inst
   }
 
-  async newSession(backendId: string, opts: { cwd?: string; folder?: string; tools?: HostToolServer[] } = {}): Promise<SessionInfo> {
-    return this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools })
+  async newSession(backendId: string, opts: { cwd?: string; folder?: string; tools?: HostToolServer[]; system?: string } = {}): Promise<SessionInfo> {
+    return this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })
   }
 
   /** No prompt or app tools: discover the models a new session actually offers. */
@@ -207,11 +207,11 @@ export class BackendManager {
   async resumeSession(
     backendId: string,
     sessionId: string,
-    opts: { cwd?: string; folder?: string; tools?: HostToolServer[] } = {}
+    opts: { cwd?: string; folder?: string; tools?: HostToolServer[]; system?: string } = {}
   ): Promise<SessionInfo | null> {
     const b = this.get(backendId)
     if (!b.resumeSession) return null
-    return b.resumeSession({ sessionId, cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools })
+    return b.resumeSession({ sessionId, cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })
   }
 
   async prompt(backendId: string, sessionId: string, parts: PromptPart[]): Promise<TurnResult> {

@@ -853,4 +853,5 @@ export const en: Record<string, string> = {
   "下一轮生效": "From the next turn",
   "已中断：换成了 {0}": "Stopped: switched to {0}",
   "不能在 {0} 里工作：这里是主目录、磁盘根目录或 Ancora 的数据目录。请选一个具体的文件夹。": "Can't work in {0}: it is your home folder, a drive root or Ancora's data folder. Choose a specific folder.",
+  "压缩上下文": "Compacting context",
 }

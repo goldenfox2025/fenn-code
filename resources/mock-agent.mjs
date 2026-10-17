@@ -55,7 +55,8 @@ const handlers = {
       agentCapabilities: {
         loadSession: false,
         promptCapabilities: { embeddedContext: true, image: process.env.MOCK_IMAGES !== '0' },
-        sessionCapabilities: { resume: {} },
+        // MOCK_SYSTEM_PROMPT=1: takes a client system prompt, as claude-agent-acp does.
+        sessionCapabilities: { resume: {}, ...(process.env.MOCK_SYSTEM_PROMPT === "1" ? { systemPrompt: { mode: { override: {} } } } : {}) },
         mcpCapabilities: { http: !STDIO_ONLY },
       },
       agentInfo: { name: "ancora-mock", version: "0.1.0" },
@@ -77,7 +78,7 @@ const handlers = {
     signedIn = true;
     return {};
   },
-  "session/new": ({ cwd, mcpServers }) => {
+  "session/new": ({ cwd, mcpServers, systemPrompt }) => {
     if (process.env.MOCK_SESSION_FILE_ERROR === '1')
       throw Object.assign(new Error('Failed to read authentication state'), {
         code: -32603,
@@ -97,6 +98,7 @@ const handlers = {
       .filter((m) => m !== mcp)
       .map((m) => ({ mcp: m, mcpReady: null, tools: null }));
     sessions.set(sessionId, {
+      system: systemPrompt?.content?.map((c) => c.text).join("\n") ?? "",
       cwd,
       model: FIRST_MODEL,
       turns: 0,
@@ -145,6 +147,16 @@ const handlers = {
       .filter((p) => p.type === "text")
       .map((p) => p.text)
       .join("\n");
+    // "#压缩": compacts the context the way agents report it (ACP compaction_update).
+    if (raw.includes("#压缩")) {
+      notify(sessionId, { sessionUpdate: "compaction_update", compactionId: "c" + s.turns, status: "in_progress" });
+      notify(sessionId, { sessionUpdate: "compaction_update", compactionId: "c" + s.turns, status: "completed" });
+    }
+    // "规则在哪": says where the app's notes reached it.
+    if (raw.includes("规则在哪")) {
+      await stream(sessionId, `系统提示：${s.system.includes("<ancora-context") ? "有" : "无"}；本条消息：${raw.includes("<ancora-context") ? "有" : "无"}`, abort);
+      return { stopReason: "end_turn" };
+    }
     // "#难点 …" reports an obstacle through the app's tool ("#难点" alone clears it).
     if (raw.includes("#难点") && s.mcp) {
       const m = raw.match(/#难点\s*([^\n<]*)/);
