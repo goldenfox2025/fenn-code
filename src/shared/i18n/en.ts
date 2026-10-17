@@ -844,4 +844,9 @@ export const en: Record<string, string> = {
   "「{0}」的留言等这里做完再送": "A message from 「{0}」 is waiting for this task to finish",
   "「{0}」的留言等这里空闲再送": "A message from 「{0}」 is waiting until this thread is free",
   "展开": "Expand",
+  "等您决定：{0}": "Waiting for your decision: {0}",
+  "等您确认一个操作": "Waiting for you to confirm an action",
+  "等「{0}」空闲后交接": "Handing over when 「{0}」 is free",
+  "正在交给「{0}」": "Handing over to 「{0}」",
+  "等「{0}」完成后交接": "Handing over when 「{0}」 is done",
 }

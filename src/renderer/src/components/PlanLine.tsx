@@ -1,32 +1,101 @@
-import { useState } from 'react'
-import { ChevronRight, CircleAlert, ListChecks } from 'lucide-react'
-import { currentBlocker, planProgress, type Conversation } from '@shared/model'
-import { Checklist } from './Transcript'
-import { relTime } from '../util'
+import { useEffect, useState } from 'react'
+import { ChevronRight, Circle, CircleAlert, CircleCheck, CircleDot, ListChecks, LoaderCircle } from 'lucide-react'
+import { currentBlocker, planProgress, type Block, type Conversation } from '@shared/model'
+import { planEntries, type PlanEntry } from '@shared/plan'
+import { useApp } from '../store'
+import { duration, relTime } from '../util'
 import { t } from '../i18n'
 
+/** When each step was first seen in progress, for its elapsed time (this window only). */
+const startedAt = new Map<string, number>()
+
+/** The ACP plan of the latest reply, if the backend sent one. */
+function useAcpPlan(conversationId: string) {
+  return useApp((s) => {
+    const list = s.messages[conversationId]
+    if (!list) return undefined
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i]
+      if (m.role !== 'assistant' || m.hidden) continue
+      return m.blocks.find((b): b is Extract<Block, { type: 'plan' }> => b.type === 'plan')?.entries
+    }
+    return undefined
+  })
+}
+
+/** Rows the app adds: what this conversation is waiting on, which ACP has no status for. */
+function useWaiting(conv: Conversation): string[] {
+  const peers = useApp((s) => s.peerMessages)
+  const conversations = useApp((s) => s.conversations)
+  const outgoing = peers
+    .filter((m) => m.fromId === conv.id && m.state === 'pending')
+    .map((m) => ({ deliver: m.deliver, to: conversations.find((c) => c.id === m.toId)?.title ?? '' }))
+  const rows: string[] = []
+  if (conv.needsUser?.kind === 'decision') rows.push(t('等您决定：{0}', conv.needsUser.text ?? ''))
+  if (conv.needsUser?.kind === 'permission') rows.push(t('等您确认一个操作'))
+  for (const o of outgoing)
+    rows.push(o.deliver === 'when_idle' ? t('等「{0}」空闲后交接', o.to) : o.deliver === 'now' ? t('正在交给「{0}」', o.to) : t('等「{0}」完成后交接', o.to))
+  return rows
+}
+
+function StepIcon({ status }: { status: PlanEntry['status'] }) {
+  if (status === 'done') return <CircleCheck size={15} className="step-icon done" />
+  if (status === 'doing') return <LoaderCircle size={15} className="step-icon doing" />
+  if (status === 'waiting') return <CircleDot size={15} className="step-icon waiting" />
+  return <Circle size={15} className="step-icon pending" />
+}
+
+/** Re-renders every second while something is running, for the elapsed time. */
+function useTick(on: boolean) {
+  const [, set] = useState(0)
+  useEffect(() => {
+    if (!on) return
+    const id = setInterval(() => set((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [on])
+}
+
 /**
- * What the agent is working on in this conversation: a quiet one-line summary
- * (current step, steps done, current obstacle) that opens into the full plan
- * and the obstacles met so far.
+ * The conversation's plan, as Claude shows it: a card at the top that stays
+ * put while the conversation scrolls and updates in place. Each step has its
+ * state icon (done, running with its time, waiting, not started); it folds to
+ * one line. Obstacles met along the way are listed under the steps.
  */
 export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(!!defaultOpen)
-  const progress = planProgress(conv.checklist)
+  const acp = useAcpPlan(conv.id)
+  const waiting = useWaiting(conv)
+  const entries = planEntries({ checklist: conv.checklist, acp, waiting })
   const blocker = currentBlocker(conv)
   const past = (conv.blockers ?? []).filter((b) => b !== blocker).reverse()
-  if (!progress && !blocker && !past.length) return null
-  const allDone = progress && progress.done === progress.total
+  const working = conv.status === 'working'
+  const doing = entries.find((e) => e.status === 'doing')
+  useTick(working && !!doing)
+  // A plan that just finished folds to its one line, as in Claude.
+  const finished = !working && entries.length > 0 && entries.every((e) => e.status === 'done')
+  useEffect(() => {
+    if (finished) setOpen(false)
+  }, [finished])
+  if (!entries.length && !blocker && !past.length) return null
+  const steps = entries.filter((e) => !e.app)
+  const done = steps.filter((e) => e.status === 'done').length
+  const allDone = steps.length > 0 && done === steps.length
+  const since = (e: PlanEntry) => {
+    const key = `${conv.id}|${e.text}`
+    if (!startedAt.has(key)) startedAt.set(key, Date.now())
+    return startedAt.get(key)!
+  }
+  const current = doing ?? entries.find((e) => e.status === 'waiting')
   return (
     <div className={'plan-line' + (open ? ' open' : '')}>
       <button className="plan-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ListChecks size={14} className="plan-icon" />
         <span className="plan-text">
-          {progress
+          {steps.length
             ? allDone
-              ? t('计划已完成 {0}/{1}', progress.done, progress.total)
-              : `${progress.step ?? t('计划')} · ${progress.done}/${progress.total}`
-            : t('计划')}
+              ? t('计划已完成 {0}/{1}', done, steps.length)
+              : `${current?.text ?? t('计划')} · ${done}/${steps.length}`
+            : (current?.text ?? t('计划'))}
         </span>
         {blocker && (
           <span className="plan-blocker" data-tip={blocker.text}>
@@ -38,7 +107,17 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
       </button>
       {open && (
         <div className="plan-body">
-          {conv.checklist && <Checklist text={withoutTitle(conv.checklist, conv.title)} />}
+          {entries.length > 0 && (
+            <ol className="checklist plan-steps">
+              {entries.map((e, i) => (
+                <li key={i} className={'plan-step ' + e.status}>
+                  <StepIcon status={e.status} />
+                  <span className="plan-step-text">{e.text}</span>
+                  {e.status === 'doing' && working && Date.now() - since(e) >= 1000 && <span className="plan-step-time">{duration(Date.now() - since(e))}</span>}
+                </li>
+              ))}
+            </ol>
+          )}
           {blocker && (
             <div className="plan-current-blocker">
               <span className="label">{t('当前难点')}</span>
@@ -61,12 +140,6 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
       )}
     </div>
   )
-}
-
-/** The plan's own heading repeats the conversation title right above it; drop it then. */
-function withoutTitle(checklist: string, title: string): string {
-  const [head, ...rest] = checklist.split('\n')
-  return head.replace(/\*\*/g, '').trim() === title.trim() ? rest.join('\n').replace(/^\n+/, '') : checklist
 }
 
 /** One short line for cards: the current obstacle, else the step in progress. */

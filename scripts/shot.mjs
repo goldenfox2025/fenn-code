@@ -92,6 +92,27 @@ const scenarios = {
     if (process.env.DEBUG_FLOAT) console.log(await page.$eval('.panel.floating', (el) => { const c = getComputedStyle(el); return [c.backgroundColor, c.opacity, c.zIndex, c.position, c.backdropFilter, c.filter].join(' | ') }))
     await shot('floating')
   },
+  // The plan card at the top of a thread: running, then done and folded.
+  async plancard() {
+    await page.click('.nav-item:has-text("项目")')
+    await page.click('.page-head .btn')
+    await page.fill('.modal input', '躺平研究')
+    await page.click('.modal-actions .btn.primary')
+    await page.waitForSelector('.panel')
+    await page.fill('.composer textarea', '帮我调研躺平一辈子要多少钱')
+    await page.keyboard.press('Enter')
+    await page.waitForSelector('.thread-card', { timeout: 15000 })
+    await page.click('.thread-card')
+    await page.waitForSelector('.panel .plan-step.doing', { timeout: 15000 })
+    await wait(1200)
+    await shot('plan-working')
+    await page.waitForSelector('.panel .status-chip:has-text("等待您")', { timeout: 30000 })
+    await wait(400)
+    await shot('plan-done')
+    await page.click('.panel .plan-summary')
+    await wait(300)
+    await shot('plan-opened')
+  },
   // MOCK_AUTH=1: the agent is installed but signed out; the picker says so instead of failing.
   async signedout() {
     await wait(2500)
