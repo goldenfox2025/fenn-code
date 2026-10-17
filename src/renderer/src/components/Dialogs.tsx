@@ -389,7 +389,6 @@ function GeneralSettings() {
             <label>{t('允许操控电脑')}</label>
             <div className="help">
               {t('打开后，agent 能看到屏幕截图，并在您允许的程序里移动鼠标、点击和输入。它每次都要先列出要用的程序，由您逐个选择「完全控制」「仅点击」或「仅查看」。操控时 Ancora 会最小化，屏幕上方有「停止」按钮。macOS 需要在系统设置里授予「辅助功能」和「录屏」权限；Linux 需要 X11 和 xdotool。')}</div>
-            {settings.computerUse && <ComputerBackends />}
           </div>
           <button
             className={'switch' + (settings.computerUse ? ' on' : '')}
@@ -398,29 +397,6 @@ function GeneralSettings() {
         </div>
       </div>
     </>
-  )
-}
-
-/** Which backends can use computer control: the model has to look at screenshots. */
-function ComputerBackends() {
-  const backends = useApp((s) => s.backends)
-  const [images, setImages] = useState<Record<string, boolean | undefined>>({})
-  useEffect(() => void api().backendImages().then(setImages), [])
-  if (!backends.length) return null
-  return (
-    <div className="computer-backends">
-      {backends.map((b) => (
-        <div key={b.id} className={images[b.id] === false ? 'no' : ''}>
-          {b.name}
-          {'：'}
-          {images[b.id] === true
-            ? t('可以使用（能看图片）')
-            : images[b.id] === false
-              ? t('不能使用，它的模型不能看图片')
-              : t('用过一次后才知道能否看图片')}
-        </div>
-      ))}
-    </div>
   )
 }
 

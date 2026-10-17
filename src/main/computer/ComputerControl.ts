@@ -9,8 +9,8 @@
  *   against the app that has focus; Ancora's own windows are never touched.
  * - A grant lasts while the agent keeps working and ends when the user presses
  *   Stop or after GRANT_IDLE_MS without actions.
- * - A backend whose model can't look at images can't use any of it, and says
- *   so, instead of clicking blind.
+ * - Every agent gets the tools; a model that can't look at images is told by
+ *   the screenshot itself to stop and ask the user for another model.
  *
  * Coordinates the agent uses are pixels of the last screenshot it was given;
  * they're mapped back to screen points here, so the agent never has to know
@@ -19,7 +19,7 @@
 import type { Conversation } from '../../shared/model'
 import { ToolContent, type ToolDef } from '../tools/ToolServer'
 import type { AppRef, InputDriver, MouseButton } from './drivers'
-import { getLang, t, tk } from '../../shared/i18n'
+import { t, tk } from '../../shared/i18n'
 
 export type Tier = 'view' | 'click' | 'full'
 export type TierChoice = Tier | 'none'
@@ -67,10 +67,6 @@ export interface ComputerDeps {
    */
   pasteChord?: string
   enabled(): boolean
-  /** false when this conversation's backend can't take images; undefined when unknown. */
-  seesImages?(conversationId: string): boolean | undefined
-  /** The backend's display name, for messages. */
-  backendName?(conversationId: string): string
   /** Asks the user which apps to allow and how far; null when declined or unanswered. */
   askAccess(conversationId: string, req: AccessRequest): Promise<Record<string, TierChoice> | null>
   /** Nobody is watching this turn (a scheduled task): never ask, just fail. */
@@ -84,8 +80,6 @@ export interface ComputerDeps {
   onActive?(conversationId: string, active: boolean): void
   /** What the agent is doing now, for the stop control. */
   onAction?(conversationId: string, label: string): void
-  /** Computer control can't work in this conversation; tell the user, not just the agent. */
-  onUnavailable?(conversationId: string, message: string): void
 }
 
 /** A grant lasts this long after the agent's last action; then it asks again. */
@@ -144,7 +138,6 @@ export class ComputerControl {
   private denied = new Set<string>()
   private active = new Set<string>()
   private asking = new Map<string, Promise<unknown>>()
-  private toldUnavailable = new Set<string>()
 
   constructor(private readonly deps: ComputerDeps) {}
 
@@ -152,7 +145,6 @@ export class ComputerControl {
   forget(conversationId: string): void {
     this.turnEnded(conversationId)
     this.sessions.delete(conversationId)
-    this.toldUnavailable.delete(conversationId)
   }
 
   /** A turn finished: give the screen back and let a declined request be asked again next time. */
@@ -182,8 +174,8 @@ export class ComputerControl {
   }
 
   /**
-   * Listed only while computer control is on and the agent can see images, so
-   * other sessions don't carry ~5000 characters of tools they can't use. Turning
+   * Listed only while computer control is on, so other sessions don't carry
+   * ~5000 characters of tools they don't need. Turning
    * the setting on reopens sessions (ChatService.refreshTools) to pick them up.
    */
   tools(conv: Conversation): ToolDef[] {
@@ -388,8 +380,7 @@ export class ComputerControl {
         }
       )
     ]
-    // An agent that can't see images keeps only the request, which tells it and the user why not.
-    return this.deps.seesImages?.(id) === false ? all.filter((x) => x.name === 'computer_request_access') : all
+    return all
   }
 
   private async runBatchItem(id: string, a: Args): Promise<void> {
@@ -493,15 +484,6 @@ export class ComputerControl {
   private ensureUsable(conversationId: string): void {
     if (!this.deps.enabled())
       throw new Error('用户没有开启电脑操控。如果确实需要，请用户在 设置 → 通用 → 允许操控电脑 里打开。')
-    if (this.deps.seesImages?.(conversationId) === false) {
-      const who = this.deps.backendName?.(conversationId) ?? t('当前后端')
-      const msg = t('{0} 的模型不能查看图片，看不到屏幕，所以不能操控电脑。请换一个支持图片的后端。', who)
-      if (!this.toldUnavailable.has(conversationId)) {
-        this.toldUnavailable.add(conversationId)
-        this.deps.onUnavailable?.(conversationId, msg)
-      }
-      throw new Error(msg + (getLang() === 'en' ? ' Do not retry; tell the user.' : '不要再试，直接告诉用户。'))
-    }
   }
 
   private session(id: string): Session {
@@ -660,7 +642,10 @@ export class ComputerControl {
     const d = this.display(conversationId)
     const region = { x: 0, y: 0, width: d.bounds.width, height: d.bounds.height }
     const s = await this.deps.screen.capture(d.id, MAX_WIDTH, MAX_HEIGHT, region)
-    this.session(conversationId).geometry = { display: d.id, region, width: s.width, height: s.height }
+    const session = this.session(conversationId)
+    // The first screenshot says what to do if the model can't see it: no app-side guess about which models can.
+    const blind = session.geometry ? '' : '如果你看不到这张图片，说明当前模型不能看图片：不要再操作，告诉用户换一个能看图片的模型。'
+    session.geometry = { display: d.id, region, width: s.width, height: s.height }
     let front = ''
     try {
       const f = await this.deps.input.frontmost()
@@ -670,7 +655,7 @@ export class ComputerControl {
     }
     const many = this.deps.screen.displays().length > 1 ? `显示器：${d.name}（共 ${this.deps.screen.displays().length} 个，可用 computer_switch_display 切换）。` : ''
     return new ToolContent([
-      { type: 'text', text: `${lead}截图 ${s.width}×${s.height} 像素，坐标以此为准。${many}${front}` },
+      { type: 'text', text: `${lead}截图 ${s.width}×${s.height} 像素，坐标以此为准。${many}${front}${blind}` },
       { type: 'image', data: s.data, mimeType: 'image/png' }
     ])
   }

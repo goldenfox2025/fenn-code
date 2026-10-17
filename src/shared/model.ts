@@ -546,8 +546,6 @@ export interface AncoraApi {
   /** Reads the agent's session metadata without sending a prompt or creating a chat. */
   backendModels(backendId: string, modelId?: string): Promise<BackendModelCatalog>
   backendLatestVersion(backendId: string): Promise<string | undefined>
-  /** Per backend: can its model look at images (and so control the computer)? undefined until it has started. */
-  backendImages(): Promise<Record<string, boolean | undefined>>
   /** Opens a result file with its default app (documents, images, text), or shows it in its folder. */
   openOutput(path: string, reveal?: boolean): Promise<{ ok: boolean; error?: string }>
   /** Runs the backend's upgrade command; output arrives as 'backend-upgrade' events. */

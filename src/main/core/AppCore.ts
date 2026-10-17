@@ -104,14 +104,6 @@ export class AppCore {
       const computer = new ComputerControl({
         ...extras.computer,
         enabled: () => !!this.store.settings.computerUse,
-        seesImages: (id) => {
-          const c = this.store.conversation(id)
-          return c ? this.backends.acceptsImages(c.backendId) : undefined
-        },
-        backendName: (id) => {
-          const c = this.store.conversation(id)
-          return this.backends.list().find((b) => b.id === c?.backendId)?.name ?? t('当前后端')
-        },
         askAccess: async (conversationId, req) => {
           const answer = await this.chat.askUser(
             conversationId,
@@ -131,7 +123,6 @@ export class AppCore {
           return parseAccessAnswer(answer)
         },
         unattended: (id) => this.chat.isUnattended(id),
-        onUnavailable: (id, message) => void this.chat.notice(id, 'warning', t('电脑操控不可用：{0}', message), 'computer-unavailable')
       })
       this.computer = computer
       this.chat.turnEndListeners.add((id) => computer.turnEnded(id))
@@ -679,9 +670,7 @@ export class AppCore {
     return err ? { ok: false, error: err } : { ok: true }
   }
 
-  backendImages(): Record<string, boolean | undefined> {
-    return Object.fromEntries(this.backends.list().map((b) => [b.id, b.images]))
-  }
+
 
   backendLatestVersion(backendId: string) {
     return this.backends.latestVersion(backendId)

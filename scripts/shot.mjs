@@ -282,12 +282,6 @@ const scenarios = {
     await page.evaluate(() => window.ancora.updateSettings({ computerUse: true }))
     await page.evaluate(() => window.ancora.startChat({ text: '操控电脑，用 记事本', backendId: 'mock' }))
     await page.click('.sidebar :text("操控电脑")')
-    if (process.env.MOCK_IMAGES === '0') {
-      await page.waitForSelector('.notice', { timeout: 20000 })
-      await wait(800)
-      await shot('110-computer-unavailable')
-      return
-    }
     await page.waitForSelector('.perm-app', { timeout: 20000 })
     await page.locator('.perm-app .seg-control button:has-text("仅点击")').click()
     await wait(200)

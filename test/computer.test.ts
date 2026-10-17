@@ -12,7 +12,6 @@ interface Opts {
   enabled?: boolean
   answer?: Record<string, TierChoice> | null | 'defaults'
   unattended?: boolean
-  images?: boolean
   front?: AppRef
   pasteChord?: string
 }
@@ -22,7 +21,6 @@ function setup(opts: Opts = {}) {
   const requests: AccessRequest[] = []
   const active: boolean[] = []
   const actions: string[] = []
-  const unavailable: string[] = []
   let front = opts.front ?? NOTEPAD
   let board = 'old'
   const input: InputDriver = {
@@ -63,8 +61,6 @@ function setup(opts: Opts = {}) {
     clipboard: { read: async () => board, write: (t) => void (board = t) },
     pasteChord: opts.pasteChord,
     enabled: () => opts.enabled ?? true,
-    seesImages: () => opts.images,
-    backendName: () => 'Grok',
     askAccess: async (_id, req) => {
       requests.push(req)
       const a = opts.answer === undefined ? 'defaults' : opts.answer
@@ -73,8 +69,7 @@ function setup(opts: Opts = {}) {
     unattended: () => !!opts.unattended,
     isOwnApp: (a) => a.pid === 1 || (!a.pid && a.name.toLowerCase() === 'ancora'),
     onActive: (_id, on) => void active.push(on),
-    onAction: (_id, label) => void actions.push(label),
-    onUnavailable: (_id, m) => void unavailable.push(m)
+    onAction: (_id, label) => void actions.push(label)
   })
   const tools = cc.tools({ id: 'c1' } as Conversation)
   const call = (name: string, args: Record<string, unknown> = {}) => {
@@ -83,7 +78,7 @@ function setup(opts: Opts = {}) {
     return t.run(args, { conversationId: 'c1' }) as Promise<unknown>
   }
   const grant = async (apps = ['记事本', 'Terminal']) => call('computer_request_access', { apps, reason: '写个文件' })
-  return { cc, calls, call, grant, requests, active, actions, unavailable, setFront: (a: AppRef) => (front = a) }
+  return { cc, calls, call, grant, requests, active, actions, setFront: (a: AppRef) => (front = a) }
 }
 
 describe('computer control', () => {
@@ -158,12 +153,13 @@ describe('computer control', () => {
     expect(away.requests).toHaveLength(0)
   })
 
-  it('a backend that cannot see images is told so, and the user too, once', async () => {
-    const { cc, grant, requests, unavailable } = setup({ images: false })
-    await expect(grant()).rejects.toThrow('Grok 的模型不能查看图片')
-    expect(cc.tools({ id: 'c1' } as never).map((x) => x.name)).toEqual(['computer_request_access'])
-    expect(requests).toHaveLength(0)
-    expect(unavailable).toHaveLength(1)
+  it('offers every agent the tools; the first screenshot tells a model that can\'t see it to stop and say so', async () => {
+    const { cc, call, grant } = setup()
+    expect(cc.tools({ id: 'c1' } as never).length).toBeGreaterThan(1)
+    await grant()
+    const text = (r: unknown) => JSON.stringify(r)
+    expect(text(await call('computer_screenshot'))).toContain('换一个能看图片的模型')
+    expect(text(await call('computer_screenshot'))).not.toContain('换一个能看图片的模型')
   })
 
   it('gets the app out of the way while controlling, and stop withdraws the grant', async () => {
