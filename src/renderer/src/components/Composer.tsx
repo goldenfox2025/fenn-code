@@ -9,6 +9,7 @@ import { lang, t } from '../i18n'
 import { tk } from '@shared/i18n'
 const tr = t
 const NEED_TEXT = tk('请在命令后面写上要做的事')
+const NO_COMMAND = tk('{0} 没有 /{1} 这个命令。输入「/」可以看它有哪些命令。')
 import { choiceLabel, optionLabel } from './sessionOptionLabels'
 import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
@@ -116,6 +117,17 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       void api().runCommand(conversation.id, app.command, app.text).catch(toastError)
       return
     }
+    // A / command the agent doesn't have would reach it as an ordinary message (「/compact」 to an agent
+    // without one): say so instead, once its session has said which commands it has.
+    const unknown = conversation && !target && !files.length ? missingCommand(t, conversation) : undefined
+    if (unknown?.toLowerCase() === 'rename' && t.slice(8).trim()) {
+      // Renaming is the app's to do when the agent has no /rename of its own.
+      setText('')
+      sessionStorage.removeItem(draftKey)
+      void api().updateConversation(conversation!.id, { title: t.slice(8).trim().slice(0, 120) }).catch(toastError)
+      return
+    }
+    if (unknown) return toast(tr(NO_COMMAND, currentBackend?.name ?? conversation!.backendId, unknown), 'error')
     setText('')
     setFiles([])
     sessionStorage.removeItem(draftKey)
@@ -722,6 +734,18 @@ function slashCommands(conv: Conversation): SlashCommand[] {
   if (conv.kind === 'project') list.push({ key: 'app:thread', name: lang === 'en' ? 'thread' : '讨论串', hint: t('开一个讨论串去做'), app: 'thread' }) // i18n-ignore
   for (const c of conv.agentCommands ?? []) list.push({ key: 'agent:' + c.name, name: c.name, hint: c.description?.split('\n')[0] })
   return list
+}
+
+/**
+ * The name of a / command the conversation's agent doesn't offer, or undefined. Only once the agent
+ * has a session (its commands arrive with it) and only for a command-like word, so a path such as
+ * /home/x or a lone / still goes as text.
+ */
+function missingCommand(text: string, conv: Conversation): string | undefined {
+  const name = /^\/([A-Za-z][\w-]*)(?:\s|$)/.exec(text)?.[1]
+  if (!name || (!conv.agentCommands && !conv.sessionRef)) return undefined
+  if (slashCommands(conv).some((c) => c.name.toLowerCase() === name.toLowerCase())) return undefined
+  return name
 }
 
 /** Agent commands that show or change settings, and ones that act on the session; the rest are prompts or skills. */

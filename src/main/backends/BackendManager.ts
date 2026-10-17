@@ -324,6 +324,7 @@ export class BackendManager {
     this.upgrading.add(backendId)
     let r: { ok: boolean; output: string }
     try {
+      await spec.before?.()
       onLine(`> ${[spec.run.command, ...(spec.run.args ?? [])].join(' ')}`)
       r = await runStreaming(spec.run, onLine)
       if (r.ok && spec.after) {

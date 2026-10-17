@@ -979,4 +979,5 @@ export const en: Record<string, string> = {
   "多": "More",
   "{0}：{1} tokens · {2} 条回复": "{0}: {1} tokens · {2} {2:reply|replies}",
   "{0}：没有用量": "{0}: no usage",
+  "{0} 没有 /{1} 这个命令。输入「/」可以看它有哪些命令。": "{0} has no /{1} command. Type / to see the ones it has.",
 }

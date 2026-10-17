@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -31,6 +32,20 @@ const archive = ARCHIVES[`${process.platform}-${process.arch}`]
 export function findAgy(config: Record<string, string> = {}, env = process.env): string | undefined {
   for (const p of [config.AGY_ACP_BIN, env.AGY_ACP_BIN, join(AGY_HOME, EXE)]) if (p && existsSync(p)) return p
   return findOnPath(EXE, env) ?? findOnPath('agy_acp_server', env)
+}
+
+/**
+ * Ends servers a crash or a forced quit left running (their parent is gone). The server doesn't
+ * exit when its input closes, so these stay, and keep its files locked against a reinstall.
+ * Only copies of this very program whose parent has exited; one another app runs is left alone.
+ */
+export function reapOrphans(exe: string | undefined): Promise<void> {
+  if (process.platform !== 'win32' || !exe) return Promise.resolve()
+  const quoted = exe.replace(/'/g, "''")
+  const script = `Get-CimInstance Win32_Process -Filter "Name='${EXE}'" | Where-Object { $_.ExecutablePath -ieq '${quoted}' -and -not (Get-Process -Id $_.ParentProcessId -ErrorAction SilentlyContinue) } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }`
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 15_000 }, () => resolve())
+  })
 }
 
 const MISSING = tk('找不到 Antigravity 的 ACP 服务（agy_acp_server）。请在 设置 → Agent 后端 → Antigravity 里点「安装」，或填写它的路径，然后重试。')
@@ -70,18 +85,22 @@ export default acpPlugin({
   upgrade: archive
     ? {
         installOnly: true,
+        before: () => reapOrphans(join(AGY_HOME, EXE)),
         run: { command: 'curl', args: ['-fsSL', '--retry', '2', '--connect-timeout', '30', '--create-dirs', '-o', join(AGY_HOME, 'agy-acp-server.zip'), `https://dl.google.com/agy-extensions/releases/${archive}`] },
         after: { label: tk('解压 Antigravity 服务'), command: 'tar', args: ['-xf', join(AGY_HOME, 'agy-acp-server.zip'), '-C', AGY_HOME] }
       }
     : undefined,
-  launch: ({ config }) => ({
-    command: findAgy(config) ?? EXE,
-    // The registry's Linux entry passes an empty --uid.
-    args: process.platform === 'linux' ? ['--uid='] : [],
-    env: {
-      GEMINI_API_KEY: config.GEMINI_API_KEY || undefined,
-      // A new session always opens on the default model: make that the chosen one (saves a model switch).
-      AGY_ACP_DEFAULT_MODEL: config.model || undefined
+  launch: async ({ config }) => {
+    await reapOrphans(findAgy(config))
+    return {
+      command: findAgy(config) ?? EXE,
+      // The registry's Linux entry passes an empty --uid.
+      args: process.platform === 'linux' ? ['--uid='] : [],
+      env: {
+        GEMINI_API_KEY: config.GEMINI_API_KEY || undefined,
+        // A new session always opens on the default model: make that the chosen one (saves a model switch).
+        AGY_ACP_DEFAULT_MODEL: config.model || undefined
+      }
     }
-  })
+  }
 })
