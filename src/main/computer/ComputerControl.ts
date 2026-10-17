@@ -182,12 +182,13 @@ export class ComputerControl {
   }
 
   /**
-   * Always listed (agents read the tool list once per session, so toggling the
-   * setting must not change it); when the setting is off, calls explain how to
-   * turn it on.
+   * Listed only while computer control is on and the agent can see images, so
+   * other sessions don't carry ~5000 characters of tools they can't use. Turning
+   * the setting on reopens sessions (ChatService.refreshTools) to pick them up.
    */
   tools(conv: Conversation): ToolDef[] {
     const id = conv.id
+    if (!this.deps.enabled()) return []
     const coordinate = {
       type: 'array',
       items: { type: 'number' },
@@ -223,7 +224,7 @@ export class ComputerControl {
     const clickTool = (name: string, label: string, button: MouseButton, count: number) =>
       tool(name, `${label}。点击前会检查指针下的程序是否允许点击。`, { coordinate, text: modifiers }, ['coordinate'], action((a) => this.doClick(id, a, button, count)))
 
-    return [
+    const all: ToolDef[] = [
       tool(
         'request_access',
         '操控电脑前先调用：列出要操作的程序（用用户能看懂的名字，例如「记事本」「Excel」「Safari」），说明原因。用户会为每个程序选择 完全控制 / 仅点击 / 仅查看。之后只能操作被允许的程序。',
@@ -387,6 +388,8 @@ export class ComputerControl {
         }
       )
     ]
+    // An agent that can't see images keeps only the request, which tells it and the user why not.
+    return this.deps.seesImages?.(id) === false ? all.filter((x) => x.name === 'computer_request_access') : all
   }
 
   private async runBatchItem(id: string, a: Args): Promise<void> {

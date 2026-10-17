@@ -222,6 +222,7 @@ export class ChatService {
       await this.runTurn(conversationId, next.text, next.opts)
     } finally {
       this.running.delete(conversationId)
+      if (this.toolsStale.delete(conversationId)) this.forgetSession(conversationId)
       this.unattendedTurns.delete(conversationId)
       this.tags.delete(conversationId)
       for (const fn of this.turnEndListeners) fn(conversationId)
@@ -625,6 +626,20 @@ export class ChatService {
   }
 
   /** Drops the live session so the next turn starts fresh (e.g. after a backend switch). */
+  private toolsStale = new Set<string>()
+
+  /**
+   * The app's tool list changed (computer control turned on or off): agents read it
+   * once per session, so each session is reopened (resumed where the agent can)
+   * before its next turn, or after the turn it is in.
+   */
+  refreshTools(): void {
+    for (const id of [...this.live.keys()]) {
+      if (this.running.has(id)) this.toolsStale.add(id)
+      else this.forgetSession(id)
+    }
+  }
+
   forgetSession(conversationId: string): void {
     this.epochs.set(conversationId, (this.epochs.get(conversationId) ?? 0) + 1)
     this.connecting.delete(conversationId)

@@ -149,8 +149,9 @@ describe('computer control', () => {
     no.cc.turnEnded('c1')
     await expect(no.grant()).rejects.toThrow('没有允许')
     expect(no.requests).toHaveLength(2)
+    // Off: not listed at all, so other chats don't carry the tools.
     const off = setup({ enabled: false })
-    await expect(off.grant()).rejects.toThrow('设置')
+    expect(off.cc.tools({ id: 'c1' } as never)).toEqual([])
     expect(off.requests).toHaveLength(0)
     const away = setup({ unattended: true })
     await expect(away.grant()).rejects.toThrow('无人值守')
@@ -158,9 +159,9 @@ describe('computer control', () => {
   })
 
   it('a backend that cannot see images is told so, and the user too, once', async () => {
-    const { grant, call, requests, unavailable } = setup({ images: false })
+    const { cc, grant, requests, unavailable } = setup({ images: false })
     await expect(grant()).rejects.toThrow('Grok 的模型不能查看图片')
-    await expect(call('computer_screenshot')).rejects.toThrow('不能查看图片')
+    expect(cc.tools({ id: 'c1' } as never).map((x) => x.name)).toEqual(['computer_request_access'])
     expect(requests).toHaveLength(0)
     expect(unavailable).toHaveLength(1)
   })

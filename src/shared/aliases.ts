@@ -8,9 +8,12 @@ import { effortRankOf } from './effortRank'
  * say which one that is.
  */
 const ALIAS_ID = /^(default|auto|recommended)$/i
-const ALIAS_NAME = /^(default|auto)\b|\brecommended\b|^(默认|推荐|自动)/i // i18n-ignore
+// A "recommended" tag on a real model's name ("GPT-5 (recommended)"); the menu and chip leave it off.
+const TAG = /\s*[(（]\s*(recommended|推荐)\s*[)）]\s*$/i // i18n-ignore
+// What is left is a stand-in only when it names no model: "Default", "Auto", "默认"; not "Auto Gemini".
+const ALIAS_NAME = /^(default|auto|recommended|默认|推荐|自动)?$/i // i18n-ignore
 
-export const isAlias = (id: string, name = ''): boolean => ALIAS_ID.test(id.trim()) || ALIAS_NAME.test(name.trim())
+export const isAlias = (id: string, name = ''): boolean => ALIAS_ID.test(id.trim()) || (!!name.trim() && ALIAS_NAME.test(name.trim().replace(TAG, '')))
 
 /** The model an alias stands for: the one whose name its description gives (e.g. "Opus 5.5 · Most capable"). */
 function standsFor(alias: ModelInfo, concrete: ModelInfo[]): ModelInfo | undefined {
@@ -23,12 +26,12 @@ function standsFor(alias: ModelInfo, concrete: ModelInfo[]): ModelInfo | undefin
 export function resolveModelAliases(models: ModelInfo[], current?: string): { models: ModelInfo[]; current?: string } {
   const concrete = models.filter((m) => !isAlias(m.id, m.name))
   // An agent that offers only stand-ins keeps them: an empty menu helps nobody.
-  if (!concrete.length || concrete.length === models.length) return { models, current }
+  if (!concrete.length) return { models, current }
   let now = current
   const kept: ModelInfo[] = []
   for (const m of models) {
     if (!isAlias(m.id, m.name)) {
-      kept.push(m)
+      kept.push(TAG.test(m.name) ? { ...m, name: m.name.replace(TAG, '') } : m)
       continue
     }
     const real = standsFor(m, concrete)

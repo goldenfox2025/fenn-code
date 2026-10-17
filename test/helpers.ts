@@ -8,7 +8,7 @@ import { Store } from '../src/main/store/Store'
 import { ToolServer } from '../src/main/tools/ToolServer'
 import type { AppEvent } from '../src/shared/model'
 
-export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), agentEnv: Record<string, string> = {}) {
+export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), agentEnv: Record<string, string> = {}, extras: NonNullable<ConstructorParameters<typeof AppCore>[5]> = {}) {
   const events: AppEvent[] = []
   const store = new Store(dir)
   let core!: AppCore
@@ -28,7 +28,7 @@ export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), ag
   core = new AppCore(store, backends, (e) => {
     events.push(e)
     if (e.type === 'permission') void core.respondPermission(e.request.requestId, e.request.options[0].id)
-  }, 'linux', tools)
+  }, 'linux', tools, extras)
   core.documentsDir = join(dir, 'Documents')
   const dispose = async () => {
     await backends.disposeAll()

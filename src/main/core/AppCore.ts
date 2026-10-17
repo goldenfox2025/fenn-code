@@ -294,11 +294,23 @@ export class AppCore {
   leaveUnsafeFolders(): void {
     for (const c of this.store.conversations)
       if (c.kind === 'chat' && this.unsafeFolder(c.cwd)) this.chat.patchConversation(c.id, { cwd: undefined, autoFolder: undefined })
+    // A project there loses the folder too (its files pane then offers to make or pick one).
+    for (const p of this.store.projects)
+      if (this.unsafeFolder(p.cwd)) {
+        const next = { ...p, cwd: undefined }
+        this.store.putProject(next)
+        this.publish({ type: 'project', project: next })
+      }
     const recent = this.store.settings.recentFolders
     if (recent?.some((f) => this.unsafeFolder(f))) this.store.patchSettings({ recentFolders: recent.filter((f) => !this.unsafeFolder(f)) })
-    // 常用文件夹 and 自动建的文件夹放在 are one setting now, the default folder.
+    // 常用文件夹 and 自动建的文件夹放在 are one setting now, the default folder. The old 常用文件夹 was
+    // a folder to work in (often a repository), not a place for new folders: it stays a recent folder.
     const old = this.store.settings.defaultCwd
-    if (old !== undefined) this.store.patchSettings({ defaultCwd: undefined, ...(old && !this.store.settings.autoFolderRoot && !this.unsafeFolder(old) ? { autoFolderRoot: old } : {}) })
+    if (old !== undefined) {
+      const recentNow = this.store.settings.recentFolders ?? []
+      const keep = old && !this.unsafeFolder(old) && !recentNow.includes(old)
+      this.store.patchSettings({ defaultCwd: undefined, ...(keep ? { recentFolders: [old, ...recentNow] } : {}) })
+    }
   }
 
   repairBackends(): void {
@@ -1177,7 +1189,9 @@ export class AppCore {
   }
 
   async updateSettings(patch: Partial<AppSettings>): Promise<void> {
+    const was = !!this.store.settings.computerUse
     const settings = this.store.patchSettings(patch)
+    if (!!settings.computerUse !== was) this.chat.refreshTools()
     if ('acpDebugLog' in patch) setAcpDebugLog(settings.acpDebugLog ? this.logDir : undefined)
     this.publish({ type: 'settings', settings })
     this.onSettingsChanged?.(settings)

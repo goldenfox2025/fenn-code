@@ -16,6 +16,10 @@ describe('stand-in models and levels', () => {
     expect(resolveModelAliases([vague, opus], 'auto')).toEqual({ models: [vague, opus], current: 'auto' })
     // Only stand-ins: kept.
     expect(resolveModelAliases([vague], 'auto').models).toEqual([vague])
+    // Real models that merely start with Auto or carry a "(recommended)" tag stay, the tag left off.
+    const autoG = { id: 'auto-gemini', name: 'Auto Gemini' }
+    const tagged = { id: 'gpt-x', name: 'GPT X (recommended)' }
+    expect(resolveModelAliases([autoG, tagged, opus], 'opus').models).toEqual([autoG, { ...tagged, name: 'GPT X' }, opus])
   })
 
   it('drops a "Default" thinking level and moves the session to the recommended one', () => {

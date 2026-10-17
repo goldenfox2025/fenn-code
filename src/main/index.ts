@@ -184,7 +184,8 @@ const backends = new BackendManager({
     command: process.execPath,
     env: { ELECTRON_RUN_AS_NODE: "1" },
   },
-  defaultCwd: app.getPath("home"),
+  // Sessions with no folder of their own (model probes, titles) run in the app's scratch space, never the home folder.
+  defaultCwd: (mkdirSync(join(dataDir, "workspaces", "_app"), { recursive: true }), join(dataDir, "workspaces", "_app")),
   emit: (e) => {
     if (e.type === "permission")
       core.chat.routePermission(e.backendId, e.request);

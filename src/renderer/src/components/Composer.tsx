@@ -92,7 +92,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const submit = () => {
     if (selecting) return
     const t = text.trim()
-    if (!t && !files.length) return
+    // A picked command goes even without text: /compact needs none; /子对话 says what's missing.
     if (picked && conversation) {
       if (picked.app && !t) return toast(tr(NEED_TEXT), 'error')
       setText('')
@@ -103,6 +103,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       else void api().send(conversation.id, t ? `/${picked.name} ${t}` : `/${picked.name}`).catch(fail)
       return
     }
+    if (!t && !files.length) return
     const app = conversation && !target && appCommand(t, conversation)
     if (app) {
       if (!app.text) return toast(tr(NEED_TEXT), 'error')
@@ -237,7 +238,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
 
   // One choice at a time; the message waits until it has been applied.
   const [selecting, setSelecting] = useState(false)
-  const canSend = !selecting && (!!text.trim() || files.length > 0)
+  const canSend = !selecting && (!!text.trim() || files.length > 0 || !!picked)
   const choose = async (op: () => Promise<unknown>) => {
     if (selecting) return
     setSelecting(true)

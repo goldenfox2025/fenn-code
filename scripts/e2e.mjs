@@ -537,6 +537,20 @@ await check('/ lists the commands; /子对话 hands the text to a new sub-chat w
   const replies = await page.evaluate(async (id) => (await window.ancora.messages(id)).filter((m) => m.role === 'assistant').length, child.parentId)
   const turns = await page.locator('.center .turn').count()
   if (turns > before + 1) throw new Error(`this chat's agent answered too (${before} → ${turns} turns, ${replies} replies)`)
+  // /子对话 with nothing after it says what's missing.
+  await page.fill('.composer textarea', '/子对话 ')
+  await page.locator('.composer .command-chip').waitFor({ timeout: 3000 })
+  await page.keyboard.press('Enter')
+  await page.locator('.toast:has-text("请在命令后面写上要做的事")').waitFor({ timeout: 3000 })
+  await page.keyboard.press('Backspace')
+  // An agent command needs no text: picked from the menu, Enter sends it as is.
+  await page.fill('.composer textarea', '/comp')
+  await page.locator('.slash-pop').waitFor({ timeout: 3000 })
+  await page.keyboard.press('Enter')
+  await page.locator('.composer .command-chip:has-text("compact")').waitFor({ timeout: 3000 })
+  if (await page.locator('.composer .send-btn').isDisabled()) throw new Error('send is off with a picked command')
+  await page.keyboard.press('Enter')
+  await page.locator('.center .bubble .cmd-token:has-text("/compact")').waitFor({ timeout: 5000 })
 })
 
 await check('a new project is not pinned and is listed by recent activity', async () => {

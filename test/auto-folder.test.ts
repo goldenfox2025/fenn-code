@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { folderSafeName, uniqueDir } from '../src/main/core/autoFolder'
@@ -86,9 +86,15 @@ describe('one default folder', () => {
       expect(q.cwd).not.toBe(p.cwd)
       const mine = mkdtempSync(join(tmpdir(), 'oc-root-'))
       store.patchSettings({ defaultCwd: mine })
+      // A project an older version put in the home folder loses it.
+      const home = await core.createProject({ name: '旧项目', backendId: 'mock' })
+      store.putProject({ ...store.project(home.id)!, cwd: homedir() })
       core.leaveUnsafeFolders()
-      expect(store.settings).toMatchObject({ autoFolderRoot: mine })
+      // The old 常用文件夹 was a place to work in, not the root for new folders: it stays a recent folder.
+      expect(store.settings.autoFolderRoot).toBeUndefined()
+      expect(store.settings.recentFolders?.[0]).toBe(mine)
       expect(store.settings.defaultCwd).toBeUndefined()
+      expect(store.project(home.id)!.cwd).toBeUndefined()
     } finally { await dispose() }
   })
 
