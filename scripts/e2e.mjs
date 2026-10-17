@@ -276,10 +276,13 @@ await check('one click turns 玻璃效果 on and back off, and the long chat sti
 await check('Esc closes dialogs, and Settings keeps one size on every tab', async () => {
   await page.click('.user-btn')
   await page.waitForSelector('.modal.wide')
+  // Measure once the dialog has finished rising in.
+  const settled = () => page.waitForFunction(() => document.querySelector('.modal.wide')?.getAnimations({ subtree: true }).every((a) => a.playState !== 'running') ?? false, null, { timeout: 3000 })
   const sizes = new Set()
   for (const tab of ['通用', '外观', 'Agent 后端', '连接器', '关于']) {
     await page.click(`.settings-nav .nav-item:has-text("${tab}")`)
     await page.waitForTimeout(120)
+    await settled().catch(() => {})
     const b = await page.locator('.modal.wide').boundingBox()
     sizes.add(`${Math.round(b.width)}x${Math.round(b.height)}`)
   }

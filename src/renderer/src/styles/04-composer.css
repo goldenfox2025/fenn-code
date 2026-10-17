@@ -7,11 +7,12 @@
 .queue-tray {
   max-width: 800px;
   margin: 0 auto calc(-1 * var(--space-6));
-  padding: var(--space-2) var(--space-4) calc(var(--space-6) + var(--space-2));
+  /* Its text lines up with the composer's. */
+  padding: var(--space-2) var(--space-6) calc(var(--space-6) + var(--space-2)) var(--space-7);
   border: 1px solid var(--border);
   border-bottom: none;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--bg-sidebar);
+  background: var(--bg-input);
   display: flex;
   flex-direction: column;
   animation: rise-in var(--dur-2) var(--ease);
@@ -38,6 +39,15 @@
 .queue-row .text-link {
   flex: none;
   font-size: var(--font-xs);
+}
+/* As in Claude: a waiting message's actions show when the pointer is on it. */
+.queue-row > button {
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.queue-row:hover > button,
+.queue-row:focus-within > button {
+  opacity: 1;
 }
 /* The composer covers the tray's lower edge, also while the tray slides in. */
 .queue-tray + .composer {

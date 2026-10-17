@@ -679,6 +679,18 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     await stream(sessionId, "已在上一条回复里更正。", abort);
     return;
   }
+  // 「#搜新闻」: a turn as Codex streams one: an opening line, raw MCP tool names, reasoning summaries in markdown.
+  if (/#搜新闻/.test(text)) {
+    await stream(sessionId, "我会按新闻发布时间和事件发生时间核对，整理最近值得关注的动向。", abort);
+    const tool = (i, title, rawInput) => notify(sessionId, { sessionUpdate: "tool_call", toolCallId: `news${s.turns}-${i}`, title, kind: "other", status: "completed", rawInput });
+    tool(0, "Guardian Review", {});
+    tool(1, "mcp.codex_apps.search_service.web_run", { search_query: [{ q: "扎克伯格 最新 动向" }] });
+    await stream(sessionId, "\n\n**Gathering news sources**\n\nI'm considering how to find suitable recent news. I need about four to five substantive pieces from trustworthy outlets.", abort, "agent_thought_chunk");
+    tool(2, "mcp.codex_apps.search_service.web_run", { open: [{ ref_id: "https://example.com/news/1" }] });
+    tool(3, "Guardian Review", {});
+    await stream(sessionId, "最近有三件事值得关注：\n\n1. **新眼镜发布**：发布会上展示了新一代产品。\n2. **AI 投入**：公司继续加大数据中心投资。\n3. **播客访谈**：谈到了开源模型的路线。", abort);
+    return;
+  }
   // 「#啰嗦」: a talkative agent that narrates every move (as some models do); 「#啰嗦慢」 lingers so the working mark shows.
   if (/#啰嗦/.test(text)) {
     const slow = /#啰嗦慢/.test(text);

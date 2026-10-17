@@ -826,8 +826,12 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
       {failed && !running && (
         <div className="help small upgrade-help">
           {failed === 'notFound'
-            ? t('安装命令已经顺利完成，但 Ancora 还是找不到 {0} 的程序，通常是因为它装进的文件夹不在 Ancora 能看到的 PATH 里。请完全退出 Ancora 再打开；如果还是「未安装」，在终端运行 npm prefix -g，确认它显示的文件夹（macOS/Linux 是其中的 bin）在系统的 PATH 里。', name)
-            : t('没装好时，可以在终端里自己运行详情里的第一行命令看看。npm 在 macOS/Linux 上有时需要管理员权限；要走代理时先设好 HTTPS_PROXY。')}
+            ? commands.some((c) => /^npm\b/.test(c))
+              ? t('安装命令已经顺利完成，但 Ancora 还是找不到 {0} 的程序，通常是因为它装进的文件夹不在 Ancora 能看到的 PATH 里。请完全退出 Ancora 再打开；如果还是「未安装」，在终端运行 npm prefix -g，确认它显示的文件夹（macOS/Linux 是其中的 bin）在系统的 PATH 里。', name)
+              : t('安装命令已经顺利完成，但 Ancora 还是找不到 {0} 的程序。请完全退出 Ancora 再打开；如果还是「未安装」，可以在设置里填写它的路径。', name)
+            : commands.some((c) => /^npm\b/.test(c))
+              ? t('没装好时，可以在终端里自己运行详情里的第一行命令看看。npm 在 macOS/Linux 上有时需要管理员权限；要走代理时先设好 HTTPS_PROXY。')
+              : t('没装好时，可以在终端里自己运行详情里的第一行命令看看。要走代理时先设好 HTTPS_PROXY。')}
           {output && (
             <details>
               <summary>{t('详情')}</summary>

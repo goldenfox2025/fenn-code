@@ -227,6 +227,12 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (ready && conversation && !busy) void api().prepareConversation(conversation.id).catch(() => undefined)
   }, [conversation?.id, bid, ready])
 
+  // A new chat: start its agent now, so the first message doesn't wait for it to start.
+  const warmable = !conversation && !!currentBackend && !accountHint(bid)
+  useEffect(() => {
+    if (warmable) void api().warmBackend(bid).catch(() => undefined)
+  }, [bid, warmable])
+
   // The models a backend offers, read from a fresh session before the first message (no prompt is sent).
   const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string; needsLogin?: boolean }>({ for: '', loading: false })
   const [retry, setRetry] = useState(0)

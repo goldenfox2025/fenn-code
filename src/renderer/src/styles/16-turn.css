@@ -22,6 +22,19 @@
 .turn > .steps:last-child {
   margin-bottom: 0 !important;
 }
+/* Tool calls on their own lines sit under the turn's rail like a step; a thinking line and a run of tools beside each other read as one block. */
+.turn > .tool-run {
+  margin-bottom: calc(var(--space-5) - var(--turn-gap)) !important;
+}
+.turn > .tool-run .tool-row {
+  font-size: var(--font-md);
+}
+.turn > .tool-run:last-child {
+  margin-bottom: 0 !important;
+}
+.turn > :is(.steps, .tool-run):has(+ :is(.steps, .tool-run)) {
+  margin-bottom: calc(var(--space-1) - var(--turn-gap)) !important;
+}
 .working-mark {
   display: flex;
   align-items: center;

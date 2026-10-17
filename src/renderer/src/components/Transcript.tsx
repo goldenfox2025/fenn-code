@@ -42,7 +42,7 @@ import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
 import { classifyError, isFriendly, type ErrorKind } from '@shared/errors'
 
-import { groupBlocks, type PlanBlock, type StepBlock, type ToolBlock } from '../turn'
+import { segmentBlocks, type ToolBlock } from '../turn'
 
 export function Transcript({ conversation, compact, header }: { conversation: Conversation; compact?: boolean; header?: React.ReactNode }) {
   const messages = useApp((s) => s.messages[conversation.id])
@@ -311,7 +311,7 @@ function VersionSwitch({ m, busy }: { m: Message; busy?: boolean }) {
 function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?: boolean }) {
   const streaming = m.state === 'streaming'
   const connecting = m.blocks.find((b): b is Extract<Block, { type: 'notice' }> => b.type === 'notice' && b.key === 'starting')
-  const groups = groupBlocks(m.blocks)
+  const groups = segmentBlocks(m.blocks)
   const [menu, openMenu] = useMenu({ row: true, placement: 'auto' })
   const inProjectChat = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.kind === 'project')
   if (!streaming && m.state === 'done' && groups.length === 0 && !m.reactions?.length) return null
@@ -319,8 +319,14 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
   return (
     <div className={'msg msg-assistant turn' + (streaming ? ' streaming' : '')}>
       {groups.map((g, i) => {
-        if (Array.isArray(g)) return <Steps key={i} steps={g} live={streaming && i === groups.length - 1} />
+        const live = streaming && i === groups.length - 1
         switch (g.type) {
+          case 'thought':
+            return <ThoughtFold key={i} block={g} live={live} />
+          case 'tools':
+            return <ToolRunView key={i} tools={g.tools} live={live} />
+          case 'plan':
+            return <PlanFold key={i} entries={g.entries} />
           case 'text':
             return <Markdown key={i} text={g.text} />
           case 'notice':
@@ -370,6 +376,8 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
       {!streaming && (
         <div className="msg-actions">
           {!!textOf(m) && <CopyButton text={textOf(m)} />}
+{/* A failed reply has nothing to answer to. */}
+          {m.state !== 'error' && (
           <button
             className="icon-btn sm"
             data-tip={t('添加回应')}
@@ -385,6 +393,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           >
             <SmilePlus size={14} />
           </button>
+          )}
           {/* The banner below a long answer already offers it. */}
           {inProjectChat && !busy && !m.blocks.some((b) => b.type === 'thread-card') && !(m.state === 'done' && suggestsThread(m, inProjectChat, last, busy)) && (
             <button className="icon-btn sm" data-tip={t('转为讨论串')} onClick={() => void api().convertToThread(m.conversationId, m.id)}>
@@ -526,6 +535,28 @@ function DecisionCard({ m, index, d }: { m: Message; index: number; d: Extract<B
 }
 
 /** Readable labels for the app's computer-control tools. */
+/** A title naming a file by its whole path (「Read `C:\\Users\\…\\plan.md`」) names it by its file name. */
+function shortPaths(title: string): string {
+  return title.replace(/`?(?:[A-Za-z]:)?(?:[\\/][^\\/\s`]+){2,}[\\/]([^\\/\s`]+)`?/g, '$1')
+}
+
+/** A search or page fetch, said as one (Codex names its search tool `mcp.codex_apps.search_service.web_run`). */
+const WEB_TOOL = /(^|[.\/:_\s])(web_run|web_search|search_query|websearch|google_search|web_fetch|fetch_url|open_url)$/i
+const isWeb = (title: string) => WEB_TOOL.test(title.trim())
+
+function webTitle(title: string, a: Record<string, unknown>): string | undefined {
+  const name = /[\w-]+$/.exec(title.trim())?.[0] ?? ''
+  if (!isWeb(title)) return undefined
+  const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)
+  const q = first(a.search_query) ?? first(a.queries)
+  const query = (typeof q === 'object' && q ? (q as { q?: unknown }).q : q) ?? a.query ?? a.q
+  const open = first(a.open) ?? a.url
+  const url = (typeof open === 'object' && open ? (open as { ref_id?: unknown; url?: unknown }).url ?? (open as { ref_id?: unknown }).ref_id : open)
+  if (typeof query === 'string' && query) return t('搜索网页：{0}', query)
+  if (typeof url === 'string' && url) return t('打开网页：{0}', url.replace(/^https?:\/\//, ''))
+  return /fetch|open/i.test(name) ? t('打开网页') : t('搜索网页')
+}
+
 function toolTitle(tool: ToolBlock): string {
   let a: Record<string, unknown> = {}
   try {
@@ -534,9 +565,11 @@ function toolTitle(tool: ToolBlock): string {
     /* keep defaults */
   }
   if (/project_files_list$/.test(tool.title)) return t('查看项目文件')
+  const web = webTitle(tool.title, a)
+  if (web) return web
   if (/project_file_read$/.test(tool.title)) return t('读取项目文件 {0}', a.name ?? '')
   const m = /computer_(\w+)$/.exec(tool.title)
-  if (!m) return tool.title
+  if (!m) return shortPaths(tool.title)
   const c = Array.isArray(a.coordinate) ? a.coordinate : a.x !== undefined ? [a.x, a.y] : undefined
   const at = c ? t('（{0}, {1}）', c[0], c[1]) : ''
   switch (m[1]) {
@@ -593,20 +626,9 @@ function toolTitle(tool: ToolBlock): string {
 }
 
 /** One line that says what the agent did (「思考了 4 秒，运行了 2 个命令」). */
-function stepsSummary(steps: StepBlock[]): string {
+/** What a run of tool calls did, in a few words (「运行了 2 个命令，读取了 3 个文件」). */
+function toolsSummary(tools: ToolBlock[]): string {
   const parts: string[] = []
-  const thoughts = steps.filter((s) => s.type === 'thought')
-  if (thoughts.length) {
-    const ms = thoughts.reduce((n, s) => n + (s.ms ?? 0), 0)
-    const timed = thoughts.some((s) => s.ms != null)
-    parts.push(!timed ? t('思考过程') : ms >= 1000 ? t('思考了 {0} 秒', Math.round(ms / 1000)) : t('思考了片刻'))
-  }
-  const plan = steps.find((s): s is PlanBlock => s.type === 'plan')
-  if (plan) {
-    const done = plan.entries.filter((e) => e.status === 'completed').length
-    parts.push(t('清单完成 {0}/{1}', done, plan.entries.length))
-  }
-  const tools = steps.filter((s): s is ToolBlock => s.type === 'tool')
   const dirs = tools.filter(isListing).length
   const count = (kinds: (string | undefined)[]) => tools.filter((x) => kinds.includes(x.toolKind) && !isListing(x)).length
   const kinds: [number, (n: number) => string][] = [
@@ -633,68 +655,87 @@ function isListing(tool: ToolBlock): boolean {
   return /^(列出|查看目录|list|ls\b|dir\b)|list_dir|read_dir|list_files|directory/i.test(tool.title) // i18n-ignore
 }
 
-/** What the agent is doing right now, for the live line. */
-function liveLabel(steps: StepBlock[]): string {
-  const last = [...steps].reverse().find((s) => s.type !== 'text') ?? steps[steps.length - 1]
-  if (last.type === 'thought') return t('思考中…')
-  if (last.type === 'plan') return last.entries.find((e) => e.status === 'in_progress')?.content ?? t('正在处理…')
-  if (last.type === 'text') return t('正在处理…')
-  return toolTitle(last)
-}
-
-/**
- * Thinking and tool calls, like Claude: a muted one-line toggle, folded by
- * default, that opens into the steps along a thin rail. Each tool opens to
- * its input and output.
- */
-function Steps({ steps, live }: { steps: StepBlock[]; live: boolean }) {
+/** A muted one-line toggle, folded by default, that opens along a thin rail (Claude's thinking line). */
+function Fold({ label, live, children }: { label: string; live?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
-  const [tool, setTool] = useState<string | null>(null)
   return (
     <div className={'steps' + (open ? ' open' : '')}>
       <button className={'steps-toggle' + (live ? ' live' : '')} aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{live ? liveLabel(steps) : stepsSummary(steps)}</span>
+        <span>{label}</span>
         <ChevronRight size={14} className="steps-chevron" />
       </button>
+      {open && <div className="steps-body">{children}</div>}
+    </div>
+  )
+}
+
+/** One bout of thinking: 「思考了 6 秒」, folded; it opens to what the agent thought. */
+function ThoughtFold({ block, live }: { block: Extract<Block, { type: 'thought' }>; live: boolean }) {
+  const label = live ? t('思考中…') : block.ms == null ? t('思考过程') : block.ms >= 1000 ? t('思考了 {0} 秒', Math.round(block.ms / 1000)) : t('思考了片刻')
+  return (
+    <Fold label={label} live={live}>
+      <div className="step-thought">
+        <Markdown text={block.text.trim()} />
+      </div>
+    </Fold>
+  )
+}
+
+/** A few tool calls stand on their own lines; a long run folds into one line that says what it did. */
+const RUN_SHOWN = 4
+
+function ToolRunView({ tools, live }: { tools: ToolBlock[]; live: boolean }) {
+  const rows = (
+    <div className="tool-run">
+      {tools.map((s) => (
+        <ToolRow key={s.toolId} tool={s} />
+      ))}
+    </div>
+  )
+  if (tools.length <= RUN_SHOWN) return rows
+  return (
+    <Fold label={live ? toolTitle(tools[tools.length - 1]) : toolsSummary(tools)} live={live}>
+      {rows}
+    </Fold>
+  )
+}
+
+/** One tool call; it opens to its input and output. */
+function ToolRow({ tool: s }: { tool: ToolBlock }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="step-tool">
+      <button className="tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {/computer_/.test(s.title) ? (
+          <MousePointerClick size={14} />
+        ) : isWeb(s.title) ? (
+          <Globe size={14} />
+        ) : /project_file/.test(s.title) ? (
+          <FileText size={14} />
+        ) : (
+          toolIcon(s.toolKind)
+        )}
+        <span className="t" data-tip={toolTitle(s) !== s.title ? s.title : undefined}>{toolTitle(s)}</span>
+        {/* Like Claude: a finished step needs no mark; running and failed ones do. */}
+        {s.status !== 'completed' && <StatusIcon status={s.status} />}
+      </button>
       {open && (
-        <div className="steps-body">
-          {steps.map((s, i) =>
-            s.type === 'plan' ? (
-              <Plan key={i} entries={s.entries} />
-            ) : s.type === 'text' ? (
-              <div key={i} className="step-text">
-                <Markdown text={s.text} />
-              </div>
-            ) : s.type === 'thought' ? (
-              <div key={i} className="step-thought">
-                {s.text}
-              </div>
-            ) : (
-              <div key={s.toolId} className="step-tool">
-                <button className="tool-row" onClick={() => setTool(tool === s.toolId ? null : s.toolId)}>
-                  {/computer_/.test(s.title) ? (
-                    <MousePointerClick size={14} />
-                  ) : /project_file/.test(s.title) ? (
-                    <FileText size={14} />
-                  ) : (
-                    toolIcon(s.toolKind)
-                  )}
-                  <span className="t">{toolTitle(s)}</span>
-                  {/* Like Claude: a finished step needs no mark; running and failed ones do. */}
-                  {s.status !== 'completed' && <StatusIcon status={s.status} />}
-                </button>
-                {tool === s.toolId && (
-                  <div className="tool-detail">
-                    {s.input && `${t('输入')}\n${s.input}\n\n`}
-                    {s.output ? `${t('输出')}\n${s.output}` : s.status === 'running' ? t('运行中…') : ''}
-                  </div>
-                )}
-              </div>
-            )
-          )}
+        <div className="tool-detail">
+          {s.input && `${t('输入')}\n${s.input}\n\n`}
+          {s.output ? `${t('输出')}\n${s.output}` : s.status === 'running' ? t('运行中…') : ''}
         </div>
       )}
     </div>
+  )
+}
+
+/** The agent's checklist for the turn, folded: 「清单完成 2/5」. */
+function PlanFold({ entries }: { entries: Extract<Block, { type: 'plan' }>['entries'] }) {
+  const done = entries.filter((e) => e.status === 'completed').length
+  return (
+    <Fold label={t('清单完成 {0}/{1}', done, entries.length)}>
+      <Plan entries={entries} />
+    </Fold>
   )
 }
 

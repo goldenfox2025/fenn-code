@@ -20,7 +20,7 @@ export type AgentEvent =
   | { kind: 'tool.update'; toolId: string; title?: string; status?: ToolStatus; output?: string; toolKind?: string; paths?: string[] }
   | { kind: 'plan'; entries: { content: string; status: 'pending' | 'in_progress' | 'completed' }[] }
   /** The session's other choices changed (e.g. the agent switched its own mode). */
-  | { kind: 'options'; options: SessionOption[] }
+  | { kind: 'options'; options: SessionOption[]; /** The option the user just set by typing its command: their choice now. */ typed?: string }
   /** A status note; a later notice with the same key replaces it (e.g. retry progress). */
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string; key?: string }
   /** The slash commands the agent offers now (ACP available_commands_update), without the slash. */
@@ -200,6 +200,8 @@ export interface AgentBackend {
    * session, also removed from the agent's own history where it can (Codex archives it).
    */
   closeSession?(sessionId: string, opts?: { discard?: boolean }): Promise<void>
+  /** Starts the agent before it is needed (and, where its first session is slow to open, opens and discards one). Sends nothing. */
+  warm?(cwd: string): Promise<void>
   /** Runs one turn. Events stream through BackendHost.emit until it resolves. */
   prompt(sessionId: string, parts: PromptPart[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>

@@ -486,10 +486,8 @@ export class AppCore {
     const conv = this.store.conversation(conversationId)
     // Writing in a resolved thread reopens it, as in Claude Projects.
     if (conv?.resolved) this.chat.patchConversation(conversationId, { resolved: false })
-    // The agent's own slash commands go to it as typed, without the app's notes in front.
-    const name = /^\/(\S+)/.exec(text.trim())?.[1]
-    const raw = !!name && !!conv?.agentCommands?.some((c) => c.name === name) && !attachments?.length
-    void this.chat.send(conversationId, text, { attachments, raw: raw || undefined })
+    // The agent's own slash commands go to it as typed (ChatService decides once the session says which it has).
+    void this.chat.send(conversationId, text, { attachments })
   }
 
   /**
@@ -606,6 +604,12 @@ export class AppCore {
     const status = await this.backends.account(backendId)
     if (status.signedIn === true) this.signedInAgain(backendId)
     return status
+  }
+
+  /** The new-chat composer shows this agent: start it now, so the first message doesn't wait for it. */
+  async warmBackend(backendId: string): Promise<void> {
+    if (!this.backends.has(backendId) || this.backends.list().find((b) => b.id === backendId)?.installed === false) return
+    await this.backends.warm(backendId)
   }
 
   async prepareConversation(conversationId: string): Promise<void> {

@@ -1,4 +1,8 @@
+import { existsSync, realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { acpPlugin, type AccountCheck } from '../acp'
+import { nodeScript, packageDir } from '../nodeScript'
 import { t, tk } from '../../../shared/i18n'
 
 /** `codex login status` says "Logged in using ChatGPT" (exit 0) or "Not logged in" (exit 1). */
@@ -14,6 +18,48 @@ export function codexAccount(config: Record<string, string> = {}): AccountCheck 
       const via = /using (.+)$/i.exec(line)?.[1]
       return { installed: true, signedIn: line ? true : undefined, detail: via ? (/chatgpt/i.test(via) ? t('ChatGPT 账号') : via) : undefined }
     }
+  }
+}
+
+const TRIPLES: Record<string, string> = {
+  'win32-x64': 'x86_64-pc-windows-msvc',
+  'win32-arm64': 'aarch64-pc-windows-msvc',
+  'darwin-x64': 'x86_64-apple-darwin',
+  'darwin-arm64': 'aarch64-apple-darwin',
+  'linux-x64': 'x86_64-unknown-linux-musl',
+  'linux-arm64': 'aarch64-unknown-linux-musl'
+}
+
+/**
+ * The Codex program the adapter ships with, found the way its own `codex.js` finds it. Started
+ * directly, Codex skips a second Node process (codex.js) that does nothing but start it.
+ */
+export function bundledCodex(adapterScript: string): { exe: string; root: string } | undefined {
+  const adapter = packageDir(adapterScript, '@agentclientprotocol/codex-acp')
+  const triple = TRIPLES[`${process.platform}-${process.arch}`]
+  if (!adapter || !triple) return undefined
+  try {
+    const root = dirname(createRequire(join(adapter, 'package.json')).resolve('@openai/codex/package.json'))
+    const vendor = dirname(createRequire(join(root, 'package.json')).resolve(`@openai/codex-${process.platform}-${process.arch}/package.json`))
+    const exe = join(vendor, 'vendor', triple, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex')
+    return existsSync(exe) ? { exe, root: realpathSync(root) } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** codex-acp as `node <its script>` (no .cmd shim), with Codex itself started directly. */
+export function codexLaunch(config: Record<string, string>): { command: string; args: string[]; env: Record<string, string | undefined> } {
+  const spec = nodeScript(config.CODEX_ACP_PATH?.trim() || 'codex-acp', '@agentclientprotocol/codex-acp/dist/index.js', [])
+  const own = config.CODEX_CLI_PATH?.trim()
+  const bundled = !own && spec.requires ? bundledCodex(spec.requires[0]) : undefined
+  return {
+    command: spec.command,
+    args: spec.args,
+    // What codex.js would have set for it, so Codex behaves the same.
+    env: bundled
+      ? { CODEX_PATH: bundled.exe, CODEX_MANAGED_PACKAGE_ROOT: bundled.root, CODEX_MANAGED_BY_NPM: '1' }
+      : { CODEX_PATH: own || undefined }
   }
 }
 
@@ -40,11 +86,10 @@ export default acpPlugin({
   },
   quirks: {
     inputIncludesCache: true,
+    // Its first session in a process loads the user's Codex config, plugins and MCP servers (seconds); later ones are quick.
+    warmSession: true,
     authHint: tk('请在 设置 → Agent 后端 → Codex 里点「登录」（会在终端里运行 codex login），登录后重试。'),
     missingHint: tk('请在 设置 → Agent 后端 → Codex 里点「安装」，或在终端运行 npm install -g @openai/codex @agentclientprotocol/codex-acp，然后重试。')
   },
-  launch: ({ config }) => ({
-    command: config.CODEX_ACP_PATH?.trim() || 'codex-acp', args: [],
-    env: { CODEX_PATH: config.CODEX_CLI_PATH?.trim() || undefined }
-  })
+  launch: ({ config }) => codexLaunch(config)
 })

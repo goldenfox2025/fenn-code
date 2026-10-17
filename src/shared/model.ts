@@ -546,6 +546,8 @@ export interface AncoraApi {
   backendCredits(backendId: string, refresh?: boolean): Promise<CreditQuota | undefined>
   /** Opens the conversation's agent session in the background, before the first message. Sends nothing. */
   prepareConversation(conversationId: string): Promise<void>
+  /** Starts an agent before the first message of a new chat. Sends nothing. */
+  warmBackend(backendId: string): Promise<void>
   /** Opens the folder the ACP debug log is written to. */
   openLogFolder(): Promise<void>
   /** Reads the agent's session metadata without sending a prompt or creating a chat. */

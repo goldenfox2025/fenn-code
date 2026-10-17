@@ -932,4 +932,10 @@ export const en: Record<string, string> = {
   "正在压缩上下文…": "Compacting context…",
   "已压缩上下文": "Context compacted",
   "{0} 已执行，没有返回内容。": "{0} ran with no output.",
+  "搜索网页：{0}": "Searched the web: {0}",
+  "打开网页：{0}": "Opened {0}",
+  "打开网页": "Opened a page",
+  "搜索网页": "Searched the web",
+  "没装好时，可以在终端里自己运行详情里的第一行命令看看。要走代理时先设好 HTTPS_PROXY。": "If it didn’t install, try the first command in the details in a terminal yourself. Set HTTPS_PROXY first if you need a proxy.",
+  "安装命令已经顺利完成，但 Ancora 还是找不到 {0} 的程序。请完全退出 Ancora 再打开；如果还是「未安装」，可以在设置里填写它的路径。": "The install command finished, but Ancora still can’t find {0}. Quit Ancora completely and open it again; if it still says Not installed, enter its path in Settings.",
 }

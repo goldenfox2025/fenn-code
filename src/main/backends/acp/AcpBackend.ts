@@ -80,6 +80,11 @@ export interface AcpQuirks {
    * context holds now (Grok: `totalTokens`, the figure its own /session-info shows).
    */
   contextTokensMeta?: string
+  /**
+   * The agent's first session in a process is slow to open and later ones are quick (Codex loads its
+   * config, plugins and MCP servers once): warming up opens and discards one.
+   */
+  warmSession?: boolean
   /** / commands that do nothing over ACP, sent as another command that answers (Grok: /context → /session-info). */
   commandAliases?: Record<string, string>
 }
@@ -224,6 +229,7 @@ export class AcpBackend implements AgentBackend {
       proc.once('exit', (code, signal) => {
         const wasUs = this.proc !== proc
         this.conn = undefined
+        this.warmed = undefined
         this.starting = undefined
         // Through a shell (Windows .cmd), a missing program shows up as an exit, not ENOENT.
         this.exitReason = /is not recognized as an internal or external command|command not found/i.test(this.stderrTail.join(''))
@@ -366,6 +372,20 @@ export class AcpBackend implements AgentBackend {
     })
   }
 
+  private warmed?: Promise<void>
+
+  warm(cwd: string): Promise<void> {
+    this.warmed ??= (async () => {
+      await this.start()
+      if (!this.quirks.warmSession) return
+      const res = await this.conn!.newSession({ cwd, mcpServers: [] })
+      void this.closeSession(res.sessionId, { discard: true })
+    })().catch(() => {
+      this.warmed = undefined
+    })
+    return this.warmed
+  }
+
   async closeSession(sessionId: string, opts: { discard?: boolean } = {}): Promise<void> {
     this.workspaces.close(sessionId)
     this.modelSelectors.delete(sessionId)
@@ -499,7 +519,7 @@ export class AcpBackend implements AgentBackend {
     const next = exact ?? toggled
     if (!next || next.value === opt.current) return
     opt.current = next.value
-    this.emitOptions(sessionId)
+    this.host.emit(sessionId, { kind: 'options', options: this.optionsOf(sessionId) ?? [], typed: opt.id })
   }
 
   /** A / command the agent answers only in its own terminal, swapped for one it answers over ACP. */
@@ -664,6 +684,7 @@ export class AcpBackend implements AgentBackend {
     p?.kill()
     this.workspaces.closeAll()
     this.conn = undefined
+    this.warmed = undefined
     this.starting = undefined
   }
 

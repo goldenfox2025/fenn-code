@@ -52,7 +52,7 @@
 :root:is([data-theme='glass'], [data-theme='glass-light']) .panel.maximized {
   background-color: var(--bg-floating);
 }
-:root[data-theme='glass'] .composer {
+:root[data-theme='glass'] :is(.composer, .queue-tray) {
   backdrop-filter: var(--frost);
   border-color: rgba(255, 255, 255, 0.12);
 }
@@ -151,7 +151,7 @@
 :root.no-blur[data-theme='glass'] * {
   backdrop-filter: none !important;
 }
-:root.no-blur[data-theme='glass'] :is(.sidebar, .panel, .side-pane, .page-panel, .composer) {
+:root.no-blur[data-theme='glass'] :is(.sidebar, .panel, .side-pane, .page-panel, .composer, .queue-tray) {
   background-color: rgba(18, 20, 30, 0.82);
 }
 :root.no-blur[data-theme='glass'] .panel.floating,

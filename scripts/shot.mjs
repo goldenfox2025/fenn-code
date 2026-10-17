@@ -172,6 +172,16 @@ const scenarios = {
     await wait(300)
     await shot('subchat-child')
   },
+  // A Codex-style turn: its opening line stays above the steps; inside, reasoning reads as markdown and searches by what they looked up.
+  async news() {
+    await page.evaluate(() => window.ancora.startChat({ text: '#搜新闻 最近有什么新闻', backendId: 'mock' }))
+    await page.click('.sidebar .nav-item >> text=/搜新闻/')
+    await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
+    await wait(400)
+    await page.click('.turn .steps-toggle')
+    await wait(300)
+    await shot('news-steps-open')
+  },
   // One turn: steps line, answer, a card and the action row; then the working mark mid-turn.
   async turn() {
     const c = await page.evaluate(() => window.ancora.startChat({ text: '#啰嗦 开子对话 看板上能看到这个讨论串吗？', backendId: 'mock' }))

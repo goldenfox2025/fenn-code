@@ -303,7 +303,13 @@ export class ChatService {
       this.scheduleEmit(reply)
     }
     try {
-      const session = await this.ensureSession(conv).finally(() => {
+      // Stopped while the agent is still starting: the reply ends now; the connection carries on for the next message.
+      const opening = this.ensureSession(conv)
+      opening.catch(() => undefined)
+      const stop = new Promise<never>((_, reject) => this.stopWaiters.set(conversationId, () => reject(STOPPED)))
+      stop.catch(() => undefined)
+      const session = await Promise.race([opening, stop]).finally(() => {
+        this.stopWaiters.delete(conversationId)
         const i = reply.blocks.findIndex((b) => b.type === 'notice' && b.key === 'starting')
         if (i >= 0) {
           reply.blocks.splice(i, 1)
@@ -312,6 +318,8 @@ export class ChatService {
       })
       live = session.live
       live.unprompted = undefined
+      // The agent's own / command goes to it as typed, with nothing of the app's in front, or it isn't one.
+      if (!opts.raw && !attachments.length && (await this.isAgentCommand(conversationId, text))) opts = { ...opts, raw: true }
       if (!session.fresh) await this.applyDeferred(conversationId, live)
       else this.deferred.delete(conversationId)
       let promptText = text
@@ -343,7 +351,7 @@ export class ChatService {
       this.meters.set(conversationId, new TurnMeter(performance.now()))
       result = this.stopped.has(conversationId) ? { stopReason: 'cancelled' } : await this.backends.prompt(live.backendId, live.sessionId, parts)
     } catch (err) {
-      result = { stopReason: 'error', error: err instanceof Error ? err.message : String(err) }
+      result = err === STOPPED ? { stopReason: 'cancelled' } : { stopReason: 'error', error: err instanceof Error ? err.message : String(err) }
     }
 
     this.flushEmit(reply)
@@ -394,6 +402,21 @@ export class ChatService {
     const l = this.live.get(conversationId)
     return l && { turns: l.turns, chars: l.chars }
   }
+
+  /**
+   * `/name …` naming a command the agent offers. A session that just opened may list its commands
+   * a moment after it answers, so a / message waits briefly for that list.
+   */
+  private async isAgentCommand(conversationId: string, text: string): Promise<boolean> {
+    const name = /^\/(\S+)/.exec(text.trim())?.[1]
+    if (!name) return false
+    const has = () => !!this.store.conversation(conversationId)?.agentCommands?.some((c) => c.name === name)
+    for (let i = 0; i < 10 && !has() && !this.store.conversation(conversationId)?.agentCommands?.length; i++) await new Promise((r) => setTimeout(r, 100))
+    return has()
+  }
+
+  /** Ends the wait for a session that is still opening, when its reply is stopped. */
+  private stopWaiters = new Map<string, () => void>()
 
   /** Ends the current agent session; the next turn starts fresh with a handoff. */
   /** The user's working folder for a conversation: its own, or its project's. */
@@ -562,6 +585,7 @@ export class ChatService {
   private async interruptReply(conversationId: string): Promise<void> {
     if (this.running.has(conversationId)) {
       this.stopped.add(conversationId)
+      this.stopWaiters.get(conversationId)?.()
       const live = this.live.get(conversationId)
       if (live) await this.backends.cancel(live.backendId, live.sessionId)
     }
@@ -841,7 +865,10 @@ export class ChatService {
     if (!conversationId) return
     // The agent changed its own options (e.g. left plan mode): show what is in effect now.
     if (event.kind === 'options') {
-      this.patchConversation(conversationId, { sessionOptions: event.options })
+      const conv = this.store.conversation(conversationId)
+      // Typed by the user (Grok's /always-approve off): it is their choice now, and a restart keeps it.
+      const typed = event.typed ? event.options.find((o) => o.id === event.typed)?.current : undefined
+      this.patchConversation(conversationId, { sessionOptions: event.options, ...(typed !== undefined ? { optionValues: { ...conv?.optionValues, [event.typed!]: typed } } : {}) })
       return
     }
     if (event.kind === 'commands') {
@@ -1008,6 +1035,8 @@ export function plainPreview(md: string, max = 140): string {
 
 /** How long opening an agent session may take before the app says so and offers a retry. */
 const CONNECT_TIMEOUT = 60_000
+/** The reply was stopped before its session opened. */
+const STOPPED = Symbol('stopped')
 
 function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {

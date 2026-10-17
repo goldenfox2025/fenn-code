@@ -247,8 +247,18 @@
   font-size: var(--font-sm);
   color: var(--text-3);
   line-height: var(--step-line);
-  white-space: pre-wrap;
-  padding: var(--space-1) 0;
+  padding: var(--space-3) 0;
+}
+.step-thought .md {
+  font-size: inherit;
+  color: inherit;
+  line-height: inherit;
+}
+.step-thought .md p {
+  margin: 0 0 var(--space-2);
+}
+.step-thought .md > :last-child {
+  margin-bottom: 0;
 }
 .status-ic {
   flex: none;
@@ -296,6 +306,7 @@
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-height: 260px;
   overflow: auto;
   color: var(--text-2);
@@ -358,8 +369,10 @@
   left: auto;
   right: 0;
 }
-/* A message with no reply between (a / command the agent answered silently): room for the actions row above it. */
-.msg-user + .msg-user {
+/* A message with no reply shown between (a / command the agent answered silently): room for the actions row above it.
+   Each message sits in its own wrapper; one that shows nothing is empty. */
+[data-mid]:has(> .msg-user) + [data-mid] > .msg-user,
+[data-mid]:has(> .msg-user) + [data-mid]:empty + [data-mid] > .msg-user {
   margin-top: var(--turn-row);
 }
 .reactions {

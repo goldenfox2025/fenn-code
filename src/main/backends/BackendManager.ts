@@ -188,6 +188,11 @@ export class BackendManager {
     return this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })
   }
 
+  /** Starts the agent ahead of the first message; sends nothing. */
+  warm(backendId: string): Promise<void> {
+    return this.get(backendId).warm?.(this.opts.defaultCwd) ?? Promise.resolve()
+  }
+
   /** No prompt or app tools: discover the models a new session actually offers. */
   async modelCatalog(backendId: string, modelId?: string): Promise<Omit<SessionInfo, 'sessionId'>> {
     const backend = this.get(backendId)
@@ -203,7 +208,8 @@ export class BackendManager {
       return catalog
     } finally {
       off()
-      await backend.closeSession?.(sessionId, { discard: true }).catch(() => {})
+      // Not awaited: removing it from the agent's history must not hold up the model list.
+      void backend.closeSession?.(sessionId, { discard: true }).catch(() => {})
     }
   }
 
@@ -253,7 +259,8 @@ export class BackendManager {
   /** The sign-in state, if the backend can tell without a session; {} when unknown. */
   async account(backendId: string): Promise<AccountStatus> {
     const p = this.opts.plugins.find((x) => x.id === backendId)
-    if (!p?.account) return {}
+    // No account check (Antigravity): whether its program is there still says 未安装 or not.
+    if (!p?.account) return p?.isInstalled ? { installed: p.isInstalled(this.opts.settings.get(backendId)) } : {}
     return p
       .account(this.opts.settings.get(backendId))
       .then((a) => (a.detail ? { ...a, detail: t(a.detail) } : a))
