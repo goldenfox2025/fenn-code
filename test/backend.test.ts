@@ -222,3 +222,57 @@ describe('an agent that signs in again in each process and takes rules in its ow
     } finally { await mgr.disposeAll() }
   }, 30000)
 })
+
+describe('what an agent reports beyond ACP usage (Grok) and what background chores leave behind', () => {
+  const managerFor = async (id: string, env: Record<string, string>, quirks: Record<string, unknown> = {}) => {
+    const { acpPlugin } = await import('../src/main/backends/acp')
+    const plugin = acpPlugin({
+      id,
+      name: id,
+      launch: ({ nodeCommand, resourcesDir }) => ({ command: nodeCommand.command, args: [join(resourcesDir, 'mock-agent.mjs')], env: { ...nodeCommand.env, ...env } }),
+      quirks
+    })
+    const events: HostEvent[] = []
+    const mgr = new BackendManager({
+      plugins: [plugin],
+      settings: { get: () => ({}), set: () => undefined },
+      resourcesDir: join(__dirname, '../resources'),
+      nodeCommand: { command: process.execPath, env: {} },
+      defaultCwd: process.cwd(),
+      emit: (e) => events.push(e)
+    })
+    return { mgr, events }
+  }
+
+  it('reads the context from _meta.totalTokens and the window from the model list; /context goes out as /session-info', async () => {
+    const { mgr, events } = await managerFor('meta-usage', { MOCK_USAGE: 'meta' }, { contextTokensMeta: 'totalTokens', commandAliases: { context: 'session-info' } })
+    try {
+      const s = await mgr.newSession('meta-usage')
+      await mgr.prompt('meta-usage', s.sessionId, [{ type: 'text', text: '你好' }])
+      const usage = events.filter((e) => e.type === 'agent' && e.event.kind === 'usage').map((e) => e.type === 'agent' && e.event)
+      expect(usage).toHaveLength(1)
+      expect(usage[0]).toMatchObject({ contextUsed: expect.any(Number), contextSize: 500000 })
+      const said = () => events.map((e) => (e.type === 'agent' && e.event.kind === 'message.delta' ? e.event.text : '')).join('')
+      await mgr.prompt('meta-usage', s.sessionId, [{ type: 'text', text: '/context' }])
+      expect(said()).toMatch(/Context: \d+ \/ 500000/)
+      // The command's 0 is not an empty context.
+      expect(events.filter((e) => e.type === 'agent' && e.event.kind === 'usage')).toHaveLength(1)
+    } finally { await mgr.disposeAll() }
+  }, 30000)
+
+  it('removes a background chore session from the agent\'s own history', async () => {
+    const { mkdtempSync, readFileSync, existsSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const log = join(mkdtempSync(join(tmpdir(), 'ancora-del-')), 'sessions.log')
+    const { mgr } = await managerFor('chore', { MOCK_SESSION_LOG: log })
+    try {
+      await mgr.ask('chore', '你好')
+      const s = await mgr.newSession('chore')
+      await mgr.prompt('chore', s.sessionId, [{ type: 'text', text: '你好' }])
+      await new Promise((r) => setTimeout(r, 300))
+      const lines = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).not.toContain(s.sessionId)
+    } finally { await mgr.disposeAll() }
+  }, 30000)
+})

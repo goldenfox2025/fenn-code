@@ -27,6 +27,12 @@ describe('a turn shows one steps line, then the answer', () => {
     expect(groups.map((g) => (Array.isArray(g) ? 'steps' : g.type))).toEqual(['text', 'thread-card'])
   })
 
+  it('keeps an answer the agent thinks again after (no tool follows it)', () => {
+    const groups = groupBlocks([thought('…'), text('这是答案。'), thought('再想想')])
+    expect(groups.map((g) => (Array.isArray(g) ? 'steps' : g.type))).toEqual(['steps', 'text'])
+    expect((groups[0] as Block[]).map((b) => b.type)).toEqual(['thought', 'thought'])
+  })
+
   it('shows streaming text inline until a tool follows it', () => {
     expect(groupBlocks([thought('…'), text('正在写')]).map((g) => (Array.isArray(g) ? 'steps' : g.type))).toEqual(['steps', 'text'])
   })

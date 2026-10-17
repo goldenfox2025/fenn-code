@@ -195,8 +195,11 @@ export interface AgentBackend {
    * new one and replays the transcript as context.
    */
   resumeSession?(opts: NewSessionOptions & { sessionId: string }): Promise<SessionInfo | null>
-  /** Frees a session the app no longer needs (if the backend can). */
-  closeSession?(sessionId: string): Promise<void>
+  /**
+   * Frees a session the app no longer needs (if the backend can). `discard`: a background chore's
+   * session, also removed from the agent's own history where it can (Codex archives it).
+   */
+  closeSession?(sessionId: string, opts?: { discard?: boolean }): Promise<void>
   /** Runs one turn. Events stream through BackendHost.emit until it resolves. */
   prompt(sessionId: string, parts: PromptPart[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>

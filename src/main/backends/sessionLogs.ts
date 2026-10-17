@@ -123,17 +123,27 @@ function find(x: unknown, test: (o: Record<string, any>) => boolean, depth = 4):
 }
 
 /**
- * Grok: the last turn_completed usage. Its input already counts cache reads;
- * its cost is in ticks of 1e-10 USD. With one model call, input plus output is
- * also what the context holds; over several calls input is a sum, so the
- * context is left unknown rather than overstated.
+ * Grok: the last turn's turn_completed usage (none for a / command it answered
+ * itself). Its input already counts cache reads and sums every model call of
+ * the turn, so it is what the turn cost, not how full the context is; that is
+ * the `_meta.totalTokens` its updates carry, the figure its own /session-info shows.
+ * Its cost is in ticks of 1e-10 USD.
  */
 export function grokContext(lines: string[]): SessionContext | undefined {
+  let used: number | undefined
+  for (let i = lines.length - 1; i >= 0 && used === undefined; i--) {
+    if (!lines[i].includes('"totalTokens"')) continue
+    const v = n(parse(lines[i])?.params?._meta?.totalTokens)
+    if (v) used = v
+  }
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].includes('turn_completed')) continue
     const x = parse(lines[i])
+    const done = x?.params?.update
+    if (done?.sessionUpdate !== 'turn_completed') continue
+    const turnKey = typeof done.prompt_id === 'string' ? done.prompt_id : `${i}:${lines[i].length}`
     const u = find(x, (o) => typeof o.inputTokens === 'number' && typeof o.outputTokens === 'number')
-    if (!u) continue
+    if (!u) return { used, turnKey }
     const input = n(u.inputTokens) ?? 0
     const cachedRead = n(u.cachedReadTokens)
     const ticks = n(u.costUsdTicks)
@@ -148,14 +158,11 @@ export function grokContext(lines: string[]): SessionContext | undefined {
     for (const k of Object.keys(turn) as (keyof MessageUsage)[]) if (turn[k] === undefined) delete turn[k]
     turn.total = (turn.input ?? 0) + (turn.output ?? 0)
     const models = u.modelUsage && typeof u.modelUsage === 'object' ? Object.keys(u.modelUsage) : []
-    return {
-      used: (n(u.modelCalls) ?? 1) <= 1 ? input + (n(u.outputTokens) ?? 0) : undefined,
-      model: models.length === 1 ? models[0] : undefined,
-      turn,
-      turnKey: `${lines.length}:${i}:${lines[i].length}:${JSON.stringify(u)}`
-    }
+    // Without totalTokens (older Grok), one model call's input plus output is also what the context holds.
+    used ??= (n(u.modelCalls) ?? 1) <= 1 ? input + (n(u.outputTokens) ?? 0) : undefined
+    return { used, model: models.length === 1 ? models[0] : undefined, turn, turnKey }
   }
-  return undefined
+  return used !== undefined ? { used } : undefined
 }
 
 export async function readSessionContext(kind: SessionLogKind, sessionId: string, home = homedir()): Promise<SessionContext | undefined> {

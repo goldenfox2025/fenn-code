@@ -928,4 +928,8 @@ export const en: Record<string, string> = {
   "{0} 没有执行 {1}": "{0} did not run {1}",
   "换一个文件夹…": "Choose another folder…",
   "没有匹配的项目": "No matching projects",
+  "没有返回内容": "No output",
+  "正在压缩上下文…": "Compacting context…",
+  "已压缩上下文": "Context compacted",
+  "{0} 已执行，没有返回内容。": "{0} ran with no output.",
 }

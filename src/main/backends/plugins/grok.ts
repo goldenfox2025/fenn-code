@@ -48,6 +48,10 @@ export default acpPlugin({
   ],
   quirks: {
     inputIncludesCache: true,
+    // Its updates carry how full the context is (no ACP usage_update); /session-info shows the same figure.
+    contextTokensMeta: 'totalTokens',
+    // Its /context draws a panel in Grok's own terminal and sends nothing over ACP.
+    commandAliases: { context: 'session-info' },
     // Grok appends `_meta.rules` on session/new to its system prompt (its ACP docs, "Session _meta options").
     systemPromptMeta: 'rules',
     // Grok has no ACP mode; it skips permission prompts through its own command (`input: on|off`).

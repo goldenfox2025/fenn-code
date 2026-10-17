@@ -155,6 +155,18 @@ export const MessageView = memo(function MessageView({
       )
     return <div className="msg msg-system">{textOf(m)}</div>
   }
+  // A button's turn (压缩上下文) reads as one line; only a failure shows the reply.
+  if (m.action) {
+    if (m.role === 'user') return null
+    const line = <div className="day-divider">{m.state === 'streaming' ? t('正在压缩上下文…') : m.state === 'done' ? t('已压缩上下文') : t('压缩上下文')}</div>
+    if (m.state === 'streaming' || m.state === 'done') return line
+    return (
+      <>
+        {line}
+        <AssistantMessage m={m} last={last} busy={busy} />
+      </>
+    )
+  }
   if (m.role === 'user') return <UserMessage m={m} busy={busy} />
   return <AssistantMessage m={m} last={last} busy={busy} />
 })
@@ -336,6 +348,8 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
         }
       })}
       {streaming && <WorkingMark since={m.createdAt} label={connecting?.text} />}
+      {/* A / command the agent carried out without a word (Grok's /always-approve). */}
+      {!streaming && m.state === 'done' && !m.blocks.length && <div className="small muted">{t('没有返回内容')}</div>}
       {m.editedAt && (
         <div className="edited-mark small muted" data-tip={new Date(m.editedAt).toLocaleString()}>
           {t('已编辑')}

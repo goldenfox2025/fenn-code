@@ -42,6 +42,16 @@ describe('reading context from agent session logs', () => {
   const grok2 = join(home, '.grok', 'sessions', 'C%3A%5Cwork', 'g2')
   mkdirSync(grok2, { recursive: true })
   writeFileSync(join(grok2, 'updates.jsonl'), grokLine(3) + '\n')
+  // As Grok 1.0.62 writes it: updates carry the context in _meta.totalTokens; a / command it answers itself ends with no usage.
+  const upd = (total: number) => JSON.stringify({ method: 'session/update', params: { sessionId: 'g3', update: { sessionUpdate: 'agent_message_chunk' }, _meta: { totalTokens: total } } })
+  const done = (id: string, usage?: object) => JSON.stringify({ method: '_x.ai/session/update', params: { sessionId: 'g3', update: { sessionUpdate: 'turn_completed', prompt_id: id, stop_reason: 'end_turn', ...(usage ? { usage } : {}) } } })
+  const real = { inputTokens: 180661, outputTokens: 3155, cachedReadTokens: 74368, reasoningTokens: 2471, modelCalls: 2, costUsdTicks: 2327160000 }
+  const grok3 = join(home, '.grok', 'sessions', 'C%3A%5Cwork', 'g3')
+  mkdirSync(grok3, { recursive: true })
+  writeFileSync(join(grok3, 'updates.jsonl'), [upd(2649), upd(53724), upd(61497), done('p1', real)].join('\n') + '\n')
+  const grok4 = join(home, '.grok', 'sessions', 'C%3A%5Cwork', 'g4')
+  mkdirSync(grok4, { recursive: true })
+  writeFileSync(join(grok4, 'updates.jsonl'), [upd(61497), done('p1', real), done('p2')].join('\n') + '\n')
 
   it('Codex: the last request against its window, under either id of a two-id file', async () => {
     expect(await readSessionContext('codex', 'aaaa-1111', home)).toEqual({ used: 303437, size: 475000 })
@@ -64,6 +74,15 @@ describe('reading context from agent session logs', () => {
     const many = await readSessionContext('grok', 'g2', home)
     expect(many?.used).toBeUndefined()
     expect(many?.turn?.output).toBe(163)
+  })
+
+  it('Grok: the context is its _meta.totalTokens; a turn without usage reuses nothing', async () => {
+    const turn = await readSessionContext('grok', 'g3', home)
+    expect(turn?.used).toBe(61497)
+    expect(turn?.turnKey).toBe('p1')
+    expect(turn?.turn).toMatchObject({ input: 180661 - 74368, output: 3155, cachedRead: 74368 })
+    const command = await readSessionContext('grok', 'g4', home)
+    expect(command).toEqual({ used: 61497, turnKey: 'p2' })
   })
 
   it('window sizes from the bundled table, for builds and suffixes too', () => {

@@ -17,8 +17,9 @@ const hiddenTool = (b: Block) => b.type === 'tool' && (APP_TOOL.test(b.title) ||
 /**
  * A turn reads like Claude's: one quiet "steps" line, then the answer. All
  * thinking and tool calls fold into that one line, and so does any text the
- * agent wrote between them (「我先看看…」), since only text after the last step
- * is the answer. The plan joins the steps; thread cards and handed-over files
+ * agent wrote before a tool call (「我先看看…」), since only text after the last
+ * tool call is the answer. Thinking alone never takes text in: an agent that
+ * thinks again after answering keeps its answer on screen. The plan joins the steps; thread cards and handed-over files
  * go last, under the answer.
  */
 export function groupBlocks(blocks: Block[]): (Block | StepBlock[])[] {
@@ -27,7 +28,7 @@ export function groupBlocks(blocks: Block[]): (Block | StepBlock[])[] {
   const cards = blocks.filter((b) => b.type === 'thread-card' || b.type === 'output' || b.type === 'peer-message')
   let lastStep = -1
   blocks.forEach((b, i) => {
-    if (b.type === 'thought' || (b.type === 'tool' && !hiddenTool(b))) lastStep = i
+    if (b.type === 'tool' && !hiddenTool(b)) lastStep = i
   })
   let steps: StepBlock[] | undefined
   blocks.forEach((b, i) => {

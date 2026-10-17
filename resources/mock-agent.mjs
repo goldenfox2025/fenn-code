@@ -58,7 +58,7 @@ const handlers = {
         loadSession: false,
         promptCapabilities: { embeddedContext: true, image: process.env.MOCK_IMAGES !== '0' },
         // MOCK_SYSTEM_PROMPT=1: takes a client system prompt, as claude-agent-acp does.
-        sessionCapabilities: { resume: {}, ...(process.env.MOCK_SYSTEM_PROMPT === "1" ? { systemPrompt: { mode: { override: {} } } } : {}) },
+        sessionCapabilities: { resume: {}, close: {}, delete: {}, ...(process.env.MOCK_SYSTEM_PROMPT === "1" ? { systemPrompt: { mode: { override: {} } } } : {}) },
         mcpCapabilities: { http: !STDIO_ONLY },
         // MOCK_META_PROMPT=1: appends a client prompt given at _meta.antigravity.systemPrompt.append (as Antigravity advertises).
         ...(process.env.MOCK_META_PROMPT === "1" ? { _meta: { antigravity: { systemPrompt: { append: true } } } } : {}),
@@ -128,7 +128,9 @@ const handlers = {
       { name: "clear", description: "Start over with an empty context" },
       { name: "deep-research", description: "Research a question across many sources and write a report" }
     ] }), 50);
-    return { sessionId, configOptions: configOptions(FIRST_MODEL, sessions.get(sessionId)) };
+    return { sessionId, configOptions: configOptions(FIRST_MODEL, sessions.get(sessionId)),
+      // Grok lists each model's window in its legacy model list.
+      ...(process.env.MOCK_USAGE === "meta" ? { models: { currentModelId: FIRST_MODEL, availableModels: [{ modelId: FIRST_MODEL, name: FIRST_MODEL, _meta: { totalContextTokens: 500000 } }] } } : {}) };
   },
   "session/resume": ({ sessionId, cwd }) => {
     // Sessions live only as long as this process; after a restart there is nothing to resume.
@@ -160,6 +162,12 @@ const handlers = {
       .filter((p) => p.type === "text")
       .map((p) => p.text)
       .join("\n");
+    // As Grok: "/context" only draws in its own terminal; "/session-info" answers.
+    if (raw.trim() === "/context") return { stopReason: "end_turn", _meta: { totalTokens: 0 } };
+    if (raw.trim() === "/session-info") {
+      await stream(sessionId, `Context: ${s.context ?? 0} / 500000 tokens`, abort);
+      return { stopReason: "end_turn", _meta: { totalTokens: 0 } };
+    }
     // "/compact" alone: the agent's own command. It must arrive first and untouched.
     if (raw.trim() === "/compact") {
       notify(sessionId, { sessionUpdate: "compaction_update", compactionId: "m" + s.turns, status: "completed" });
@@ -246,6 +254,12 @@ const handlers = {
         _meta: { quota: { token_count: { input_tokens: input, output_tokens: output } } },
       };
     if (mode === "none") return { stopReason: abort.aborted ? "cancelled" : "end_turn" };
+    // MOCK_USAGE=meta: as Grok reports it: no usage_update, the context in each update's _meta.totalTokens.
+    if (mode === "meta") {
+      s.context = (s.context ?? 0) + input + output;
+      send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "" } }, _meta: { totalTokens: s.context } } });
+      return { stopReason: abort.aborted ? "cancelled" : "end_turn", _meta: { totalTokens: s.context } };
+    }
     s.cost = (s.cost ?? 0) + (input + output) * 0.00001;
     s.context = (s.context ?? 0) + input + output;
     // "#大上下文" fills the context; "#静默压缩" compacts it without announcing it (as Qoder does).
@@ -257,6 +271,13 @@ const handlers = {
       stopReason: abort.aborted ? "cancelled" : "end_turn",
       usage: { inputTokens: input, outputTokens: output, totalTokens: input + output, cachedReadTokens: 0 },
     };
+  },
+  // Kept, so a closed session can still be resumed (as agents keep their history).
+  "session/close": () => ({}),
+  // MOCK_SESSION_LOG=<file>: records which sessions the client removed from the agent's history.
+  "session/delete": async ({ sessionId }) => {
+    if (process.env.MOCK_SESSION_LOG) (await import("node:fs")).appendFileSync(process.env.MOCK_SESSION_LOG, `delete ${sessionId}\n`);
+    return {};
   },
   "session/cancel": ({ sessionId }) => {
     const s = sessions.get(sessionId);

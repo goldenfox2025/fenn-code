@@ -82,6 +82,22 @@ export function addTurn(t: UsageTotals | undefined, u: MessageUsage | undefined)
   return x
 }
 
+/** Takes one counted turn back out (its usage turned out to be another turn's), leaving it unreported. */
+export function removeTurn(t: UsageTotals, u: MessageUsage): UsageTotals {
+  const x = { ...t }
+  const less = (a: number | undefined, b: number | undefined) => (a === undefined || b === undefined ? a : Math.max(0, a - b))
+  x.input = Math.max(0, x.input - (u.input ?? 0))
+  x.output = Math.max(0, x.output - (u.output ?? 0))
+  x.total = Math.max(0, x.total - headline(u))
+  x.thought = less(x.thought, u.thought)
+  x.cachedRead = less(x.cachedRead, u.cachedRead)
+  x.cachedWrite = less(x.cachedWrite, u.cachedWrite)
+  if (u.cost && x.cost?.currency === u.cost.currency) x.cost = { ...x.cost, amount: Math.max(0, x.cost.amount - u.cost.amount) }
+  x.turns = Math.max(0, x.turns - 1)
+  x.unreported++
+  return x
+}
+
 /** Sums several conversations' totals (context figures are per conversation and are left out). */
 export function sumTotals(list: (UsageTotals | undefined)[]): UsageTotals {
   const x = emptyTotals()

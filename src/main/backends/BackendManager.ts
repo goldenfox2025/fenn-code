@@ -203,7 +203,7 @@ export class BackendManager {
       return catalog
     } finally {
       off()
-      await backend.closeSession?.(sessionId).catch(() => {})
+      await backend.closeSession?.(sessionId, { discard: true }).catch(() => {})
     }
   }
 
@@ -339,7 +339,7 @@ export class BackendManager {
       off()
       this.backgroundSessions.delete(`${backendId}:${sessionId}`)
       // Background chores leave nothing behind in the agent.
-      void backend.closeSession?.(sessionId).catch(() => {})
+      void backend.closeSession?.(sessionId, { discard: true }).catch(() => {})
     }
   }
 

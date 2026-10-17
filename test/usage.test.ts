@@ -116,3 +116,14 @@ describe('usage from the agent’s own log', () => {
     await dispose()
   }, 30000)
 })
+
+describe('a turn counted twice', () => {
+  it('comes back out and counts as unreported', async () => {
+    const { addTurn, removeTurn } = await import('../src/shared/usage')
+    const a = { input: 100, output: 10, cachedRead: 50, cost: { amount: 0.2, currency: 'USD' } }
+    const twice = addTurn(addTurn(undefined, a), a)
+    const once = removeTurn(twice, a)
+    expect(once).toMatchObject({ input: 100, output: 10, total: 110, cachedRead: 50, turns: 1, unreported: 1 })
+    expect(once.cost?.amount).toBeCloseTo(0.2)
+  })
+})

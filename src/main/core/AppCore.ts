@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
 import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate } from '../../shared/model'
+import { removeTurn } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import type { ToolServer } from '../tools/ToolServer'
@@ -131,6 +132,7 @@ export class AppCore {
     this.separateChatsFromProjects()
     this.leaveUnsafeFolders()
     this.endStaleCommands()
+    this.dropCopiedUsage()
     this.signInRepair = this.repairSignIns().catch(() => undefined)
     const orchestrate = this.chat.hooks.afterTurn
     this.chat.hooks.afterTurn = (conv, reply, result) => {
@@ -309,6 +311,28 @@ export class AppCore {
   }
 
   /** Commands still listed as running when the app last quit ended with it. */
+  /**
+   * Before RC8, a Grok reply with nothing to report (a / command it answered itself) was given the
+   * previous turn's usage from Grok's log, so the totals counted that turn twice. Take those copies out.
+   */
+  dropCopiedUsage(): void {
+    for (const c of this.store.conversations) {
+      if (c.backendId !== 'grok' || !c.usage) continue
+      let usage = c.usage
+      let prev: Message | undefined
+      for (const m of this.store.messagesOf(c.id)) {
+        if (m.role !== 'assistant') continue
+        if (m.usage && !m.blocks.length && prev?.usage && JSON.stringify(prev.usage) === JSON.stringify(m.usage)) {
+          usage = removeTurn(usage, m.usage)
+          this.store.putMessage({ ...m, usage: undefined })
+          continue
+        }
+        prev = m
+      }
+      if (usage !== c.usage) this.chat.patchConversation(c.id, { usage })
+    }
+  }
+
   endStaleCommands(): void {
     for (const c of this.store.conversations) {
       if (!c.background?.some((b) => !b.endedAt)) continue

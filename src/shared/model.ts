@@ -79,6 +79,8 @@ export interface Message {
    * a restart): never shown, and never replayed to a later session.
    */
   housekeeping?: boolean
+  /** Both sides of a turn the app ran for a button (压缩上下文): shown as one line, not as a chat. */
+  action?: 'compact'
   /** In a project chat: the thread this message was passed on to. */
   forwardedTo?: string
   /**

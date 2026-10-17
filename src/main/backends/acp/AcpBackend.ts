@@ -75,6 +75,13 @@ export interface AcpQuirks {
    * session option like any other. Picking a value sends its command as a quiet prompt.
    */
   commandOption?: CommandOption
+  /**
+   * The `_meta` field on session updates and prompt results that holds how many tokens the
+   * context holds now (Grok: `totalTokens`, the figure its own /session-info shows).
+   */
+  contextTokensMeta?: string
+  /** / commands that do nothing over ACP, sent as another command that answers (Grok: /context → /session-info). */
+  commandAliases?: Record<string, string>
 }
 
 export interface CommandOption {
@@ -121,6 +128,10 @@ export class AcpBackend implements AgentBackend {
   private compactions = new Set<string>()
   /** Each session's non-model choices; `legacy` marks ACP session modes (set with session/set_mode). */
   private sessionOptions = new Map<string, (SessionOption & { legacy?: boolean; command?: boolean })[]>()
+  /** Each model's context window, where the agent lists it (`_meta.totalContextTokens`). */
+  private modelWindows = new Map<string, number>()
+  /** The context figure last passed on per session, so only a change is sent. */
+  private contextTokens = new Map<string, number>()
   /** Sessions whose updates are not shown: a command sent for a session option is running. */
   private quiet = new Set<string>()
   private stderrTail: string[] = []
@@ -251,7 +262,9 @@ export class AcpBackend implements AgentBackend {
 
   private clientHandler(): acp.Client {
     return {
-      sessionUpdate: async ({ sessionId, update }) => {
+      sessionUpdate: async ({ sessionId, update, _meta }) => {
+        // Even a replayed or quiet update says how full the context is now.
+        this.metaContext(sessionId, _meta)
         if (this.replaying.has(sessionId) || this.quiet.has(sessionId)) return
         const ev = translateUpdate(update)
         if (ev) this.host.emit(sessionId, ev)
@@ -353,12 +366,15 @@ export class AcpBackend implements AgentBackend {
     })
   }
 
-  async closeSession(sessionId: string): Promise<void> {
+  async closeSession(sessionId: string, opts: { discard?: boolean } = {}): Promise<void> {
     this.workspaces.close(sessionId)
     this.modelSelectors.delete(sessionId)
     this.sessionOptions.delete(sessionId)
-    if (!this.caps?.sessionCapabilities?.close) return
-    await this.conn?.closeSession({ sessionId }).catch(() => {})
+    this.contextTokens.delete(sessionId)
+    const caps = this.caps?.sessionCapabilities as { close?: unknown; delete?: unknown } | null | undefined
+    if (caps?.close) await this.conn?.closeSession({ sessionId }).catch(() => {})
+    // Otherwise it would sit in the agent's own session list (the Codex app shows every one).
+    if (opts.discard && caps?.delete) await this.conn?.deleteSession({ sessionId }).catch(() => {})
   }
 
   async resumeSession({ cwd, folder, tools, sessionId, system }: NewSessionOptions & { sessionId: string }): Promise<SessionInfo | null> {
@@ -442,6 +458,7 @@ export class AcpBackend implements AgentBackend {
       try {
         const res = await this.conn!.prompt({ sessionId, prompt: this.toContent(sessionId, parts) })
         this.typedCommand(sessionId, parts)
+        this.metaContext(sessionId, res._meta)
         const usage = turnUsage(res, this.quirks.inputIncludesCache)
         return usage ? { stopReason: normalizeStop(res.stopReason), usage } : { stopReason: normalizeStop(res.stopReason) }
       } catch (err) {
@@ -459,6 +476,17 @@ export class AcpBackend implements AgentBackend {
     }
   }
 
+  /** The context figure an agent puts in `_meta` (see AcpQuirks.contextTokensMeta), as a usage event when it changed. */
+  private metaContext(sessionId: string, meta: unknown): void {
+    const key = this.quirks.contextTokensMeta
+    const used = key ? num((meta as Record<string, unknown> | null | undefined)?.[key]) : undefined
+    // 0 is a / command the agent answered itself, not an empty context.
+    if (!used || this.contextTokens.get(sessionId) === used) return
+    this.contextTokens.set(sessionId, used)
+    const model = this.modelSelectors.get(sessionId)?.current
+    this.host.emit(sessionId, { kind: 'usage', contextUsed: used, contextSize: model ? this.modelWindows.get(model) : undefined })
+  }
+
   /** The user typed the command behind a session option (`/always-approve on`): the option shows it. */
   private typedCommand(sessionId: string, parts: PromptPart[]): void {
     const c = this.quirks.commandOption
@@ -474,12 +502,19 @@ export class AcpBackend implements AgentBackend {
     this.emitOptions(sessionId)
   }
 
+  /** A / command the agent answers only in its own terminal, swapped for one it answers over ACP. */
+  private aliased(text: string): string {
+    const m = /^\/([\w-]+)(\s.*)?$/s.exec(text.trim())
+    const to = m && this.quirks.commandAliases?.[m[1]]
+    return to ? `/${to}${m[2] ?? ''}` : text
+  }
+
   /** Maps prompt parts to ACP content, degrading gracefully to what the agent accepts. */
   private toContent(sessionId: string, parts: PromptPart[]): acp.ContentBlock[] {
     const caps = this.caps?.promptCapabilities
     const out: acp.ContentBlock[] = []
     for (const p of parts) {
-      if (p.type === 'text') out.push({ type: 'text', text: p.text })
+      if (p.type === 'text') out.push({ type: 'text', text: parts.length === 1 ? this.aliased(p.text) : p.text })
       else if (p.type === 'image') {
         if (caps?.image) out.push({ type: 'image', mimeType: p.mimeType, data: p.data })
         else
@@ -633,6 +668,11 @@ export class AcpBackend implements AgentBackend {
   }
 
   private captureModels(sessionId: string, configOptions: unknown, legacy: unknown): void {
+    // Grok lists each model's window only in its legacy model list.
+    for (const m of (legacy as { availableModels?: { modelId: string; _meta?: { totalContextTokens?: unknown } | null }[] } | undefined)?.availableModels ?? []) {
+      const size = num(m._meta?.totalContextTokens)
+      if (size) this.modelWindows.set(m.modelId, size)
+    }
     const opt = Array.isArray(configOptions)
       ? (configOptions as { id: string; category?: string; type: string; currentValue?: string; options?: unknown[] }[])
           .find((o) => o.category === 'model' && o.type === 'select')

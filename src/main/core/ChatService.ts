@@ -36,6 +36,8 @@ export interface SendOptions {
   variant?: Message['variant']
   /** What started this turn, for the app's own bookkeeping (e.g. a message from another thread). */
   tag?: string
+  /** A turn the app runs for a button; see Message.action. */
+  action?: Message['action']
 }
 
 export interface TurnHooks {
@@ -271,7 +273,7 @@ export class ChatService {
       conversationId,
       opts.role ?? 'user',
       [...attachments.map((a): Block => ({ type: 'attachment', attachment: a })), ...(text ? [{ type: 'text' as const, text }] : [])],
-      { hidden: opts.hidden, housekeeping: opts.housekeeping || undefined, variant: opts.variant }
+      { hidden: opts.hidden, housekeeping: opts.housekeeping || undefined, variant: opts.variant, action: opts.action }
     )
 
     const reply: Message = {
@@ -282,7 +284,8 @@ export class ChatService {
       createdAt: Date.now(),
       state: 'streaming',
       hidden: opts.hiddenReply || undefined,
-      housekeeping: opts.housekeeping || undefined
+      housekeeping: opts.housekeeping || undefined,
+      action: opts.action
     }
     this.current.set(conversationId, reply)
     this.updateMessage(reply)
@@ -347,6 +350,10 @@ export class ChatService {
     this.current.delete(conversationId)
     reply.state = result.stopReason === 'error' ? 'error' : result.stopReason === 'cancelled' ? 'cancelled' : 'done'
     if (result.error) reply.error = result.error
+    // A / command the agent carried out without a word (Grok's /always-approve): say it ran.
+    const command = /^\/[^\s]+/.exec(text.trim())?.[0]
+    if (reply.state === 'done' && !reply.blocks.length && command && !opts.action)
+      reply.blocks.push({ type: 'notice', level: 'info', text: t('{0} 已执行，没有返回内容。', command) })
     // Agents that report little over ACP (Grok) write it to their own log: read the turn from there.
     let logged: SessionContext | undefined
     if (live && result.stopReason !== 'error' && (!result.usage || !live.reported)) {
@@ -680,7 +687,7 @@ export class ChatService {
       if (now) now.compacted = true
     }
     this.turnEndListeners.add(done)
-    await this.send(conversationId, '/' + conv.compactCommand, { raw: true, housekeeping: true })
+    await this.send(conversationId, '/' + conv.compactCommand, { raw: true, housekeeping: true, action: 'compact' })
   }
 
   /** Conversations whose last exchange was withdrawn while keeping the session (see rewind). */
