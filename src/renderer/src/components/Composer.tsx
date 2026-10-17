@@ -320,8 +320,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       const now = valueOf(o)
       more.push({
         label: optionLabel(o),
-        hint: choiceLabel(o.choices.find((c) => c.value === now)?.name ?? '', now),
-        submenu: o.choices.map((c) => ({ label: choiceLabel(c.name, c.value), checked: c.value === now, onClick: () => setOptionValue(o, c.value) }))
+        hint: choiceLabel(o.choices.find((c) => c.value === now)?.name ?? '', now, o.category),
+        submenu: o.choices.map((c) => ({ label: choiceLabel(c.name, c.value, o.category), checked: c.value === now, onClick: () => setOptionValue(o, c.value) }))
       })
     }
     if (more.length && items.length) items.push({ separator: true })

@@ -10,6 +10,11 @@ describe('thinking level labels in the Chinese UI', () => {
     // A value the table knows wins over an odd display name.
     expect(choiceLabel('Think a lot', 'high')).toBe('高')
     expect(choiceLabel('Extra-High effort')).toBe('很高')
+    // "Default" is 每次询问 only as a permission mode; Claude Code's Agent role "default" is 默认.
+    expect(choiceLabel('Default', 'default', 'mode')).toBe('每次询问')
+    expect(choiceLabel('Default', 'default')).toBe('默认')
+    const { optionLabel } = await import('../src/renderer/src/components/sessionOptionLabels')
+    expect(optionLabel({ id: 'agent', name: 'Agent', current: 'default', choices: [] } as any)).toBe('角色')
     const o = {
       id: 'effort',
       name: 'Effort',

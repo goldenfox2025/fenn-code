@@ -129,12 +129,23 @@ function useTheme(theme: 'system' | 'light' | 'dark' | 'glass', glass: boolean) 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const root = document.documentElement
-    const apply = () => {
+    const look = () => {
       const dark = theme === 'dark' || theme === 'glass' || (theme === 'system' && mq.matches)
       // Glass over dark keeps its old name, 'glass'; glass over light is 'glass-light'.
-      root.dataset.theme = glass ? (dark ? 'glass' : 'glass-light') : dark ? 'dark' : 'light'
+      return glass ? (dark ? 'glass' : 'glass-light') : dark ? 'dark' : 'light'
+    }
+    const set = () => {
+      root.dataset.theme = look()
       root.classList.toggle('native-glass', glass && !!nativeGlass)
       root.classList.toggle('no-blur', softwareRendering)
+    }
+    // A change of look cross-fades instead of snapping. The window's own material changes
+    // behind the page, timed by the main process so it never shows (see applyWindowMaterial).
+    const apply = () => {
+      const fade = !!root.dataset.theme && root.dataset.theme !== look() && 'startViewTransition' in document &&
+        !matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (fade) (document as Document & { startViewTransition(cb: () => void): unknown }).startViewTransition(set)
+      else set()
     }
     if (nativeGlass === undefined)
       void api()

@@ -2,10 +2,66 @@
 
 Ancora is an Electron app. Its main process owns all state and talks to agent backends over ACP. The renderer (React) only shows that state and calls the core.
 
+```mermaid
+flowchart LR
+  subgraph R["Renderer (React)"]
+    V["views/ + components/"] --> ST["store.ts<br/>(zustand)"]
+    V --> ACT["actions.ts / routes.ts"]
+  end
+  PRE["preload<br/>window.ancora"]
+  subgraph M["Main process"]
+    CORE["AppCore<br/>(API facade)"]
+    CHAT["ChatService<br/>turns · sessions · queue"]
+    ORCH["Orchestrator<br/>prompts · core/tools/*"]
+    STORE[("Store<br/>state.json + messages/")]
+    TS["ToolServer<br/>(MCP over HTTP)"]
+    BM["BackendManager"]
+    ACP["AcpBackend"]
+  end
+  AG["Agent CLIs<br/>Codex · Claude Code · Grok · Qoder"]
+
+  ST -- "API_METHODS (oc:name)" --> PRE --> CORE
+  CORE -- "AppEvent stream" --> ST
+  CORE --> CHAT & ORCH & STORE
+  CHAT --> BM --> ACP -- "ACP over stdio" --> AG
+  AG -- "tools/call" --> TS --> ORCH
 ```
-renderer (React)  ──window.ancora.*──▶  preload  ──IPC oc:<name>──▶  AppCore (main)
-       ▲                                                           │
-       └──────────────── AppEvent (one stream) ◀──────────────────┘
+
+A turn, from the user's Enter to the reply on screen:
+
+```mermaid
+sequenceDiagram
+  participant UI as Composer
+  participant Core as AppCore
+  participant Chat as ChatService
+  participant Agent as Agent (ACP)
+  participant Tools as ToolServer
+  UI->>Core: send(conversationId, text)
+  Core->>Chat: queue the turn (pending backend switch first)
+  Chat->>Agent: session/prompt (preamble + text, app tools as MCP)
+  loop while the agent works
+    Agent-->>Chat: session/update (text, tool calls, plan, usage)
+    Chat-->>UI: AppEvent message / conversation (every 40 ms)
+    Agent->>Tools: tools/call (update_status, attach_output, …)
+  end
+  Agent-->>Chat: stop reason
+  Chat-->>UI: final message, status idle
+```
+
+Who keeps what (each part registers with `chat.removedListeners` to forget a deleted conversation):
+
+```mermaid
+flowchart TB
+  CORE["AppCore"] --> CHAT["ChatService"]
+  CORE --> ORCH["Orchestrator"]
+  CORE --> PEERS["PeerMail<br/>thread-to-thread notes"]
+  CORE --> SCHED["Scheduler<br/>routines"]
+  CORE --> AUTO["AutoAssigner<br/>titles · folders"]
+  CORE --> COMP["ComputerControl<br/>(only while 电脑控制 is on)"]
+  ORCH --> TOOLS["core/tools/<br/>args · progress · project data · routines"]
+  ORCH --> MEM["ProjectMemory"] & FILES["ProjectFiles"] & ART["Artifacts"]
+  CHAT --> STORE[("Store")]
+  CORE --> LIB["Library<br/>files pane"]
 ```
 
 ## Where things live

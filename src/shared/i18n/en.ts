@@ -917,5 +917,5 @@ export const en: Record<string, string> = {
   "它的子对话会保留，成为独立的对话。": "Its sub-chats stay, as chats of their own.",
   "下一条消息起换成这个": "Takes over from your next message",
   "下一条消息起换成 {0}": "{0} takes over from your next message",
-
+  "角色": "Agent",
 }

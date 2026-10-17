@@ -441,9 +441,29 @@ ipcMain.on("oc:window", (_e, action: string) => {
   else if (action === "close") win.close();
 });
 
-/** The glass look lets the desktop show through, blurred, where the OS can do it. */
+/**
+ * The glass look lets the desktop show through, blurred, where the OS can do it.
+ * The page cross-fades between looks (App.tsx): glass turns on under the still-opaque
+ * page, and turns off only once the page has faded to opaque, so the switch of the
+ * window's material never shows as a flash.
+ */
+let materialTimer: NodeJS.Timeout | undefined;
+let glassShown: boolean | undefined;
 function applyWindowMaterial(settings: { theme?: string; glass?: boolean }): void {
   if (!win || !nativeGlass) return;
+  const glass = !!settings.glass;
+  clearTimeout(materialTimer);
+  if (glassShown && !glass) {
+    glassShown = false;
+    materialTimer = setTimeout(() => setWindowMaterial(settings), 450);
+    return;
+  }
+  glassShown = glass;
+  setWindowMaterial(settings);
+}
+
+function setWindowMaterial(settings: { theme?: string; glass?: boolean }): void {
+  if (!win) return;
   const glass = !!settings.glass;
   const dark = settings.theme === "dark" || (settings.theme !== "light" && nativeTheme.shouldUseDarkColors);
   try {
