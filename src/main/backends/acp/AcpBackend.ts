@@ -838,9 +838,20 @@ export function turnUsage(res: unknown, inputIncludesCache = false): TurnUsage |
   for (const k of Object.keys(out) as (keyof TurnUsage)[]) if (out[k] === undefined) delete out[k]
   if (!Object.keys(out).length) return undefined
   // Input is shown as new input only, the same for every agent; cache reads are listed apart.
-  if (inputIncludesCache && out.input !== undefined && out.cachedRead) out.input = Math.max(0, out.input - out.cachedRead)
+  // The agent's own total says which way its input counts (codex-acp 2.x already takes the cache
+  // out, older ones don't); only without a total does the plugin's word decide.
+  if (out.input !== undefined && out.cachedRead && includesCache(out, inputIncludesCache)) out.input = Math.max(0, out.input - out.cachedRead)
   if (out.total === undefined && out.input !== undefined && out.output !== undefined) out.total = out.input + out.output
   return out
+}
+
+/** Whether a turn's input counts its cache reads: input + output make the total, rather than input + cache + output. */
+function includesCache(u: TurnUsage, fallback: boolean): boolean {
+  if (u.total === undefined || u.output === undefined) return fallback
+  const plain = u.input! + u.output
+  const split = plain + (u.cachedRead ?? 0) + (u.cachedWrite ?? 0)
+  if (Math.abs(u.total - plain) <= Math.abs(u.total - split)) return u.input! >= (u.cachedRead ?? 0)
+  return false
 }
 
 function normalizeStop(r: string): TurnResult['stopReason'] {

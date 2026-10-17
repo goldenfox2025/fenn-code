@@ -782,6 +782,8 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
   }
 
   const missing = state?.installed === false
+  // A pinned install (Antigravity's server) has nothing to check for once it is there.
+  if (summary?.upgradeInstallOnly && !missing && !failed && !running) upgrade = false
   const newer = !!latest && !!state?.version && newerVersion(latest, state.version)
   const show = state && (state.signedIn !== undefined || state.detail || missing)
   const output = (log ?? []).join('\n')

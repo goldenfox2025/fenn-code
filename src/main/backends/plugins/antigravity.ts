@@ -14,6 +14,8 @@ const VERSION = '1.4.0'
 const EXE = process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par'
 /** Where the app's 「安装」 puts it. */
 export const AGY_HOME = join(homedir(), '.agy-acp-server')
+/** The Google sign-in the server keeps after 「登录」. */
+const AGY_TOKEN = join(homedir(), '.gemini', 'antigravity-acp', 'acp_token.json')
 
 const ARCHIVES: Record<string, string> = {
   'win32-x64': `windows/agy-acp-server-${VERSION}-windows-x86_64.zip`,
@@ -50,18 +52,25 @@ export default acpPlugin({
     { key: 'AGY_ACP_BIN', label: tk('服务程序路径'), placeholder: EXE, help: tk('留空自动查找；也可填写 agy_acp_server 的绝对路径。') }
   ],
   isInstalled: (config) => !!findAgy(config),
+  // Signed in when it has a key, or the Google sign-in it stores after 「登录」.
+  accountState: (config) => {
+    if (!findAgy(config)) return { installed: false }
+    if (config.GEMINI_API_KEY) return { installed: true, signedIn: true, detail: 'Gemini API Key' }
+    return existsSync(AGY_TOKEN) ? { installed: true, signedIn: true, detail: tk('Google 账号') } : { installed: true, signedIn: false }
+  },
   quirks: {
     missingHint: MISSING,
     // It advertises `_meta.antigravity.systemPrompt.append` in its capabilities; rules there outlive its compaction.
     systemPromptMeta: 'antigravity.systemPrompt.append',
     // Each new server process asks for sign-in again: with a key, or the Google sign-in it stored.
-    autoAuth: (config) =>
-      config.GEMINI_API_KEY ? 'gemini-api-key' : existsSync(join(homedir(), '.gemini', 'antigravity-acp', 'acp_token.json')) ? 'oauth-personal' : undefined
+    autoAuth: (config) => (config.GEMINI_API_KEY ? 'gemini-api-key' : existsSync(AGY_TOKEN) ? 'oauth-personal' : undefined)
   },
   // Built-in curl and tar (Windows 10 and later have both): download Google's archive, unpack it into ~/.agy-acp-server.
+  // The version is the one this release was tested with, so it is offered to install, not as an update.
   upgrade: archive
     ? {
-        run: { command: 'curl', args: ['-fL', '--create-dirs', '-o', join(AGY_HOME, 'agy-acp-server.zip'), `https://dl.google.com/agy-extensions/releases/${archive}`] },
+        installOnly: true,
+        run: { command: 'curl', args: ['-fsSL', '--retry', '2', '--connect-timeout', '30', '--create-dirs', '-o', join(AGY_HOME, 'agy-acp-server.zip'), `https://dl.google.com/agy-extensions/releases/${archive}`] },
         after: { label: tk('解压 Antigravity 服务'), command: 'tar', args: ['-xf', join(AGY_HOME, 'agy-acp-server.zip'), '-C', AGY_HOME] }
       }
     : undefined,

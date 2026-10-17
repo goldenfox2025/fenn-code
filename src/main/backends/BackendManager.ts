@@ -74,6 +74,7 @@ export class BackendManager {
         account: !!p.account,
         credits: !!p.credits,
         upgrade: !!p.upgrade,
+        upgradeInstallOnly: p.upgrade?.installOnly,
         upgradeCommands: p.upgrade && [p.upgrade.run, ...(p.upgrade.after ? [p.upgrade.after] : [])].map(commandLine),
         upgradeNote: p.upgrade?.after && t(p.upgrade.after.label, ...(p.upgrade.after.labelArgs ?? [])),
         images: this.instances.get(p.id)?.acceptsImages?.()
@@ -239,10 +240,12 @@ export class BackendManager {
   }
 
   async authMethods(backendId: string): Promise<AuthMethod[]> {
+    this.notUpgrading(backendId)
     return (await this.get(backendId).authMethods?.()) ?? []
   }
 
   async authenticate(backendId: string, methodId: string): Promise<void> {
+    this.notUpgrading(backendId)
     const b = this.get(backendId)
     if (!b.authenticate) throw new Error(t('这个后端不支持在应用里登录'))
     await b.authenticate(methodId)
@@ -298,6 +301,13 @@ export class BackendManager {
     return spec ? latestVersion(spec) : undefined
   }
 
+  /** Backends whose program is being installed or replaced: they can't start or sign in meanwhile. */
+  private upgrading = new Set<string>()
+
+  private notUpgrading(backendId: string): void {
+    if (this.upgrading.has(backendId)) throw new Error(t('{0} 正在安装或升级，完成后再试。', this.nameOf(backendId)))
+  }
+
   /**
    * Upgrades the backend's program with its own command. The backend is stopped
    * first (a program can't always be replaced while it runs); it starts again on next use.
@@ -305,13 +315,20 @@ export class BackendManager {
   async upgrade(backendId: string, onLine: (line: string) => void): Promise<{ ok: boolean; output: string }> {
     const spec = this.opts.plugins.find((x) => x.id === backendId)?.upgrade
     if (!spec) throw new Error(t('{0} 不支持在应用里升级。', this.nameOf(backendId)))
+    this.notUpgrading(backendId)
     if (this.instances.has(backendId)) await this.restart(backendId, t('正在升级 {0}，这条回复已停止。升级完成后请点「重试」。', this.nameOf(backendId)))
-    onLine(`> ${[spec.run.command, ...(spec.run.args ?? [])].join(' ')}`)
-    let r = await runStreaming(spec.run, onLine)
-    if (r.ok && spec.after) {
-      onLine(`> ${t(spec.after.label, ...(spec.after.labelArgs ?? []))}`)
-      const a = await runStreaming(spec.after, onLine)
-      r = { ok: a.ok, output: r.output + a.output }
+    this.upgrading.add(backendId)
+    let r: { ok: boolean; output: string }
+    try {
+      onLine(`> ${[spec.run.command, ...(spec.run.args ?? [])].join(' ')}`)
+      r = await runStreaming(spec.run, onLine)
+      if (r.ok && spec.after) {
+        onLine(`> ${t(spec.after.label, ...(spec.after.labelArgs ?? []))}`)
+        const a = await runStreaming(spec.after, onLine)
+        r = { ok: a.ok, output: r.output + a.output }
+      }
+    } finally {
+      this.upgrading.delete(backendId)
     }
     // npm may install into a folder this app's PATH doesn't have yet (e.g. Node was installed
     // after the app started). Add it, so the program is found without restarting.

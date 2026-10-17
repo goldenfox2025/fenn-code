@@ -13,7 +13,7 @@ import { choiceLabel, optionLabel } from './sessionOptionLabels'
 import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
 import { EffortPicker } from './EffortPicker'
-import { ContextRing, UsageStrip } from './Usage'
+import { ContextRing } from './Usage'
 
 interface Props {
   conversation?: Conversation
@@ -682,9 +682,6 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           {sendButton}
         </div>
       </div>
-      {conversation && (
-        <UsageStrip usage={conversation.usage} timing={conversation.timing} scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')} />
-      )}
       {menu}
       <input
         ref={picker}

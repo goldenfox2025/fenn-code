@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Coins, Database, Gauge, Minimize2 } from 'lucide-react'
+import { Gauge, Minimize2 } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
 import { formatCost, formatTokens, headline, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
@@ -94,12 +94,6 @@ export function tokensPerSecond(timing?: GenerationTiming): number | undefined {
   return timing.outputTokens / (timing.streamMs / 1000)
 }
 
-/** The share of input read from the cache, when the agent reported cache reads. */
-export function cacheHit(u: UsageTotals): number | undefined {
-  const read = u.cachedRead ?? 0
-  return read > 0 ? read / (read + u.input) : undefined
-}
-
 /** One line of the panel: a label (with a colored dot for a share) and its figure on the right. */
 function Row({ label, value, dot, note, tip }: { label: ReactNode; value?: ReactNode; dot?: string; note?: ReactNode; tip?: string }) {
   return (
@@ -156,7 +150,7 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
       )}
       {u.turns > 0 && all > 0 ? (
         <div className="usage-section">
-          <Row label={t('共 {0} 轮', rounds)} value={t('{0} tokens', formatTokens(all))} />
+          <Row label={t('累计 tokens')} note={t('共 {0} 轮', rounds)} value={formatTokens(all)} />
           <span className="usage-stack" aria-hidden="true">
             {parts.map(([key, , v]) => (
               <span key={key} className={'usage-dot part-' + key} style={{ width: `${(v / all) * 100}%` }} />
@@ -171,6 +165,10 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
               value={`${formatTokens(v)} · ${share(v)}`}
             />
           ))}
+          {/* Every model call in a turn reads the whole context again; a turn with many tool calls counts it many times. */}
+          {u.contextUsed !== undefined && all > u.contextUsed * 2 && (
+            <div className="usage-foot">{t('agent 每调用一次模型都会把上下文重新读一遍，一轮里调用工具越多，累计就越多；其中读缓存的部分便宜得多。')}</div>
+          )}
         </div>
       ) : (
         rounds > 0 && (
@@ -383,37 +381,3 @@ export function ContextRing({ usage, scope, timing, onCompact }: { usage?: Usage
   )
 }
 
-/**
- * One quiet line under a conversation's composer with the running figures:
- * rounds, the last reply's speed, tokens and cache hits. Only what the agent
- * reported; click for the usage popover.
- */
-export function UsageStrip({ usage, scope, timing }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming }) {
-  const [menu, openMenu] = useMenu({ align: 'left', placement: 'auto', compact: true })
-  if (!usage || usage.turns === 0 || !(usage.input || usage.output)) return null
-  const speed = tokensPerSecond(timing)
-  const hit = cacheHit(usage)
-  return (
-    <>
-      <button className="usage-strip" onClick={(e) => openMenu(e.currentTarget, usageMenu(usage, scope, timing))}>
-        <span>
-          <Gauge size={13} />
-          {t('{0} 轮', usage.turns + usage.unreported)}
-          {speed !== undefined && <> · {t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1))}</>}
-        </span>
-        <span>
-          <Database size={13} />
-          {t('{0} tokens', formatTokens(usage.total))}
-          {hit !== undefined && <> · {t('缓存命中 {0}', `${Math.round(hit * 100)}%`)}</>}
-        </span>
-        {usage.cost && usage.cost.amount > 0 && (
-          <span>
-            <Coins size={13} />
-            {formatCost(usage.cost)}
-          </span>
-        )}
-      </button>
-      {menu}
-    </>
-  )
-}

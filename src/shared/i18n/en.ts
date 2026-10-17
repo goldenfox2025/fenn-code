@@ -954,4 +954,8 @@ export const en: Record<string, string> = {
   "{0} tok/s": "{0} tok/s",
   "{0} 轮": "{0} turns",
   "缓存命中 {0}": "Cache hits {0}",
+  "累计 tokens": "Tokens processed",
+  "agent 每调用一次模型都会把上下文重新读一遍，一轮里调用工具越多，累计就越多；其中读缓存的部分便宜得多。": "The agent reads the whole context again on every model call, so a turn with many tool calls adds up to several times the context. Cache reads cost far less.",
+  "{0} 正在安装或升级，完成后再试。": "{0} is being installed or upgraded. Try again when it is done.",
+  "Google 账号": "Google account",
 }

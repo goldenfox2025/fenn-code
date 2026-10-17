@@ -153,6 +153,8 @@ export interface UpgradeSpec {
   latest?: CommandSpec
   /** Runs after `run` succeeds, e.g. a setup step npm may have skipped. */
   after?: CommandSpec & { label: string; labelArgs?: unknown[] }
+  /** It installs the one version this Ancora release was made for: offered while missing, never as an update. */
+  installOnly?: boolean
 }
 
 export type PromptPart =
@@ -307,6 +309,8 @@ export interface BackendSummary {
   credits?: boolean
   /** Can be upgraded from the app (see BackendPlugin.upgrade). */
   upgrade?: boolean
+  /** Offered only to install (see UpgradeSpec.installOnly). */
+  upgradeInstallOnly?: boolean
   /** The commands installing or upgrading runs, one per line, as shown before asking. */
   upgradeCommands?: string[]
   /** A follow-up step after the commands, described in words. */

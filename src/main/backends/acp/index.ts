@@ -35,6 +35,8 @@ export interface AcpPluginOptions {
   isInstalled?: (config: Record<string, string>) => boolean
   /** How to check the sign-in state without starting a session; gets the user's settings. */
   account?: (config: Record<string, string>) => AccountCheck
+  /** The sign-in state read from files the agent keeps (no program to ask); used instead of `account`. */
+  accountState?: (config: Record<string, string>) => AccountStatus
   credits?: BackendPlugin['credits']
   upgrade?: UpgradeSpec
   /** Which CLI session log to read for context figures (see sessionLogs.ts). */
@@ -100,7 +102,11 @@ export function acpPlugin(opts: AcpPluginOptions): BackendPlugin {
       const env = { ...process.env, ...Object.fromEntries(Object.entries(check.env ?? {}).filter(([, v]) => v !== undefined)) }
       return [check.command, ...(check.requires ?? [])].every((command) => !!findOnPath(command, env))
     } : undefined),
-    account: opts.account ? (config) => runAccountCheck(opts.account!(config)) : undefined,
+    account: opts.accountState
+      ? async (config) => opts.accountState!(config)
+      : opts.account
+        ? (config) => runAccountCheck(opts.account!(config))
+        : undefined,
     upgrade: opts.upgrade,
     sessionContext: opts.sessionLog ? (sessionId) => readSessionContext(opts.sessionLog!, sessionId) : undefined,
     create: (host: BackendHost) =>

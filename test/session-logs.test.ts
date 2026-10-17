@@ -99,6 +99,11 @@ describe('reading context from agent session logs', () => {
     const res = { usage: { inputTokens: 303098, cachedReadTokens: 302208, outputTokens: 202 } }
     expect(turnUsage(res, true)).toMatchObject({ input: 890, cachedRead: 302208, output: 202 })
     expect(turnUsage(res, false)).toMatchObject({ input: 303098 })
+    // With a total, the total decides: codex-acp 2.x reports new input already (input + cache + output = total).
+    const split = { usage: { inputTokens: 21304, cachedReadTokens: 471040, outputTokens: 2578, totalTokens: 494922 } }
+    expect(turnUsage(split, true)).toMatchObject({ input: 21304, cachedRead: 471040 })
+    const raw = { usage: { inputTokens: 303098, cachedReadTokens: 302208, outputTokens: 202, totalTokens: 303300 } }
+    expect(turnUsage(raw, false)).toMatchObject({ input: 890 })
   })
 })
 
