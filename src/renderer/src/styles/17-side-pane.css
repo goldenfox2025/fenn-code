@@ -252,3 +252,37 @@
   margin: var(--space-7) auto;
   border-radius: var(--radius-md);
 }
+
+/* A background command opens in place to show its output. */
+.bg-command .row1 {
+  cursor: pointer;
+}
+.bg-chevron {
+  flex: none;
+  transition: transform var(--dur-1) var(--ease);
+}
+.bg-command.open .bg-chevron {
+  transform: rotate(90deg);
+}
+.bg-full-command {
+  display: block;
+  margin-top: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  word-break: break-all;
+}
+.bg-output {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) var(--space-4);
+  max-height: 320px;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background: var(--bg-code);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

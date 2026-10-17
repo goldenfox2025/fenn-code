@@ -117,8 +117,11 @@ export interface WorkspaceHooks {
   /** The user made `folder` the working folder of a session that had none. */
   adopted?(sessionId: string, folder: string): void
   /** A command started or ended (the app lists running ones as background work). */
-  onTerminal?(sessionId: string, e: { id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null }): void
+  onTerminal?(sessionId: string, e: { id: string; command: string; state: 'running' | 'exited'; exitCode?: number | null; output?: string }): void
 }
+
+/** How much of a command's output the background pane keeps and shows: its end. */
+export const OUTPUT_KEPT = 16_000
 
 export class Workspaces {
   private roots = new Map<string, string>() // sessionId → where the agent works freely
@@ -240,7 +243,9 @@ export class Workspaces {
     proc.stderr?.on('data', add)
     this.terminals.set(id, term)
     this.hooks.onTerminal?.(sessionId, { id, command: line, state: 'running' })
-    void term.exited.then((x) => this.hooks.onTerminal?.(sessionId, { id, command: line, state: 'exited', exitCode: x.exitCode }))
+    void term.exited.then((x) =>
+      this.hooks.onTerminal?.(sessionId, { id, command: line, state: 'exited', exitCode: x.exitCode, output: term.output.slice(-OUTPUT_KEPT) })
+    )
     return id
   }
 
@@ -262,6 +267,12 @@ export class Workspaces {
   kill(id: string): void {
     const t = this.terminal(id)
     if (!t.exit) killTree(t.proc)
+  }
+
+  /** What a session's command has printed so far; undefined once the agent has let it go. */
+  outputOf(sessionId: string, id: string): string | undefined {
+    const t = this.terminals.get(id)
+    return t && t.sessionId === sessionId ? t.output.slice(-OUTPUT_KEPT) : undefined
   }
 
   /** Stops a session's command from the app (the user pressed stop); false when it is not that session's. */

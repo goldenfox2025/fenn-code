@@ -216,7 +216,7 @@ const handlers = {
     try {
       // "你看到了什么" echoes the whole prompt, so tests can check what a session was given.
       if (process.env.MOCK_SIMPLE_STREAM === '1')
-        await stream(sessionId, "A plain streamed reply for timing checks.", abort);
+        await stream(sessionId, "A plain streamed reply for timing checks. ".repeat(8).trim(), abort);
       else if (text === "你看到了什么")
         notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: raw } });
       // "#留言 目标 || 时机 || 产物,… || 内容" leaves a message for another thread; inside a delivered

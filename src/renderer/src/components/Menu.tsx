@@ -134,7 +134,18 @@ export function Menu({
     place()
     ref.current!.focus({ preventScroll: true })
     window.addEventListener('resize', place)
-    return () => window.removeEventListener('resize', place)
+    // The list behind can redraw while the menu is open (a busy chat moves up the sidebar): follow the opener.
+    let last = liveAnchor(opener)?.getBoundingClientRect()
+    let frame = requestAnimationFrame(function follow() {
+      const now = liveAnchor(opener)?.getBoundingClientRect()
+      if (now && (now.width || now.height) && last && (now.top !== last.top || now.left !== last.left)) place()
+      last = now
+      frame = requestAnimationFrame(follow)
+    })
+    return () => {
+      window.removeEventListener('resize', place)
+      cancelAnimationFrame(frame)
+    }
     // A menu whose items change while open (models arriving) is placed again.
   }, [opener, openRect, align, placement, matchWidth, items.length])
 

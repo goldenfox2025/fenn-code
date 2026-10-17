@@ -562,6 +562,13 @@ await check('/ lists the commands; /子对话 hands the text to a new sub-chat w
   await page.locator('.center .day-divider:has-text("已压缩上下文")').waitFor({ timeout: 8000 })
   if ((await page.locator('.center .bubble .cmd-token:has-text("/compact")').count()) !== bubbles) throw new Error('the button sent a /compact message')
 })
+await check('/rename renames the conversation too', async () => {
+  const id = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.find((c) => !c.parentId && !c.projectId)?.id)
+  if (!id) throw new Error('no chat to rename')
+  await page.evaluate((id) => window.ancora.send(id, '/rename 发布清单'), id)
+  await page.waitForFunction(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.title === '发布清单', id, { timeout: 8000 })
+})
+
 
 await check('a new project is not pinned and is listed by recent activity', async () => {
   const pinned = await page.locator('.section-head:has-text("已置顶")').count()
@@ -596,9 +603,11 @@ await check('every 「…」 menu opens next to its button, inside the window', 
   for (let i = 0; i < n; i++) {
     const row = rows.nth(i)
     await row.hover()
-    const btn = row.locator('.trail .icon-btn')
+    // Hold the element itself: rows reorder while a reply streams, and nth(i) would then name another row.
+    const btn = await row.locator('.trail .icon-btn').elementHandle()
+    const label = (await row.innerText()).trim()
     await btn.click()
-    await near(btn, 'sidebar row ' + (await row.innerText()).trim())
+    await near(btn, 'sidebar row ' + label)
   }
   const header = page.locator('.chat-header .icon-btn:has(.lucide-ellipsis), .chat-header .icon-btn:has(.lucide-more-horizontal)').last()
   await header.click()

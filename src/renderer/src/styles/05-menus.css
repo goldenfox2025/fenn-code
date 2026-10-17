@@ -209,7 +209,7 @@
   background: var(--text-4);
 }
 .usage-dot.part-cache {
-  background: color-mix(in srgb, var(--blue) 35%, transparent);
+  background: color-mix(in srgb, var(--blue) 40%, var(--text-3));
 }
 .usage-dot.part-write {
   background: var(--amber);

@@ -240,6 +240,17 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
       </div>
     )
   }
+  const actions = (
+    <div className="msg-actions">
+      {m.variant && m.variant.count > 1 && <VersionSwitch m={m} busy={busy} />}
+      {!!text && <CopyButton text={text} />}
+      {!busy && !!text && (
+        <button className="icon-btn sm" data-tip={t('编辑')} onClick={() => setEditing(text)}>
+          <Pencil size={14} />
+        </button>
+      )}
+    </div>
+  )
   return (
     <div className="msg msg-user">
       {files.length > 0 && (
@@ -258,7 +269,13 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
           )}
         </div>
       )}
-      {text && <div className="bubble">{commandToken(text)}</div>}
+      {/* Its actions sit beside the bubble, so they never cover the message below. */}
+      {text && (
+        <div className="bubble-row">
+          {actions}
+          <div className="bubble">{commandToken(text)}</div>
+        </div>
+      )}
       {m.forwardedTo && <ForwardedNote m={m} />}
       {/* What a / command started from this message (a sub-chat, a thread). */}
       {m.blocks.some((b) => b.type === 'thread-card') && (
@@ -276,15 +293,7 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
           ))}
         </div>
       )}
-      <div className="msg-actions">
-        {m.variant && m.variant.count > 1 && <VersionSwitch m={m} busy={busy} />}
-        {!!text && <CopyButton text={text} />}
-        {!busy && !!text && (
-          <button className="icon-btn sm" data-tip={t('编辑')} onClick={() => setEditing(text)}>
-            <Pencil size={14} />
-          </button>
-        )}
-      </div>
+      {!text && actions}
     </div>
   )
 }
@@ -625,19 +634,23 @@ function toolTitle(tool: ToolBlock): string {
   }
 }
 
-/** One line that says what the agent did (「思考了 4 秒，运行了 2 个命令」). */
 /** What a run of tool calls did, in a few words (「运行了 2 个命令，读取了 3 个文件」). */
 function toolsSummary(tools: ToolBlock[]): string {
   const parts: string[] = []
-  const dirs = tools.filter(isListing).length
-  const count = (kinds: (string | undefined)[]) => tools.filter((x) => kinds.includes(x.toolKind) && !isListing(x)).length
+  // Web tools often come as kind 'other'; their names say what they are.
+  const web = tools.filter((x) => isWeb(x.title))
+  const opened = web.filter((x) => /fetch|open/i.test(x.title)).length
+  const rest = tools.filter((x) => !isWeb(x.title))
+  const dirs = rest.filter(isListing).length
+  const count = (kinds: (string | undefined)[]) => rest.filter((x) => kinds.includes(x.toolKind) && !isListing(x)).length
   const kinds: [number, (n: number) => string][] = [
     [count(['execute']), (n) => t('运行了 {0} 个命令', n)],
     [dirs, (n) => t('查看了 {0} 个文件夹', n)],
     [count(['read']), (n) => t('读取了 {0} 个文件', n)],
     [count(['edit', 'delete', 'move']), (n) => t('修改了 {0} 个文件', n)],
     [count(['search']), (n) => t('搜索了 {0} 次', n)],
-    [count(['fetch']), (n) => t('访问了 {0} 个网页', n)]
+    [web.length - opened, (n) => t('搜索了 {0} 次网页', n)],
+    [count(['fetch']) + opened, (n) => t('访问了 {0} 个网页', n)]
   ]
   let known = 0
   for (const [n, label] of kinds) {

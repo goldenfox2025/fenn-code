@@ -13,6 +13,12 @@ export interface GenerationTiming {
   outputTokens?: number
 }
 
+/**
+ * A stream shorter than this says little about speed: an agent that buffers its output
+ * hands over hundreds of tokens in a few milliseconds, which would read as thousands per second.
+ */
+export const MIN_STREAM_MS = 1000
+
 /** One reply's usage: the tokens the backend reported, and what the turn cost if it said. */
 export interface MessageUsage extends TurnUsage {
   cost?: Cost

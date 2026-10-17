@@ -580,6 +580,8 @@ export interface AncoraApi {
   compactContext(conversationId: string): Promise<void>
   /** Stops a command the conversation's agent runs through the app (listed under 后台). */
   stopCommand(conversationId: string, id: string): Promise<void>
+  /** What a background command has printed so far (its end). */
+  commandOutput(conversationId: string, id: string): Promise<string>
   /** Answers a decision card: records the choice and sends it to the agent. */
   chooseDecision(conversationId: string, messageId: string, blockIndex: number, option: number): Promise<void>
   listConnectors(): Promise<ConnectorView[]>
@@ -676,4 +678,9 @@ export interface BackgroundCommand {
   /** The agent's own background task: it runs and stops it, the app only shows it. */
   managed?: boolean
   monitor?: boolean
+  /** It was still running when its reply ended: real background work (not a step of the reply). */
+  detached?: boolean
+  /** The end of what it printed, kept once it ended. */
+  output?: string
+  outputFile?: string
 }

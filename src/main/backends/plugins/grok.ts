@@ -120,7 +120,9 @@ function backgroundTask(task: Record<string, unknown>, state: 'running' | 'exite
     exitCode: typeof exit === 'number' ? exit : task.status === 'failed' ? 1 : state === 'exited' && task.status === 'completed' ? 0 : null,
     title: text(task.description) || undefined,
     managed: true,
-    monitor: task.kind === 'monitor' || !!text(task.monitor_description) || undefined
+    monitor: task.kind === 'monitor' || !!text(task.monitor_description) || undefined,
+    outputFile: text(task.output_file) || undefined,
+    output: state === 'exited' ? text(task.output).slice(-16_000) || undefined : undefined
   }
 }
 const compacting = new Map<string, string>()
@@ -192,7 +194,7 @@ export function grokExt(method: string, params: Record<string, unknown>): { sess
     case 'auto_compact_started': {
       const toolId = `grok-compact:${++compactions}`
       compacting.set(sessionId, toolId)
-      events.push({ kind: 'tool.start', toolId, title: t('压缩上下文'), toolKind: 'other', status: 'running' })
+      events.push({ kind: 'tool.start', toolId, title: t('自动压缩上下文'), toolKind: 'other', status: 'running' })
       break
     }
     case 'auto_compact_completed':
@@ -204,7 +206,7 @@ export function grokExt(method: string, params: Record<string, unknown>): { sess
       const after = num(u.tokens_after)
       const output = ok && before && after ? t('{0} → {1} tokens', before.toLocaleString('en-US'), after.toLocaleString('en-US')) : undefined
       if (toolId) events.push({ kind: 'tool.update', toolId, status: ok ? 'completed' : 'failed', output })
-      else events.push({ kind: 'tool.start', toolId: `grok-compact:${++compactions}`, title: t('压缩上下文'), toolKind: 'other', status: ok ? 'completed' : 'failed', input: output })
+      else events.push({ kind: 'tool.start', toolId: `grok-compact:${++compactions}`, title: t('自动压缩上下文'), toolKind: 'other', status: ok ? 'completed' : 'failed', input: output })
       if (ok) events.push({ kind: 'compacted' })
       if (ok && after) events.push({ kind: 'usage', contextUsed: after })
       break

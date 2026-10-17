@@ -5,6 +5,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, TurnResult } from '../../shared/contract'
 import { contextLimit } from '../../shared/modelLimits'
@@ -254,6 +255,7 @@ export class ChatService {
       await this.runTurn(conversationId, next.text, next.opts)
     } finally {
       this.running.delete(conversationId)
+      this.detachCommands(conversationId)
       this.stopped.delete(conversationId)
       if (this.renewAfterTurn.delete(conversationId)) this.forgetSession(conversationId)
       this.unattendedTurns.delete(conversationId)
@@ -358,10 +360,13 @@ export class ChatService {
     this.current.delete(conversationId)
     reply.state = result.stopReason === 'error' ? 'error' : result.stopReason === 'cancelled' ? 'cancelled' : 'done'
     if (result.error) reply.error = result.error
-    // A / command the agent carried out without a word (Grok's /always-approve): say it ran.
+    // An agent command it carried out without a word (Grok's /always-approve): say it ran.
     const command = /^\/[^\s]+/.exec(text.trim())?.[0]
-    if (reply.state === 'done' && !reply.blocks.length && command && !opts.action)
-      reply.blocks.push({ type: 'notice', level: 'info', text: t('{0} 已执行，没有返回内容。', command) })
+    // The agent's /rename names its own session; the conversation here takes the same name.
+    const renamed = command?.toLowerCase() === '/rename' && reply.state === 'done' ? text.trim().slice(command.length).trim().slice(0, 120) : ''
+    if (renamed) this.patchConversation(conversationId, { title: renamed, titleAuto: false })
+    if (reply.state === 'done' && !reply.blocks.length && command && (opts.raw || renamed) && !opts.action)
+      reply.blocks.push({ type: 'notice', level: 'info', text: renamed ? t('已重命名为「{0}」。', renamed) : t('{0} 已执行，没有返回内容。', command) })
     // Agents that report little over ACP (Grok) write it to their own log: read the turn from there.
     let logged: SessionContext | undefined
     if (live && result.stopReason !== 'error' && (!result.usage || !live.reported)) {
@@ -690,16 +695,36 @@ export class ChatService {
     return variant
   }
 
-  /**
-   * Runs the agent's own compact command now. Its result stays out of a later replay; afterwards
-   * the app's notes go first in the next message unless they are the session's system prompt.
-   */
+  /** Commands still running when their reply ended are background work from now on. */
+  private detachCommands(conversationId: string): void {
+    const list = this.store.conversation(conversationId)?.background
+    if (!list?.some((b) => !b.endedAt && !b.managed && !b.detached)) return
+    this.patchConversation(conversationId, { background: list.map((b) => (!b.endedAt && !b.managed ? { ...b, detached: true } : b)) })
+  }
+
+  /** The end of what a background command printed: from the agent's output file, the running terminal, or what was kept when it ended. */
+  async commandOutput(conversationId: string, id: string): Promise<string> {
+    const entry = this.store.conversation(conversationId)?.background?.find((b) => b.id === id)
+    if (!entry) return ''
+    if (entry.outputFile) {
+      const tail = await readTail(entry.outputFile, 16_000)
+      if (tail !== undefined) return tail
+    }
+    const live = this.live.get(conversationId)
+    const now = live && !entry.endedAt ? await this.backends.commandOutput(live.backendId, live.sessionId, id).catch(() => undefined) : undefined
+    return now ?? entry.output ?? ''
+  }
+
   /** Stops a command the conversation's agent runs through the app. */
   async stopCommand(conversationId: string, id: string): Promise<void> {
     const live = this.live.get(conversationId)
     if (!live || !(await this.backends.stopCommand(live.backendId, live.sessionId, id))) throw new Error(t('这个命令已经结束了'))
   }
 
+  /**
+   * Runs the agent's own compact command now. Its result stays out of a later replay; afterwards
+   * the app's notes go first in the next message unless they are the session's system prompt.
+   */
   async compactContext(conversationId: string): Promise<void> {
     const conv = this.store.conversation(conversationId)
     // After a restart the session isn't open yet; sending the command resumes it first, as any message does.
@@ -892,9 +917,14 @@ export class ChatService {
           startedAt: Date.now(),
           ...(event.title ? { title: event.title.slice(0, 200) } : {}),
           ...(event.managed ? { managed: true } : {}),
-          ...(event.monitor ? { monitor: true } : {})
+          ...(event.monitor ? { monitor: true } : {}),
+          ...(event.outputFile ? { outputFile: event.outputFile } : {})
         })
-      else if (event.state === 'exited' && i >= 0) list[i] = { ...list[i], endedAt: Date.now(), exitCode: event.exitCode }
+      else if (event.state === 'exited' && i >= 0) {
+        // A command that ended within its own reply was a step of it (shown there), not background work.
+        if (!list[i].managed && !list[i].detached && this.running.has(conversationId)) list.splice(i, 1)
+        else list[i] = { ...list[i], endedAt: Date.now(), exitCode: event.exitCode, ...(event.output ? { output: event.output.slice(-16_000) } : {}) }
+      }
       this.patchConversation(conversationId, { background: list.slice(-BACKGROUND_KEPT) })
       return
     }
@@ -1077,6 +1107,24 @@ export function linesOf(messages: Message[]): Line[] {
 /** Below this many tokens a smaller context is not taken for a compaction. */
 /** Commands kept in a conversation's 后台 list. */
 const BACKGROUND_KEPT = 12
+
+/** The last `bytes` of a file as text; undefined when it can't be read. */
+async function readTail(path: string, bytes: number): Promise<string | undefined> {
+  try {
+    const f = await open(path, 'r')
+    try {
+      const { size } = await f.stat()
+      const start = Math.max(0, size - bytes)
+      const buf = Buffer.alloc(size - start)
+      await f.read(buf, 0, buf.length, start)
+      return buf.toString('utf8')
+    } finally {
+      await f.close()
+    }
+  } catch {
+    return undefined
+  }
+}
 const COMPACTION_FLOOR = 20_000
 
 const WITHDRAWN =

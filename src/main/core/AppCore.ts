@@ -310,7 +310,6 @@ export class AppCore {
     }
   }
 
-  /** Commands still listed as running when the app last quit ended with it. */
   /**
    * Before RC8, a Grok reply with nothing to report (a / command it answered itself) was given the
    * previous turn's usage from Grok's log, so the totals counted that turn twice. Take those copies out.
@@ -333,10 +332,13 @@ export class AppCore {
     }
   }
 
+  /** Commands still listed as running when the app last quit ended with it. */
   endStaleCommands(): void {
     for (const c of this.store.conversations) {
-      if (!c.background?.some((b) => !b.endedAt)) continue
-      this.chat.patchConversation(c.id, { background: c.background.map((b) => (b.endedAt ? b : { ...b, endedAt: b.startedAt, exitCode: null })) })
+      // Commands that ended within their reply were its steps, not background work (older versions listed them).
+      const kept = c.background?.filter((b) => !b.endedAt || b.managed || b.detached)
+      if (!c.background || (kept!.length === c.background.length && !kept!.some((b) => !b.endedAt))) continue
+      this.chat.patchConversation(c.id, { background: kept!.map((b) => (b.endedAt ? b : { ...b, endedAt: b.startedAt, exitCode: null })) })
     }
   }
 
@@ -812,6 +814,10 @@ export class AppCore {
 
   async compactContext(conversationId: string): Promise<void> {
     await this.chat.compactContext(conversationId)
+  }
+
+  async commandOutput(conversationId: string, id: string): Promise<string> {
+    return this.chat.commandOutput(conversationId, id)
   }
 
   async stopCommand(conversationId: string, id: string): Promise<void> {

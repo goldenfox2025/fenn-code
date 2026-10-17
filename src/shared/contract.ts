@@ -38,6 +38,10 @@ export type AgentEvent =
       managed?: boolean
       /** It watches for something rather than doing a job (Grok's monitors). */
       monitor?: boolean
+      /** The end of what it printed, once it has ended. */
+      output?: string
+      /** Where the agent writes its output as it runs (Grok's tasks). */
+      outputFile?: string
     }
   /** The user made this folder the working folder of a session that had none. */
   | { kind: 'folder'; path: string }
@@ -221,6 +225,8 @@ export interface AgentBackend {
   cancel(sessionId: string): Promise<void>
   /** Stops a command the agent started through the app. */
   stopCommand?(sessionId: string, id: string): Promise<boolean>
+  /** What a command run through the app's terminal has printed so far (undefined once released). */
+  commandOutput?(sessionId: string, id: string): Promise<string | undefined>
   setModel?(sessionId: string, modelId: string): Promise<void>
   /** Sets one of the session's options; resolves with the options as they are now. */
   setOption?(sessionId: string, optionId: string, value: string): Promise<SessionOption[] | undefined>

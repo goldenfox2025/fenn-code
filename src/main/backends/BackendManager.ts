@@ -239,6 +239,10 @@ export class BackendManager {
     return (await this.get(backendId).stopCommand?.(sessionId, id)) ?? false
   }
 
+  async commandOutput(backendId: string, sessionId: string, id: string): Promise<string | undefined> {
+    return this.get(backendId).commandOutput?.(sessionId, id)
+  }
+
   async authMethods(backendId: string): Promise<AuthMethod[]> {
     this.notUpgrading(backendId)
     return (await this.get(backendId).authMethods?.()) ?? []

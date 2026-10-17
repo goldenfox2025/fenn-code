@@ -1,5 +1,5 @@
 import type { AgentEvent, StopReason, TurnUsage } from '../../shared/contract'
-import type { GenerationTiming } from '../../shared/usage'
+import { MIN_STREAM_MS, type GenerationTiming } from '../../shared/usage'
 
 /**
  * Client-observed generation time. Chunks are not individual token timestamps.
@@ -48,7 +48,7 @@ export class TurnMeter {
     const output = usage?.output
     const genMs = this.last! - this.first - this.toolMs
     if (reliableTokens && stop === 'end_turn' && !this.interrupted && !this.open.size && this.chunks > 1 &&
-      output !== undefined && Number.isSafeInteger(output) && output > 1 && genMs > 0) {
+      output !== undefined && Number.isSafeInteger(output) && output > 1 && genMs >= MIN_STREAM_MS) {
       timing.streamMs = genMs
       timing.outputTokens = output
       timing.tpotMs = genMs / (output - 1)

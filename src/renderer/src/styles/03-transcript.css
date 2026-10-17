@@ -366,15 +366,21 @@
 .msg:hover .msg-actions {
   opacity: 1;
 }
-.msg-user .msg-actions {
+/* Beside the bubble, at its foot: never over the message below, whatever follows it. */
+.bubble-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  width: 100%;
+}
+.bubble-row > .msg-actions {
+  position: static;
+  flex: none;
+}
+.msg-user > .msg-actions {
   left: auto;
   right: 0;
-}
-/* A message with no reply shown between (a / command the agent answered silently): room for the actions row above it.
-   Each message sits in its own wrapper; one that shows nothing is empty. */
-[data-mid]:has(> .msg-user) + [data-mid] > .msg-user,
-[data-mid]:has(> .msg-user) + [data-mid]:empty + [data-mid] > .msg-user {
-  margin-top: var(--turn-row);
 }
 .reactions {
   display: flex;

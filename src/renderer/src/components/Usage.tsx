@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge, Minimize2 } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
-import { formatCost, formatTokens, headline, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
+import { formatCost, formatTokens, headline, MIN_STREAM_MS, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
 import { useMenu, type MenuItem } from './Menu'
 import { api, useApp } from '../store'
 import { t } from '../i18n'
@@ -35,7 +35,7 @@ function timingLine(timing: GenerationTiming): string {
   const parts = [t('首个回复 {0}', seconds(timing.firstResponseMs))]
   const speed = tokensPerSecond(timing)
   if (speed !== undefined) parts.push(rate(speed))
-  if (timing.tpotMs !== undefined) parts.push(t('每个 token {0}', seconds(timing.tpotMs)))
+  if (speed !== undefined && timing.tpotMs !== undefined) parts.push(t('每个 token {0}', seconds(timing.tpotMs)))
   return parts.join(' · ')
 }
 
@@ -95,7 +95,7 @@ const rate = (speed: number) => t('{0} tok/s', speed >= 100 ? Math.round(speed) 
 
 /** Output tokens per second over the last uninterrupted stream, when the agent reported its output. */
 export function tokensPerSecond(timing?: GenerationTiming): number | undefined {
-  if (!timing?.streamMs || !timing.outputTokens) return undefined
+  if (!timing?.streamMs || timing.streamMs < MIN_STREAM_MS || !timing.outputTokens) return undefined
   return timing.outputTokens / (timing.streamMs / 1000)
 }
 
@@ -193,7 +193,7 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
           <div className="usage-head">{t('最近一次回复')}</div>
           <Row label={t('首个回复')} value={seconds(timing.firstResponseMs)} />
           {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Ancora 看到的输出时间计算，不含工具运行的时间')} />}
-          {timing.tpotMs !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs)} />}
+          {speed !== undefined && timing.tpotMs !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs)} />}
         </div>
       )}
       {(u.unreported > 0 && u.turns > 0) || u.costSkipped ? (

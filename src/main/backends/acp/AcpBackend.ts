@@ -560,6 +560,10 @@ export class AcpBackend implements AgentBackend {
     return this.workspaces.stop(sessionId, id)
   }
 
+  async commandOutput(sessionId: string, id: string): Promise<string | undefined> {
+    return this.workspaces.outputOf(sessionId, id)
+  }
+
   async setModel(sessionId: string, modelId: string): Promise<void> {
     const sel = this.modelSelectors.get(sessionId)
     if (sel?.configId) {
