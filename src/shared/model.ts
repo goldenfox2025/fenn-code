@@ -29,6 +29,8 @@ export type Block =
   | { type: 'placed'; path: string }
   /** In a project chat: the card of a thread started from this message. */
   | { type: 'thread-card'; threadId: string }
+  /** In a project chat: a thread needs the user (shown to the user only, never to an agent). */
+  | { type: 'thread-event'; threadId: string; kind: 'decision'; text: string }
   /** A message between two threads of a project (see PeerMessage): sent from here, or delivered here. */
   | { type: 'peer-message'; peerId: string; direction: 'out' | 'in' }
   /** A result the agent handed over: a file on this computer or a link. Shown as a card under the reply. */
@@ -147,6 +149,8 @@ export interface Conversation {
   factsSummary?: string
   /** The last message factsSummary covers. */
   factsThrough?: string
+  /** Project chats: when the coordinator last saw the list of threads (see Orchestrator.threadIndex). */
+  threadsSeenAt?: number
 }
 
 export interface Project {

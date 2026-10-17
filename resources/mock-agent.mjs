@@ -191,7 +191,7 @@ const handlers = {
         await stream(sessionId, `好的，我直接在这里回答「${text.slice(0, 40)}」。` + "这是一个比较完整的回答，涵盖了背景、做法和下一步。".repeat(20), abort);
       else if (s.mcp && (await toolNames(s)).includes("start_thread"))
         await coordinatorTurn(sessionId, s, text, abort, raw);
-      else if (s.mcp && !/^(交付文件|附上)/.test(text) && (await toolNames(s)).includes("set_resolved"))
+      else if (s.mcp && !/^(交付文件|附上)|帮我决定|选哪个/.test(text) && (await toolNames(s)).includes("set_resolved"))
         await threadTurn(sessionId, s, text, abort);
       else await turn(sessionId, s, text, abort, raw.includes("<history>"));
     } catch (e) {

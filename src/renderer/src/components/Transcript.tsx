@@ -25,7 +25,8 @@ import {
   CornerUpLeft,
   Split,
   PackageOpen,
-  FolderOpen
+  FolderOpen,
+  CircleHelp
 } from 'lucide-react'
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
 import { planHeadline } from './PlanLine'
@@ -116,11 +117,30 @@ export const MessageView = memo(function MessageView({
   busy?: boolean
 }) {
   if (m.role === 'system') {
+    const ev = m.blocks.find((b): b is Extract<Block, { type: 'thread-event' }> => b.type === 'thread-event')
+    if (ev) return <ThreadEventLine ev={ev} />
     return <div className="msg msg-system">{textOf(m)}</div>
   }
   if (m.role === 'user') return <UserMessage m={m} busy={busy} />
   return <AssistantMessage m={m} last={last} busy={busy} />
 })
+
+/** In the project chat: a thread is waiting for the user's decision; opens that thread. */
+function ThreadEventLine({ ev }: { ev: Extract<Block, { type: 'thread-event' }> }) {
+  const thread = useApp((s) => s.conversations.find((c) => c.id === ev.threadId))
+  const navigate = useApp((s) => s.navigate)
+  if (!thread?.projectId) return null
+  return (
+    <button
+      className={'thread-event' + (thread.resolved ? ' settled' : '')}
+      onClick={() => navigate({ view: 'project', projectId: thread.projectId!, threadId: thread.id })}
+    >
+      <CircleHelp size={14} />
+      <span className="ellipsis">{t('「{0}」需要您决定：{1}', thread.title, ev.text)}</span>
+      <ChevronRight size={14} className="muted" />
+    </button>
+  )
+}
 
 /** "已发送到讨论串" under a project-chat message the coordinator passed on; opens that thread. */
 function ForwardedNote({ m }: { m: Message }) {

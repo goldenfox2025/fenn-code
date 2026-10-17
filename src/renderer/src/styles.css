@@ -2143,6 +2143,35 @@ details.advanced > summary {
   color: var(--text-2);
 }
 
+/* In the project chat: a thread waiting on the user's decision. */
+.thread-event {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  align-self: flex-start;
+  margin: var(--space-1) 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  color: var(--text-2);
+  font-size: var(--font-sm);
+}
+.thread-event > svg:first-child {
+  color: var(--amber);
+  flex: none;
+}
+.thread-event:hover {
+  background: var(--bg-hover);
+}
+.thread-event.settled {
+  color: var(--text-3);
+}
+.thread-event.settled > svg:first-child {
+  color: var(--text-3);
+}
+
 /* A link-looking action that matches the app, not the browser's visited purple. */
 .text-link {
   border: 0;
