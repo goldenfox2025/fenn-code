@@ -613,7 +613,8 @@ export interface AncoraApi {
   updateSettings(patch: Partial<AppSettings>): Promise<void>
   setBackendSetting(backendId: string, key: string, value: string): Promise<void>
   respondPermission(requestId: string, decision: PermissionDecision): Promise<void>
-  pickFolder(): Promise<string | null>
+  /** The system folder picker, opened at start (else the default folder). */
+  pickFolder(start?: string): Promise<string | null>
   /** Opens the folder holding backends.json in the system file manager. */
   openConfigFolder(): Promise<void>
   /** Saves a conversation as Markdown via a save dialog; false if cancelled. */

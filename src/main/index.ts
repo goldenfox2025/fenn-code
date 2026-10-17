@@ -419,8 +419,12 @@ for (const name of API_METHODS) {
     (core[name] as (...a: unknown[]) => unknown)(...args),
   );
 }
-ipcMain.handle("oc:pickFolder", async () => {
+ipcMain.handle("oc:pickFolder", async (_e, start?: string) => {
+  // Opened at a known folder, not wherever Windows last was (often the desktop, whose
+  // big files and shortcuts the picker reads before it answers).
+  const defaultPath = [start, core.autoFolderRoot(), app.getPath("documents")].find((p) => !!p && existsSync(p));
   const r = await dialog.showOpenDialog(win!, {
+    defaultPath,
     properties: ["openDirectory", "createDirectory"],
   });
   return r.canceled ? null : r.filePaths[0];

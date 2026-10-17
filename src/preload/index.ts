@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('ancora', {
     ipcRenderer.on('oc:event', h)
     return () => ipcRenderer.removeListener('oc:event', h)
   },
-  pickFolder: () => ipcRenderer.invoke('oc:pickFolder'),
+  pickFolder: (start?: string) => ipcRenderer.invoke('oc:pickFolder', start),
   openConfigFolder: () => ipcRenderer.invoke('oc:openConfigFolder'),
   exportConversation: (id: string) => ipcRenderer.invoke('oc:exportConversation', id),
   platform: process.platform,

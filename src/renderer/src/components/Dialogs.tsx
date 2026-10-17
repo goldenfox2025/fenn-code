@@ -82,7 +82,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
           <button
             className="btn"
             onClick={async () => {
-              const dir = await api().pickFolder()
+              const dir = await api().pickFolder(f.cwd)
               if (dir) setF({ ...f, cwd: dir })
             }}
           >
@@ -342,7 +342,7 @@ function GeneralSettings() {
           <button
             className="btn"
             onClick={async () => {
-              const dir = await api().pickFolder()
+              const dir = await api().pickFolder(settings.autoFolderRoot)
               if (dir) void api().updateSettings({ autoFolderRoot: dir })
             }}
           >

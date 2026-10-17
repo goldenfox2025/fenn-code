@@ -748,7 +748,7 @@ export function FolderChip({ folder, onChange, hint = '' }: { folder: string; on
     return [...seen].slice(0, 6).join('\n')
   })
   const choose = async () => {
-    const dir = await api().pickFolder()
+    const dir = await api().pickFolder(folder || undefined)
     if (dir) onChange(dir)
   }
   return (
