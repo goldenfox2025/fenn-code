@@ -199,7 +199,7 @@ await check('a thread leaves another a message: a card on each side, where it we
   await send('帮我写发布说明')
   await page.waitForSelector('.thread-card:has-text("写发布说明")', { timeout: 15000 })
   await page.click('.center .workspace > .center .composer textarea')
-  await page.keyboard.type('@竞品')
+  await page.keyboard.type('请@竞品')
   await page.waitForSelector('.mention-menu .menu-item.active:has-text("调研竞品定价")')
   await page.keyboard.press('Enter')
   await page.keyboard.insertText('#留言 写发布说明 || now || || 定价结论：D 公司最便宜')

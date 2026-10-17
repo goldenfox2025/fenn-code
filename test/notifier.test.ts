@@ -5,9 +5,10 @@ import { Notifier } from '../src/main/core/Notifier'
 const conv = (over: Partial<Conversation>): Conversation =>
   ({ id: 'c1', kind: 'thread', title: '调研', status: 'idle', createdAt: 0, updatedAt: 0, ...over }) as Conversation
 
-function setup(focused = false, notify?: NotifyLevel) {
+function setup(focused = false, notify?: NotifyLevel, onlyStartedThreads = false) {
   const shown: { title: string; body: string }[] = []
   const n = new Notifier({
+    onlyStartedThreads: () => onlyStartedThreads,
     enabled: () => true,
     focused: () => focused,
     project: (id) => (id ? ({ id: 'p', name: '项目A', notify }) as never : undefined),
@@ -74,5 +75,13 @@ describe('notifier', () => {
     push({ status: 'working', projectId: 'p' })
     push({ status: 'waiting', projectId: 'p', needsUser: { kind: 'permission', text: '运行 npm install', at: 5 } })
     expect(shown.map((x) => x.body)).toEqual(['需要您确认一个操作'])
+  })
+
+  it("stays quiet when the coordinator's reply only started threads", () => {
+    const { shown, push } = setup(false, 'coordinator', true)
+    push({ kind: 'project', status: 'idle', projectId: 'p', updatedAt: 1 })
+    push({ kind: 'project', status: 'working', projectId: 'p', updatedAt: 2 })
+    push({ kind: 'project', status: 'idle', projectId: 'p', updatedAt: 3, lastPreview: '好的，开始处理。' })
+    expect(shown).toEqual([])
   })
 })

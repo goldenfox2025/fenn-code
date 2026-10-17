@@ -10,6 +10,8 @@ export interface NotifierDeps {
   enabled(): boolean
   focused(): boolean
   project(id?: string): Project | undefined
+  /** The conversation's last reply only started threads (their cards say it all): nothing to tell. */
+  onlyStartedThreads?(conversationId: string): boolean
   show(n: { title: string; body: string; conversationId: string }): void
 }
 
@@ -61,7 +63,7 @@ export class Notifier {
     // A plain chat or the project chat finishing a reply.
     // Hidden housekeeping turns (memory flush before a handoff) don't touch updatedAt, so they stay quiet.
     const visibleReply = c.updatedAt > (this.startedAt.get(c.id) ?? Infinity)
-    if (prev === 'working' && c.status === 'idle' && c.kind !== 'thread' && visibleReply) return c.lastPreview || t('回复好了')
+    if (prev === 'working' && c.status === 'idle' && c.kind !== 'thread' && visibleReply && !this.deps.onlyStartedThreads?.(c.id)) return c.lastPreview || t('回复好了')
     return undefined
   }
 }

@@ -497,6 +497,9 @@ export class AppCore {
     return { ok: r.ok && !notFound, notFound, output: r.output.slice(-4000), account }
   }
 
+  /** The latest backend switch asked for in each conversation (see updateConversation). */
+  private switches = new Map<string, number>()
+
   async updateConversation(id: string, patch: Partial<Conversation>): Promise<void> {
     const before = this.store.conversation(id)
     if (before?.kind === 'chat' && 'projectId' in patch) {
@@ -507,9 +510,13 @@ export class AppCore {
       const nextBackendId = patch.backendId
       if (!this.backends.has(patch.backendId)) throw new Error(t('后端「{0}」已经不存在了', patch.backendId))
       // Mid-reply: stop it (what it said so far stays, marked as cut off by the switch), then switch.
+      // The latest choice wins: one made while an earlier switch waits for the reply to stop replaces it.
+      const seq = (this.switches.get(id) ?? 0) + 1
+      this.switches.set(id, seq)
       const reply = this.chat.currentReply(id)
       if (reply) {
         await this.chat.stopTurn(id)
+        if (this.switches.get(id) !== seq) return
         const m = this.store.messagesOf(id).find((x) => x.id === reply.id)
         if (m && m.state === 'cancelled') this.chat.updateMessage({ ...m, switchedTo: this.backends.list().find((b) => b.id === nextBackendId)?.name ?? nextBackendId })
       }

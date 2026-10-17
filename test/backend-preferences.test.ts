@@ -227,4 +227,22 @@ describe('switching backend mid-conversation', () => {
       expect(seen).toMatch(/(没说完|刚开始)就被中断了/)
     } finally { await dispose() }
   }, 60000)
+
+  it('two switches during a reply: the later choice wins', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      await core.backends.setPlugins([...loadPlugins(),
+        acpPlugin({ id: 'one', name: 'One', launch: () => ({ command: process.execPath, args: [join(__dirname, '../resources/mock-agent.mjs')] }) }),
+        acpPlugin({ id: 'two', name: 'Two', launch: () => ({ command: process.execPath, args: [join(__dirname, '../resources/mock-agent.mjs')] }) })])
+      const c = await core.startChat({ backendId: 'mock', text: '你好' })
+      await until(() => store.conversation(c.id)?.status === 'idle')
+      void core.send(c.id, '讲一个很长的故事')
+      await until(() => store.messagesOf(c.id).some((m) => m.state === 'streaming'))
+      const first = core.updateConversation(c.id, { backendId: 'one' })
+      await new Promise((r) => setTimeout(r, 5))
+      const second = core.updateConversation(c.id, { backendId: 'two' })
+      await Promise.all([first, second])
+      expect(store.conversation(c.id)?.backendId).toBe('two')
+    } finally { await dispose() }
+  }, 60000)
 })

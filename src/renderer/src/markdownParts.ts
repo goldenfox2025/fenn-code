@@ -11,13 +11,17 @@ export function markdownParts(text: string): string[] {
   const parts: string[] = []
   let cur: string[] = []
   let fence: string | null = null
+  // The last line with text: a list item there and on the next line keeps one list.
+  let lastText = ''
+  const item = (l: string) => /^\s*([-*+]|\d+[.)])\s/.test(l)
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
     const f = /^\s*(`{3,}|~{3,})/.exec(l)?.[1]
     if (f) fence = fence ? (f[0] === fence[0] && f.length >= fence.length ? null : fence) : f
     cur.push(l)
+    if (l.trim()) lastText = l
     const next = lines[i + 1]
-    if (!fence && l.trim() === '' && next !== undefined && next.trim() !== '' && !/^\s/.test(next) && !/^\s*[|]/.test(next)) {
+    if (!fence && l.trim() === '' && next !== undefined && next.trim() !== '' && !/^\s/.test(next) && !/^\s*[|]/.test(next) && !(item(lastText) && item(next))) {
       parts.push(cur.join('\n'))
       cur = []
     }

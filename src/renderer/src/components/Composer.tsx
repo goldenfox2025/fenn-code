@@ -108,7 +108,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       : []
   const findMention = (value: string, caret: number) => {
     if (conversation?.kind !== 'project') return setMention(null)
-    const m = /(^|\s)@([^\s@]{0,24})$/.exec(value.slice(0, caret))
+    const m = /(^|[\s\p{Script=Han}\p{P}])@([^\s@]{0,24})$/u.exec(value.slice(0, caret))
     setMention(m ? { query: m[2], start: caret - m[2].length - 1, end: caret } : null)
     setMentionAt(0)
   }

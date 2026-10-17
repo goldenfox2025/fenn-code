@@ -19,4 +19,10 @@ describe('long replies are parsed piece by piece', () => {
     expect(parts.some((p) => p.includes('const a = 1') && p.includes('const b = 2'))).toBe(true)
     expect(parts.some((p) => p.includes('- item') && p.includes('more of the item'))).toBe(true)
   })
+  it('keeps a list whose items are separated by blank lines in one piece', () => {
+    const text = [para(1), '- 要点 A', '- 要点 B', '1. 第一', '2. 第二', para(2)].join('\n\n')
+    const parts = markdownParts(text)
+    expect(parts.join('\n')).toBe(text)
+    expect(parts.some((p) => p.includes('- 要点 A') && p.includes('- 要点 B') && p.includes('2. 第二'))).toBe(true)
+  })
 })

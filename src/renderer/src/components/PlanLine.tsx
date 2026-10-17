@@ -6,7 +6,7 @@ import { useApp } from '../store'
 import { duration, relTime } from '../util'
 import { t } from '../i18n'
 
-/** When each step was first seen in progress, for its elapsed time (this window only). */
+/** When each step was first seen in progress in a turn, for its elapsed time (this window only). */
 const startedAt = new Map<string, number>()
 
 /** The ACP plan of the latest reply, if the backend sent one. */
@@ -20,6 +20,15 @@ function useAcpPlan(conversationId: string) {
       return m.blocks.find((b): b is Extract<Block, { type: 'plan' }> => b.type === 'plan')?.entries
     }
     return undefined
+  })
+}
+
+/** The turn now on screen: its user message (each turn starts with one), so times restart each turn. */
+function useTurnKey(conversationId: string): string {
+  return useApp((s) => {
+    const list = s.messages[conversationId] ?? []
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].role === 'user') return list[i].id
+    return ''
   })
 }
 
@@ -38,9 +47,10 @@ function useWaiting(conv: Conversation): string[] {
   return rows
 }
 
-function StepIcon({ status }: { status: PlanEntry['status'] }) {
+function StepIcon({ status, live }: { status: PlanEntry['status']; live: boolean }) {
   if (status === 'done') return <CircleCheck size={15} className="step-icon done" />
-  if (status === 'doing') return <LoaderCircle size={15} className="step-icon doing" />
+  // A step left in progress when the turn ended isn't running any more: it stops spinning.
+  if (status === 'doing') return <LoaderCircle size={15} className={'step-icon doing' + (live ? ' live' : '')} />
   if (status === 'waiting') return <CircleDot size={15} className="step-icon waiting" />
   return <Circle size={15} className="step-icon pending" />
 }
@@ -64,6 +74,7 @@ function useTick(on: boolean) {
 export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(!!defaultOpen)
   const acp = useAcpPlan(conv.id)
+  const turn = useTurnKey(conv.id)
   const waiting = useWaiting(conv)
   const entries = planEntries({ checklist: conv.checklist, acp, waiting })
   const blocker = currentBlocker(conv)
@@ -71,6 +82,10 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
   const working = conv.status === 'working'
   const doing = entries.find((e) => e.status === 'doing')
   useTick(working && !!doing)
+  // A new turn opens the card again, as when the thread is opened mid-turn.
+  useEffect(() => {
+    if (working) setOpen(true)
+  }, [working, turn])
   // A plan that just finished folds to its one line, as in Claude.
   const finished = !working && entries.length > 0 && entries.every((e) => e.status === 'done')
   useEffect(() => {
@@ -81,7 +96,7 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
   const done = steps.filter((e) => e.status === 'done').length
   const allDone = steps.length > 0 && done === steps.length
   const since = (e: PlanEntry) => {
-    const key = `${conv.id}|${e.text}`
+    const key = `${conv.id}|${turn}|${e.text}`
     if (!startedAt.has(key)) startedAt.set(key, Date.now())
     return startedAt.get(key)!
   }
@@ -111,7 +126,7 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
             <ol className="checklist plan-steps">
               {entries.map((e, i) => (
                 <li key={i} className={'plan-step ' + e.status}>
-                  <StepIcon status={e.status} />
+                  <StepIcon status={e.status} live={working} />
                   <span className="plan-step-text">{e.text}</span>
                   {e.status === 'doing' && working && Date.now() - since(e) >= 1000 && <span className="plan-step-time">{duration(Date.now() - since(e))}</span>}
                 </li>

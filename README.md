@@ -63,7 +63,7 @@ Also included: attachments, editing and regenerating with version history, token
 
 ## Quick start
 
-1. From [Releases](../../releases), download the installer (`Ancora-Setup-0.1.1.exe`) or the portable `Ancora-0.1.1-win.zip` (unzip it anywhere and run `Ancora.exe`). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
+1. From [Releases](../../releases), download the installer (`Ancora-Setup-0.1.2.exe`) or the portable `Ancora-0.1.2-win.zip` (unzip it anywhere and run `Ancora.exe`). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
 2. Install and sign in to at least one agent, in a terminal or from Settings → Agent backends:
 
    | Agent | Install | Sign in | Status |

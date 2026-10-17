@@ -63,7 +63,7 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 
 ## 快速开始
 
-1. 从 [Releases](../../releases) 下载安装包 `Ancora-Setup-0.1.1.exe`，或免安装的 `Ancora-0.1.1-win.zip`（解压到任意位置，运行 `Ancora.exe`）。程序没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
+1. 从 [Releases](../../releases) 下载安装包 `Ancora-Setup-0.1.2.exe`，或免安装的 `Ancora-0.1.2-win.zip`（解压到任意位置，运行 `Ancora.exe`）。程序没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
 2. 至少安装并登录一个 agent，在终端里做，或者在 设置 → Agent 后端 里点按钮：
 
    | Agent | 安装 | 登录 | 状态 |

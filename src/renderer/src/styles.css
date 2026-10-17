@@ -1001,7 +1001,8 @@ body.resizing .sidebar {
 }
 /* In the receiving thread it stands where a user message would, on its own. */
 .msg-peer {
-  margin: var(--space-2) 0;
+  /* The same space below as the turn above leaves before it. */
+  margin: 0 0 var(--turn-space);
 }
 .status-chip {
   font-size: 12px;
@@ -2806,6 +2807,8 @@ details.advanced > summary {
 }
 .step-icon.doing {
   color: var(--accent);
+}
+.step-icon.doing.live {
   animation: spin 1.2s linear infinite;
 }
 .step-icon.waiting {

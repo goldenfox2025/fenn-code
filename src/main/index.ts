@@ -107,6 +107,11 @@ const notifier = new Notifier({
     store.settings.notifications !== false && Notification.isSupported(),
   focused: () => !!win?.isFocused(),
   project: (id) => store.project(id),
+  onlyStartedThreads: (id) => {
+    const last = [...store.messagesOf(id)].reverse().find((m) => m.role === 'assistant' && !m.hidden)
+    const text = last?.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('').trim() ?? ''
+    return !!last?.blocks.some((b) => b.type === 'thread-card') && text.length <= 40
+  },
   show: ({ title, body, conversationId }) => {
     const n = new Notification({
       title,
