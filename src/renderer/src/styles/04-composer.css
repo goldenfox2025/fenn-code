@@ -3,6 +3,46 @@
   flex: none;
   padding: 0 var(--space-9) var(--space-7);
 }
+/* Messages waiting behind the running reply: a tray tucked above the composer, as in Codex and Claude Code. */
+.queue-tray {
+  max-width: 800px;
+  margin: 0 auto calc(-1 * var(--space-6));
+  padding: var(--space-2) var(--space-4) calc(var(--space-6) + var(--space-2));
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  animation: rise-in var(--dur-2) var(--ease);
+}
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--turn-row);
+  font-size: var(--font-sm);
+  color: var(--text-2);
+}
+.queue-row > svg:first-child {
+  flex: none;
+  color: var(--text-3);
+}
+.queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-row .text-link {
+  flex: none;
+  font-size: var(--font-xs);
+}
+/* The composer covers the tray's lower edge, also while the tray slides in. */
+.queue-tray + .composer {
+  z-index: 1;
+}
 .composer {
   max-width: 800px;
   margin: 0 auto;

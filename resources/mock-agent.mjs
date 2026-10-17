@@ -24,6 +24,8 @@ const send = (msg) =>
 const notify = (sessionId, update) =>
   send({ method: "session/update", params: { sessionId, update } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// A pause that ends early once the turn is cancelled.
+const nap = async (ms, abort) => { for (const end = Date.now() + ms; Date.now() < end && !abort.aborted; ) await sleep(Math.min(50, end - Date.now())); };
 const requestClient = (method, params) =>
   new Promise((resolve, reject) => {
     const id = nextReq++;
@@ -651,9 +653,9 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     await stream(sessionId, "这是一次看板上的讨论串测试。我先更新进度，再用一两句话确认你能在看板上看到它。", abort);
     for (const [i, file] of ["README.md", "docs/plan.md"].entries()) {
       notify(sessionId, { sessionUpdate: "tool_call", toolCallId: `chat${s.turns}-${i}`, title: `读取 ${file}`, kind: "read", status: "completed", rawInput: { path: file } });
-      await sleep(slow ? 1500 : 50);
+      await nap(slow ? 1500 : 50, abort);
     }
-    if (slow) await sleep(4000);
+    if (slow) await nap(4000, abort);
     await stream(sessionId, "这个讨论串已经在看板上，你可以直接打开查看。进度那一栏会随着讨论串的推进自动更新，不需要你手动刷新。\n\n如果之后想把它拆成更小的任务，在讨论串里直接说就行，我会在原处更新，不会另开新的对话。", abort);
     const sub = /开子对话/.test(text) ? await callTool(sessionId, s, "start_subconversation", { title: "整理看板说明", task: "把看板的用法写成一页说明。" }) : null;
     if (sub) await stream(sessionId, "", abort);

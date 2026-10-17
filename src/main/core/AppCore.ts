@@ -520,6 +520,10 @@ export class AppCore {
     return this.chat.cancel(conversationId)
   }
 
+  queuedMessage(conversationId: string, id: string, action: 'now' | 'take') {
+    return this.chat.queuedMessage(conversationId, id, action)
+  }
+
   /** The stop control shown while an agent controls the computer: withdraw the grant and stop the turn. */
   stopComputer(conversationId: string) {
     this.computer?.revoke(conversationId)

@@ -916,6 +916,7 @@ export const en: Record<string, string> = {
   "设为工作文件夹：{0}": "Use as working folder: {0}",
   "在工作文件夹之外运行命令": "Run a command outside the working folder",
   "等待发送": "Waiting to send",
-  "等待发送 · {0} 个附件": "Waiting to send · {0} attachments",
   "刚刚开始": "Started just now",
+  "立即发送": "Send now",
+  "{0} 个附件": "{0} attachments",
 }

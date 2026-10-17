@@ -569,7 +569,7 @@ const scenarios = {
     await page.waitForSelector('.send-btn.stop', { timeout: 15000 })
     await page.fill('.composer textarea', '顺便把结论整理成表格')
     await page.keyboard.press('Enter')
-    await page.waitForSelector('.msg-queued', { timeout: 5000 })
+    await page.waitForSelector('.queue-row', { timeout: 5000 })
     await wait(400)
     await shot('130-queued')
     await page.click('.send-btn.stop')

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { errorText } from '@shared/errors'
-import { ArrowUp, ChevronDown, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Plus, ScrollText, Settings2, Square, SquareTerminal, X } from 'lucide-react'
-import type { Attachment, Conversation, FolderCandidate } from '@shared/model'
+import { ArrowUp, ChevronDown, CornerDownRight, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
+import type { Attachment, Conversation, FolderCandidate, QueuedMessage } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp, toastError } from '../store'
 import { useMenu, type MenuItem } from './Menu'
@@ -449,14 +449,33 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       </button>
     </div>
   )
-  // Stopping hands back what was still waiting, so nothing the user typed is lost.
-  const stop = async () => {
-    if (!conversation) return
-    const back = await api().cancel(conversation.id).catch((e) => (toastError(e), []))
+  // Messages handed back (by 停止 or 编辑) go into the composer ahead of what's being typed.
+  const restore = (back: QueuedMessage[]) => {
     if (!back.length) return
     setText((cur) => [...back.map((q) => q.text), cur].filter((x) => x.trim()).join('\n\n'))
     const files = back.flatMap((q) => q.attachments ?? [])
     if (files.length) setFiles((cur) => [...files, ...cur])
+    ta.current?.focus()
+  }
+  // Stopping hands back what was still waiting, so nothing the user typed is lost.
+  const stop = async () => {
+    if (!conversation) return
+    restore(await api().cancel(conversation.id).catch((e) => (toastError(e), [])))
+  }
+  /** A waiting message: send it now (stopping the reply, after any model switch in progress), edit it, or drop it. */
+  const queued = async (id: string, action: 'now' | 'edit' | 'delete') => {
+    if (!conversation) return
+    try {
+      if (action === 'now') {
+        if (selection.current) await selection.current
+        await api().queuedMessage(conversation.id, id, 'now')
+        return
+      }
+      const q = await api().queuedMessage(conversation.id, id, 'take')
+      if (q && action === 'edit') restore([q])
+    } catch (e) {
+      toastError(e)
+    }
   }
   const attachButton = (
     <button className="icon-btn" data-tip={t('添加文件或图片')} onClick={(e) => (e.stopPropagation(), picker.current?.click())}>
@@ -477,6 +496,23 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   return (
     <div className="composer-wrap">
       {busy && conversation && <HousekeepingTimer conversationId={conversation.id} />}
+      {!!conversation?.queued?.length && (
+        <div className="queue-tray" aria-label={t('等待发送')}>
+          {conversation.queued.map((q) => (
+            <div key={q.id} className="queue-row">
+              <CornerDownRight size={14} />
+              <span className="queue-text">{q.text || t('{0} 个附件', q.attachments?.length ?? 0)}</span>
+              <button className="text-link" onClick={() => void queued(q.id, 'now')}>{t('立即发送')}</button>
+              <button className="icon-btn sm" data-tip={t('编辑')} onClick={() => void queued(q.id, 'edit')}>
+                <Pencil size={14} />
+              </button>
+              <button className="icon-btn sm" data-tip={t('删除')} onClick={() => void queued(q.id, 'delete')}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div
         className={'composer' + (dragging ? ' dragging' : '')}
         onClick={() => ta.current?.focus()}

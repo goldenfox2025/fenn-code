@@ -81,6 +81,7 @@ interface Live {
 }
 
 interface QueuedTurn {
+  id: string
   text: string
   opts: SendOptions
   resolve: () => void
@@ -93,6 +94,8 @@ export class ChatService {
   private meters = new Map<string, TurnMeter>()
   private queues = new Map<string, QueuedTurn[]>()
   private running = new Set<string>()
+  // Running turns the user stopped, possibly before the agent was even connected: they send nothing.
+  private stopped = new Set<string>()
   private unattendedTurns = new Set<string>()
   /** Called as a queued turn starts, with the tag it was sent with. */
   readonly turnStartListeners = new Set<(conversationId: string, tag?: string) => void>()
@@ -195,7 +198,11 @@ export class ChatService {
   private visibleQueue(conversationId: string): QueuedMessage[] {
     return (this.queues.get(conversationId) ?? [])
       .filter((x) => !x.opts.hidden && !x.opts.housekeeping && (x.opts.role ?? 'user') === 'user')
-      .map((x) => ({ text: x.text, ...(x.opts.attachments?.length ? { attachments: x.opts.attachments } : {}) }))
+      .map((x) => this.visibleOf(x))
+  }
+
+  private visibleOf(x: QueuedTurn): QueuedMessage {
+    return { id: x.id, text: x.text, ...(x.opts.attachments?.length ? { attachments: x.opts.attachments } : {}) }
   }
 
   /** The conversation shows the messages waiting behind the running reply. */
@@ -223,7 +230,7 @@ export class ChatService {
   send(conversationId: string, text: string, opts: SendOptions = {}): Promise<void> {
     return new Promise((resolve) => {
       const q = this.queues.get(conversationId) ?? []
-      q.push({ text, opts, resolve })
+      q.push({ id: randomUUID(), text, opts, resolve })
       this.queues.set(conversationId, q)
       void this.pump(conversationId)
       // pump took it at once when nothing was running; otherwise it waits in view.
@@ -245,6 +252,7 @@ export class ChatService {
       await this.runTurn(conversationId, next.text, next.opts)
     } finally {
       this.running.delete(conversationId)
+      this.stopped.delete(conversationId)
       if (this.renewAfterTurn.delete(conversationId)) this.forgetSession(conversationId)
       this.unattendedTurns.delete(conversationId)
       this.tags.delete(conversationId)
@@ -330,7 +338,7 @@ export class ChatService {
       costAtStart = live.cost
       live.reported = false
       this.meters.set(conversationId, new TurnMeter(performance.now()))
-      result = await this.backends.prompt(live.backendId, live.sessionId, parts)
+      result = this.stopped.has(conversationId) ? { stopReason: 'cancelled' } : await this.backends.prompt(live.backendId, live.sessionId, parts)
     } catch (err) {
       result = { stopReason: 'error', error: err instanceof Error ? err.message : String(err) }
     }
@@ -539,11 +547,40 @@ export class ChatService {
     for (const q of this.queues.get(conversationId) ?? []) q.resolve()
     this.queues.delete(conversationId)
     this.showQueue(conversationId)
-    const live = this.live.get(conversationId)
-    if (live && this.running.has(conversationId)) await this.backends.cancel(live.backendId, live.sessionId)
+    await this.interruptReply(conversationId)
+    return back
+  }
+
+  /** Stops the running reply only; what is queued goes next. */
+  private async interruptReply(conversationId: string): Promise<void> {
+    if (this.running.has(conversationId)) {
+      this.stopped.add(conversationId)
+      const live = this.live.get(conversationId)
+      if (live) await this.backends.cancel(live.backendId, live.sessionId)
+    }
     // Dismiss any permission prompt this turn is waiting on.
     for (const [rid, cid] of this.pendingPermissions) if (cid === conversationId) this.respondPermission(rid, null)
-    return back
+  }
+
+  /**
+   * A queued message the user acts on: 'now' moves it to the front and stops the reply, so it goes next
+   * (a model picked meanwhile still applies first); 'take' removes it and hands it back.
+   */
+  async queuedMessage(conversationId: string, id: string, action: 'now' | 'take'): Promise<QueuedMessage | undefined> {
+    const q = this.queues.get(conversationId) ?? []
+    const i = q.findIndex((x) => x.id === id)
+    if (i < 0) return
+    const [turn] = q.splice(i, 1)
+    const message = this.visibleOf(turn)
+    if (action === 'take') {
+      turn.resolve()
+      this.showQueue(conversationId)
+      return message
+    }
+    q.unshift(turn)
+    this.showQueue(conversationId)
+    await this.interruptReply(conversationId)
+    return message
   }
 
   /**

@@ -99,6 +99,7 @@ export type WorkStatus = 'idle' | 'working' | 'waiting' | 'done' | 'error'
 
 /** A message waiting behind the running reply. */
 export interface QueuedMessage {
+  id: string
   text: string
   attachments?: Attachment[]
 }
@@ -530,6 +531,8 @@ export interface AncoraApi {
   switchVariant(conversationId: string, group: string, index: number): Promise<void>
   /** Stops the reply; messages still waiting come back, for the composer. */
   cancel(conversationId: string): Promise<QueuedMessage[]>
+  /** A message waiting behind the reply: 'now' stops the reply and sends it next; 'take' removes it (returned, for editing). */
+  queuedMessage(conversationId: string, id: string, action: 'now' | 'take'): Promise<QueuedMessage | undefined>
   setModel(conversationId: string, modelId: string): Promise<void>
   /** Sets a session option (e.g. the mode) for one conversation. */
   setOption(conversationId: string, optionId: string, value: string): Promise<void>

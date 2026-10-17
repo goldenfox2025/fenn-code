@@ -160,11 +160,32 @@ describe('messages sent while a reply runs', () => {
       await until(() => store.conversation(c.id)?.status === 'working')
       void core.send(c.id, '排队一')
       await until(() => store.conversation(c.id)?.queued?.length === 1)
-      expect(store.conversation(c.id)!.queued).toEqual([{ text: '排队一' }])
+      expect(store.conversation(c.id)!.queued).toMatchObject([{ text: '排队一' }])
       const back = await core.cancel(c.id)
-      expect(back).toEqual([{ text: '排队一' }])
+      expect(back).toMatchObject([{ text: '排队一' }])
       expect(store.conversation(c.id)!.queued).toBeUndefined()
       await until(() => store.conversation(c.id)?.status !== 'working')
+      expect(store.messagesOf(c.id).some((m) => textOf(m) === '排队一')).toBe(false)
+    } finally { await dispose() }
+  }, 30000)
+
+  it('can be taken back for editing, or sent now, which stops the reply and goes next', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      const c = await core.startChat({ text: '#啰嗦慢', backendId: 'mock' })
+      await until(() => store.conversation(c.id)?.status === 'working')
+      void core.send(c.id, '排队一')
+      void core.send(c.id, '排队二')
+      await until(() => store.conversation(c.id)?.queued?.length === 2)
+      const [one, two] = store.conversation(c.id)!.queued!
+      expect(await core.queuedMessage(c.id, one.id, 'take')).toMatchObject({ text: '排队一' })
+      expect(store.conversation(c.id)!.queued).toMatchObject([{ text: '排队二' }])
+      await core.queuedMessage(c.id, two.id, 'now')
+      await until(() => store.messagesOf(c.id).some((m) => m.role === 'user' && textOf(m) === '排队二'))
+      const first = store.messagesOf(c.id).find((m) => m.role === 'assistant')!
+      expect(first.state).toBe('cancelled')
+      await until(() => store.conversation(c.id)?.status === 'idle')
+      expect(store.conversation(c.id)!.queued).toBeUndefined()
       expect(store.messagesOf(c.id).some((m) => textOf(m) === '排队一')).toBe(false)
     } finally { await dispose() }
   }, 30000)
