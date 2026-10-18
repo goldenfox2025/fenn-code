@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { create } from 'zustand'
 import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/contract'
 import { backendAvailable } from '@shared/backendAvailability'
-import { errorText } from '@shared/errors'
+import { errorText, plainError } from '@shared/errors'
 import { routeFor } from './routes'
 import type { AppEvent, AppSettings, Conversation, Message, FennApi, PeerMessage, Project, Routine } from '@shared/model'
 
@@ -66,6 +66,16 @@ interface State {
 }
 
 let toastSeq = 0
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
+/** At most this many notices show; a newer one pushes out the oldest. */
+const TOAST_MAX = 3
+
+/** Takes a notice away (its time is up, or the user closed it). */
+export function dismissToast(id: number): void {
+  clearTimeout(toastTimers.get(id))
+  toastTimers.delete(id)
+  useApp.setState({ toasts: useApp.getState().toasts.filter((t) => t.id !== id) })
+}
 
 export const useApp = create<State>((set, get) => ({
   ready: false,
@@ -192,9 +202,16 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
       window.dispatchEvent(new CustomEvent('oc-upgrade-line', { detail: e }))
       return
     case 'toast': {
-      const id = ++toastSeq
-      set({ toasts: [...s.toasts, { id, level: e.level, text: e.text }] })
-      setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), 5000)
+      // The same notice again (a save retried, a click repeated) shows once, for longer.
+      const same = s.toasts.find((t) => t.level === e.level && t.text === e.text)
+      const id = same?.id ?? ++toastSeq
+      if (!same) {
+        const kept = s.toasts.slice(-(TOAST_MAX - 1))
+        for (const t of s.toasts) if (!kept.includes(t)) clearTimeout(toastTimers.get(t.id))
+        set({ toasts: [...kept, { id, level: e.level, text: e.text }] })
+      }
+      clearTimeout(toastTimers.get(id))
+      toastTimers.set(id, setTimeout(() => (get().toasts.some((t) => t.id === id) ? dismissToast(id) : undefined), e.level === 'error' ? 8000 : 4000))
       return
     }
   }
@@ -229,7 +246,7 @@ export function toast(text: string, level: 'info' | 'error' = 'info'): void {
 
 /** Shows what went wrong, as the core said it. Fits straight into `.catch(toastError)`. */
 export function toastError(e: unknown): void {
-  toast(errorText(e), 'error')
+  toast(plainError(errorText(e)), 'error')
 }
 
 /**

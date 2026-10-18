@@ -2,7 +2,7 @@
 // Usage: npm run build && xvfb-run -a node scripts/e2e.mjs [screenshotDir]
 // Exits non-zero if any check fails.
 import { _electron as electron } from 'playwright-core'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { declareTestAgent } from './test-agent.mjs'
@@ -513,7 +513,7 @@ await check('a chat shows its folder’s files beside it, with the files the age
   await page.click('.side-pane .files-tools .chip')
 })
 
-await check('the files panel makes, edits, renames, shows full screen and deletes a file (取消 focused)', async () => {
+await check('the files panel makes, autosaves, renames, shows full screen and deletes a file (取消 focused)', async () => {
   const pane = page.locator('.side-pane .files-pane')
   const back = async () => { if (await pane.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').count()) await pane.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').click() }
   const root = await page.evaluate(async () => {
@@ -528,11 +528,16 @@ await check('the files panel makes, edits, renames, shows full screen and delete
   const editor = pane.locator('.preview-editor')
   await editor.waitFor({ timeout: 3000 })
   await editor.fill('# 标题\n\n正文')
-  await page.keyboard.press('Control+s')
-  await pane.locator('.preview-head .small:has-text("正在编辑")').waitFor({ timeout: 3000 })
+  // Saved by itself after a pause, with no 取消/保存 to press.
+  await pane.locator('.preview-head .small:has-text("已保存")').waitFor({ timeout: 3000 })
   if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文') throw new Error('not saved to disk')
-  await pane.locator('.preview-head .btn:has-text("取消")').click()
+  if (await pane.locator('.preview-head .btn:has-text("取消"), .preview-head .btn:has-text("保存")').count()) throw new Error('取消/保存 still shown')
+  // Typing and leaving at once still saves.
+  await editor.press('Control+End')
+  await page.keyboard.type('。')
+  await pane.locator('.preview-head .pill-btn:has-text("完成")').click()
   await pane.locator('.preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
+  if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文。') throw new Error('not saved on 完成')
   // Full screen shows the same file; Esc comes back.
   await pane.locator('.preview-head .icon-btn[aria-label="全屏"]').click()
   await page.locator('.modal.file-full .preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
@@ -557,7 +562,7 @@ await check('the files panel makes, edits, renames, shows full screen and delete
   if (existsSync(join(root, '定稿.md'))) throw new Error('still on disk')
 })
 
-await check('editing keeps a file’s CRLF line ends and undo clears 未保存; GBK files are view only; Tab stays in the full-screen editor', async () => {
+await check('autosave keeps a file’s CRLF line ends, an agent’s change is never overwritten unasked; GBK files are view only; Tab stays in the full-screen editor', async () => {
   const pane = page.locator('.side-pane .files-pane')
   const back = async () => { if (await pane.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').count()) await pane.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').click() }
   const root = await page.evaluate(async () => {
@@ -581,22 +586,30 @@ await check('editing keeps a file’s CRLF line ends and undo clears 未保存; 
   await pane.locator('.preview-head .icon-btn[aria-label="编辑"]').click()
   const editor = pane.locator('.preview-editor')
   await editor.press('Control+End')
-  await page.keyboard.type('x')
-  await page.keyboard.press('Backspace')
-  await pane.locator('.preview-head .small:has-text("正在编辑")').waitFor({ timeout: 2000 })
   await page.keyboard.type('three')
   await page.keyboard.press('Control+s')
-  await pane.locator('.preview-head .small:has-text("正在编辑")').waitFor({ timeout: 3000 })
+  await pane.locator('.preview-head .small:has-text("已保存")').waitFor({ timeout: 3000 })
   if (readFileSync(join(root, 'win.txt'), 'utf8') !== 'one\r\ntwo\r\nthree') throw new Error('line ends changed: ' + JSON.stringify(readFileSync(join(root, 'win.txt'), 'utf8')))
+  // An agent writes the file meanwhile: the next save asks which version to keep.
+  await new Promise((r) => setTimeout(r, 50))
+  writeFileSync(join(root, 'win.txt'), 'agent\r\n')
+  utimesSync(join(root, 'win.txt'), new Date(), new Date(Date.now() + 5000))
+  await page.keyboard.type('!')
+  await pane.locator('.preview-conflict').waitFor({ timeout: 3000 })
+  if (readFileSync(join(root, 'win.txt'), 'utf8') !== 'agent\r\n') throw new Error('the agent’s change was overwritten')
+  await pane.locator('.preview-conflict .pill-btn:has-text("保留我的版本")').click()
+  await pane.locator('.preview-conflict').waitFor({ state: 'detached', timeout: 3000 })
+  if (readFileSync(join(root, 'win.txt'), 'utf8') !== 'one\r\ntwo\r\nthree!') throw new Error('not kept: ' + JSON.stringify(readFileSync(join(root, 'win.txt'), 'utf8')))
   await pane.locator('.preview-head .icon-btn[aria-label="全屏"]').click()
   const full = page.locator('.modal.file-full .preview-editor')
   await full.waitFor({ timeout: 2000 })
   await full.focus()
   await page.keyboard.press('Tab')
   if (!(await full.evaluate((el) => el === document.activeElement && el.value.includes('\t')))) throw new Error('Tab left the editor')
+  // Esc ends editing (the tab is saved), a second Esc leaves full screen; nothing asks.
   await page.keyboard.press('Escape')
-  await page.click('.modal.confirm .btn.danger-solid')
-  await page.waitForSelector('.modal.confirm', { state: 'detached' })
+  await page.locator('.modal.file-full .preview-code').waitFor({ timeout: 3000 })
+  if (!readFileSync(join(root, 'win.txt'), 'utf8').includes('\t')) throw new Error('the tab was not saved')
   await page.keyboard.press('Escape')
   await page.waitForSelector('.modal.file-full', { state: 'detached', timeout: 2000 })
   await back()

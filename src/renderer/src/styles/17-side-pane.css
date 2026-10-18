@@ -305,8 +305,17 @@
   overflow: auto;
   tab-size: 2;
 }
-.preview-head .btn.sm {
-  height: 26px;
+/* The file changed on disk while it was being edited: saving waits for the user's pick. */
+.preview-conflict {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5) var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  font-size: var(--font-sm);
 }
 /* A file full screen: the window less a margin, the text at reading width. */
 .modal.file-full {

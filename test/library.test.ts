@@ -156,3 +156,30 @@ describe('the files panel', () => {
     expect(readFileSync(join(root, 'bom.txt'), 'utf8')).toBe('\uFEFFbye\r\n')
   })
 })
+
+describe('the files panel on any disk', () => {
+  it('a change of case renames the file itself, never over another file of that name', () => {
+    const root = mkdtempSync(join(tmpdir(), 'lib-case-'))
+    writeFileSync(join(root, 'a.txt'), 'small a')
+    writeFileSync(join(root, 'A.txt'), 'big A')
+    // Two files on a disk that tells case apart (Linux): A.txt stays.
+    expect(renameEntry(root, 'a.txt', 'A.txt')).toEqual({ refused: 'taken' })
+    expect(readFileSync(join(root, 'A.txt'), 'utf8')).toBe('big A')
+    writeFileSync(join(root, 'b.txt'), 'b')
+    expect(renameEntry(root, 'b.txt', 'B.txt')).toEqual({ path: 'B.txt' })
+    expect(readFileSync(join(root, 'B.txt'), 'utf8')).toBe('b')
+  })
+
+  it('adds files under names Windows takes, and hides the files Windows keeps for itself', () => {
+    const root = mkdtempSync(join(tmpdir(), 'lib-names-'))
+    expect(addFile(root, '', 'notes. ', Buffer.from('x'))).toBe(join(root, 'notes'))
+    expect(addFile(root, '', 'CON.txt', Buffer.from('x'))).toBe(join(root, '_CON.txt'))
+    const long = addFile(root, '', 'x'.repeat(300) + '.md', Buffer.from('x'))!
+    expect(long.split('/').pop()!.length).toBeLessThanOrEqual(120)
+    expect(long.endsWith('.md')).toBe(true)
+    writeFileSync(join(root, 'desktop.ini'), '')
+    writeFileSync(join(root, 'Thumbs.db'), '')
+    expect(listFolder(root)!.entries.map((e) => e.name)).not.toContain('desktop.ini')
+    expect(listFolder(root)!.entries.map((e) => e.name)).not.toContain('Thumbs.db')
+  })
+})

@@ -4,7 +4,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
 import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
@@ -739,7 +739,10 @@ export class AppCore {
     // Programs and scripts are only ever shown in their folder, never run from a card.
     const opens = !reveal && (SAFE_TO_OPEN.test(path) || statSync(path).isDirectory())
     const err = await this.shellOpen?.(path, !opens)
-    return err ? { ok: false, error: err } : { ok: true }
+    if (!err) return { ok: true }
+    // The system's reason (often English, with the path) goes to the log.
+    console.warn('[open]', err)
+    return { ok: false, error: t('没能打开「{0}」，可能没有能打开它的应用。', basename(path)) }
   }
 
 
@@ -1094,7 +1097,7 @@ export class AppCore {
 
   async readLibraryFile(id: string, rel: string) {
     const { root } = this.libraryOf(id)
-    return root ? readPreview(root, rel) : undefined
+    return root ? this.fileOp(rel.split('/').pop() ?? rel, () => readPreview(root, rel), (n) => t('没能读取「{0}」。', n)) : undefined
   }
 
   async openLibraryPath(id: string, rel: string, reveal = false) {
@@ -1107,7 +1110,8 @@ export class AppCore {
   async addToLibrary(id: string, rel: string, files: { name: string; data: string }[]) {
     const { root } = this.libraryOf(id)
     if (!root) throw new Error(t('还没有文件夹。'))
-    for (const f of files) if (!addFile(root, rel, f.name, Buffer.from(f.data, 'base64'))) throw new Error(t('无法添加 {0}', f.name))
+    for (const f of files)
+      if (!this.fileOp(f.name, () => addFile(root, rel, f.name, Buffer.from(f.data, 'base64')), (n) => t('无法添加 {0}', n))) throw new Error(t('无法添加 {0}', f.name))
   }
 
   private libraryRoot(id: string): string {
@@ -1130,33 +1134,38 @@ export class AppCore {
     )
   }
 
-  /** A change to the folder, with the system's errors (EEXIST, EACCES…) in words. */
-  private fileOp<T>(name: string, op: () => T): T {
+  /**
+   * A change to the folder, with the system's errors (EEXIST, EACCES…) in words. What the system
+   * said, with the path, goes to the log; the user reads a sentence. `what`: the sentence for any other error.
+   */
+  private fileOp<T>(name: string, op: () => T, what: (name: string) => string): T {
     try {
       return op()
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code
+      console.warn('[library]', e instanceof Error ? e.message : String(e))
       if (code === 'EEXIST') this.refused('taken', name)
       if (code === 'ENOENT') this.refused('gone', name)
       if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY') throw new Error(t('没有权限修改「{0}」，或它正被别的程序占用。', name))
       if (code === 'ELOOP') throw new Error(t('「{0}」是一个链接，不能在这里编辑。', name))
-      throw e
+      if (code === 'ENOSPC') throw new Error(t('磁盘空间不够，没能保存「{0}」。', name))
+      throw new Error(what(name))
     }
   }
 
   async renameLibraryPath(id: string, rel: string, name: string) {
-    const r = this.fileOp(name.trim(), () => renameEntry(this.libraryRoot(id), rel, name))
+    const r = this.fileOp(name.trim(), () => renameEntry(this.libraryRoot(id), rel, name), (n) => t('没能重命名为「{0}」。', n))
     return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
   }
 
   async createLibraryEntry(id: string, rel: string, name: string, dir: boolean) {
-    const r = this.fileOp(name.trim(), () => createEntry(this.libraryRoot(id), rel, name, dir))
+    const r = this.fileOp(name.trim(), () => createEntry(this.libraryRoot(id), rel, name, dir), (n) => t('没能新建「{0}」。', n))
     return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
   }
 
   async saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean) {
     const name = rel.split('/').pop() ?? rel
-    const r = this.fileOp(name, () => writeText(this.libraryRoot(id), rel, text, since, force))
+    const r = this.fileOp(name, () => writeText(this.libraryRoot(id), rel, text, since, force), (n) => t('没能保存「{0}」。', n))
     if ('refused' in r) return r.refused === 'changed' ? { conflict: true } : this.refused(r.refused, name)
     return { updatedAt: r.updatedAt }
   }
@@ -1169,9 +1178,10 @@ export class AppCore {
       try {
         await this.shellTrash(abs)
       } catch (e) {
-        throw new Error(t('没能移到回收站：{0}', e instanceof Error ? e.message : String(e)))
+        console.warn('[library]', e instanceof Error ? e.message : String(e))
+        throw new Error(t('没能把「{0}」移到回收站，它可能正被别的程序占用。', rel.split('/').pop() ?? rel))
       }
-    } else this.fileOp(rel, () => rmSync(abs, { recursive: true }))
+    } else this.fileOp(rel.split('/').pop() ?? rel, () => rmSync(abs, { recursive: true }), (n) => t('没能删除「{0}」。', n))
   }
 
   // ---- connectors ---------------------------------------------------------

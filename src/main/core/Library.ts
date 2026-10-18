@@ -1,4 +1,4 @@
-import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { LibraryEntry, LibraryChange, Message } from '../../shared/model'
 
@@ -7,6 +7,9 @@ import type { LibraryEntry, LibraryChange, Message } from '../../shared/model'
  * folder, and which files its agents changed. Every path stays inside the
  * folder; a name with .. or a link pointing out of it is refused.
  */
+
+/** Files Windows keeps in folders for itself, hidden as dotfiles are. */
+const HIDDEN = new Set(['desktop.ini', 'thumbs.db'])
 
 /** No folder listing grows past this; the rest is reached by opening the folder itself. */
 const MAX_ENTRIES = 2000
@@ -23,7 +26,8 @@ export function inside(root: string, rel = ''): string | undefined {
     const realBase = realpathSync(base)
     if (real !== realBase && !real.startsWith(realBase + sep)) return undefined
   } catch {
-    // Not there (yet): the textual check above is all there is.
+    // Not there (yet): the textual check above is all there is. A link that can't be followed is refused.
+    if (taken(abs)) return undefined
   }
   return abs
 }
@@ -44,6 +48,17 @@ export function entryPath(root: string, rel: string): string | undefined {
     return join(parent, basename(abs))
   } catch {
     return undefined
+  }
+}
+
+/** Whether two paths are the one entry (a name differing only in case, on a disk that ignores case). */
+function sameEntry(a: string, b: string): boolean {
+  try {
+    const x = lstatSync(a, { bigint: true })
+    const y = lstatSync(b, { bigint: true })
+    return x.dev === y.dev && x.ino === y.ino
+  } catch {
+    return false
   }
 }
 
@@ -70,7 +85,7 @@ export function listFolder(root: string, rel = ''): { entries: LibraryEntry[]; t
   const dir = inside(root, rel)
   if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) return undefined
   const entries: LibraryEntry[] = []
-  const names = readdirSync(dir).filter((n) => !n.startsWith('.'))
+  const names = readdirSync(dir).filter((n) => !n.startsWith('.') && !HIDDEN.has(n.toLowerCase()))
   for (const name of names.slice(0, MAX_ENTRIES)) {
     try {
       const st = statSync(join(dir, name))
@@ -170,8 +185,8 @@ export function renameEntry(root: string, rel: string, name: string): { path: st
   if (path === rel) return { path }
   const target = entryPath(root, path)
   if (!target) return { refused: 'name' }
-  // Only a change of case may land on the same entry (case-insensitive disks).
-  if (taken(target) && target.toLowerCase() !== abs.toLowerCase()) return { refused: 'taken' }
+  // Only a change of case may land on the same entry (on a disk that ignores case); another file of that name is never replaced.
+  if (taken(target) && !sameEntry(target, abs)) return { refused: 'taken' }
   renameSync(abs, target)
   return { path }
 }
@@ -202,9 +217,9 @@ export function removablePath(root: string, rel: string): string | undefined {
  * one). Only a plain file inside the folder: never through a link, never a
  * file in another encoding. `since` is when it was read for editing: if it
  * changed on disk after that (an agent wrote it), nothing is written unless
- * `force`. Returns the new modification time.
+ * `force`. Returns the new modification time. `platform`: for tests.
  */
-export function writeText(root: string, rel: string, text: string, since?: number, force = false): { updatedAt: number } | { refused: LibraryRefusal } {
+export function writeText(root: string, rel: string, text: string, since?: number, force = false, platform: NodeJS.Platform = process.platform): { updatedAt: number } | { refused: LibraryRefusal } {
   const abs = entryPath(root, rel)
   if (!abs) return { refused: 'gone' }
   let st
@@ -213,26 +228,40 @@ export function writeText(root: string, rel: string, text: string, since?: numbe
   } catch {
     return { refused: 'gone' }
   }
+  // A link (or a junction) is never written through; entryPath made sure the folder it is in is inside.
   if (!st.isFile()) return { refused: 'gone' }
   if (!force && since !== undefined && Math.abs(st.mtimeMs - since) > 1) return { refused: 'changed' }
   const old = readFileSync(abs)
   if (utf8(old) === undefined) return { refused: 'encoding' }
   const bom = old[0] === 0xef && old[1] === 0xbb && old[2] === 0xbf && !text.startsWith('\uFEFF') ? '\uFEFF' : ''
-  // O_NOFOLLOW where the system has it: a link swapped in meanwhile is not written through.
-  const fd = openSync(abs, constants.O_WRONLY | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0))
+  const data = Buffer.from(bom + text, 'utf8')
+  // The file is opened as it is (never created) and cut to length after writing. Windows has no
+  // O_NOFOLLOW (numeric flags made it fail with EINVAL): there the lstat above is the check.
+  const fd = openSync(abs, platform === 'win32' ? 'r+' : constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0))
   try {
-    writeSync(fd, Buffer.from(bom + text, 'utf8'))
+    // A link swapped in between the check and the open: what opened is another file, and is left alone.
+    const opened = fstatSync(fd, { bigint: true })
+    const checked = lstatSync(abs, { bigint: true })
+    if (opened.dev !== checked.dev || opened.ino !== checked.ino || !checked.isFile()) return { refused: 'gone' }
+    writeSync(fd, data, 0, data.length, 0)
+    ftruncateSync(fd, data.length)
   } finally {
     closeSync(fd)
   }
   return { updatedAt: statSync(abs).mtimeMs }
 }
 
+/** Longest name a file added here gets (Windows paths stay well under their limit). */
+const MAX_NAME = 120
+
 /** Writes a file into `rel` of the folder under a free name (report.md, report (2).md, …). */
 export function addFile(root: string, rel: string, name: string, data: Buffer): string | undefined {
   const dir = inside(root, rel)
-  const base = name.replace(/[\\/:*?"<>|]/g, '_').trim()
-  if (!dir || !base || base === '.' || base === '..' || !existsSync(dir) || !statSync(dir).isDirectory()) return undefined
+  // A name every system takes: reserved characters become _, a trailing dot or space goes, a device name gets a _ in front, and it stays short.
+  let base = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim().replace(/[. ]+$/, '')
+  if (/^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(base)) base = '_' + base
+  if (base.length > MAX_NAME) base = base.slice(0, MAX_NAME - extname(base).length) + extname(base)
+  if (!fileName(base) || !dir || !existsSync(dir) || !statSync(dir).isDirectory()) return undefined
   const ext = extname(base)
   const stem = base.slice(0, base.length - ext.length)
   let target = join(dir, base)

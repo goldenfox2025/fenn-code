@@ -220,28 +220,58 @@
   flex-wrap: wrap;
 }
 
+/* Notices: at the top of the window, clear of the composer; a card like a menu in every look, an error marked by its icon. */
 .toasts {
   position: fixed;
-  bottom: 18px;
+  top: 52px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  align-items: center;
+  gap: var(--space-3);
   z-index: 60;
+  pointer-events: none;
 }
 .toast {
-  background: var(--text);
-  color: var(--bg);
-  border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 9px var(--space-7);
-  font-size: 13.5px;
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: min(480px, calc(100vw - 32px));
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-6);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
   box-shadow: var(--shadow-pop);
 }
 .toast.error {
-  background: var(--red);
-  color: #fff;
+  padding-left: var(--space-5);
+}
+.toast-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--red);
+}
+.toast-text {
+  padding: 1px var(--space-0);
+  overflow-wrap: anywhere;
+}
+.toast-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+}
+.toast-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 .day {
   width: 32px;

@@ -4,6 +4,8 @@
  * The UI turns the kind into a plain Chinese sentence and keeps the original
  * under 「详情」.
  */
+import { t } from './i18n'
+
 export type ErrorKind = 'filesystem' | 'refresh' | 'auth' | 'forbidden' | 'quota' | 'rate' | 'network' | 'timeout' | 'server'
 
 const RULES: [ErrorKind, RegExp][] = [
@@ -42,4 +44,28 @@ export function isFriendly(raw: string): boolean {
 export function errorText(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e)
   return raw.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}
+
+/**
+ * What the system said ("EINVAL: invalid argument, open 'C:\\…'"), as a sentence: the code
+ * in words and the file's name, never the whole path. The original goes to the console.
+ */
+export function plainError(raw: string): string {
+  const m = /^(E[A-Z]{2,})\b[:,]?[^,']*(?:,\s*\w+\s+'([^']*)')?/.exec(raw.trim())
+  if (!m) return raw
+  console.warn(raw)
+  const name = m[2]?.split(/[\\/]/).pop()
+  const what =
+    m[1] === 'ENOENT'
+      ? t('找不到这个文件或文件夹。')
+      : m[1] === 'EACCES' || m[1] === 'EPERM'
+        ? t('没有权限。')
+        : m[1] === 'EBUSY'
+          ? t('它正被别的程序占用。')
+          : m[1] === 'ENOSPC'
+            ? t('磁盘空间不够。')
+            : m[1] === 'EEXIST'
+              ? t('已经有同名的了。')
+              : t('系统没能完成这个操作。')
+  return name ? t('「{0}」：{1}', name, what) : what
 }

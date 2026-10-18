@@ -36,7 +36,7 @@ import { confirmDialog, Overlay } from './Modal'
 /**
  * A file being edited: its text now and as last saved (both with \n line
  * ends, as a text box keeps them), the line end the file uses, and when it was
- * read (to catch an agent writing it meanwhile).
+ * read or last saved (to catch an agent writing it meanwhile).
  */
 interface Draft {
   path: string
@@ -45,11 +45,145 @@ interface Draft {
   eol: '\n' | '\r\n'
   since?: number
 }
+/** Where saving stands: nothing typed yet, saved, typed and not yet saved, saving, failed, or the file changed on disk meanwhile. */
+type SaveState = 'clean' | 'saved' | 'pending' | 'saving' | 'error' | 'conflict'
+
+/** Saved this long after the last keystroke, and at once on leaving the file, as editors do. */
+const AUTOSAVE_MS = 700
+
+/**
+ * Editing with autosave. Nothing asks: what is typed is written shortly
+ * after, and before the editor closes or another file opens. If an agent
+ * changed the file meanwhile, saving stops until the user picks a version.
+ */
+function useEditor(id: string, onSaved: () => void) {
+  const [draft, setDraftState] = useState<Draft | null>(null)
+  const [state, setStateRaw] = useState<SaveState>('clean')
+  const cur = useRef<Draft | null>(null)
+  const st = useRef<SaveState>('clean')
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const running = useRef<Promise<boolean> | null>(null)
+  const set = (d: Draft | null) => {
+    cur.current = d
+    setDraftState(d)
+  }
+  const setState = (v: SaveState) => {
+    st.current = v
+    setStateRaw(v)
+  }
+  const saved = useRef(onSaved)
+  saved.current = onSaved
+
+  /** Writes what is typed (one write at a time); false when it could not be saved. */
+  const write = async (force = false): Promise<boolean> => {
+    while (running.current) await running.current
+    const d = cur.current
+    if (!d) return true
+    if (d.text === d.base && !force) {
+      // Typed and undone: nothing to write.
+      if (st.current === 'pending' || st.current === 'error') setState('saved')
+      return st.current !== 'conflict'
+    }
+    const text = d.text
+    const failedBefore = st.current === 'error'
+    const job = (async () => {
+      setState('saving')
+      try {
+        const r = await api().saveLibraryFile(id, d.path, d.eol === '\n' ? text : text.replace(/\n/g, d.eol), d.since, force)
+        if (r.conflict) {
+          setState('conflict')
+          return false
+        }
+        const now = cur.current
+        if (now && now.path === d.path) set({ ...now, base: text, since: r.updatedAt })
+        // Typing went on during the save: that part is still to save.
+        setState(cur.current && cur.current.text !== text ? 'pending' : 'saved')
+        saved.current()
+        return true
+      } catch (e) {
+        setState('error')
+        // Autosave retries on the next keystroke: one notice, not one per try.
+        if (!failedBefore) toastError(e)
+        return false
+      }
+    })()
+    running.current = job
+    try {
+      return await job
+    } finally {
+      running.current = null
+    }
+  }
+  const schedule = () => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => void write(), AUTOSAVE_MS)
+  }
+  /** Saves now (leaving the file, closing the editor); false when it could not be saved. */
+  const flush = async (): Promise<boolean> => {
+    clearTimeout(timer.current)
+    return st.current === 'conflict' ? false : write()
+  }
+  const change = (text: string) => {
+    const d = cur.current
+    if (!d) return
+    set({ ...d, text })
+    if (st.current === 'conflict') return
+    setState('pending')
+    schedule()
+  }
+  const start = async (path: string) => {
+    if (!(await flush())) return
+    const f = await api().readLibraryFile(id, path)
+    if (f?.text === undefined || f.readOnly) return
+    // A text box turns \r\n into \n; the file's own line end goes back on when saving.
+    const crlf = (f.text.match(/\r\n/g) ?? []).length
+    const text = f.text.replace(/\r\n/g, '\n')
+    set({ path, text, base: text, eol: crlf > (text.match(/\n/g) ?? []).length / 2 ? '\r\n' : '\n', since: f.updatedAt })
+    setState('clean')
+  }
+  /** Leaves the editor once what was typed is saved; false (and stays) when it could not be. */
+  const stop = async (): Promise<boolean> => {
+    if (!(await flush())) return false
+    set(null)
+    setState('clean')
+    return true
+  }
+  /** After a conflict: keep the typed version (overwrite) or take the file as it is now. */
+  const resolve = async (keepMine: boolean) => {
+    const d = cur.current
+    if (!d) return
+    if (keepMine) {
+      await write(true)
+      return
+    }
+    setState('clean')
+    set(null)
+    await start(d.path)
+  }
+  /** The file was renamed, or deleted. */
+  const moveTo = (fn: (path: string) => string | null) => {
+    const d = cur.current
+    if (!d) return
+    const path = fn(d.path)
+    if (path === null) {
+      clearTimeout(timer.current)
+      set(null)
+      setState('clean')
+    } else if (path !== d.path) set({ ...d, path })
+  }
+  // Closing the pane saves what is still unsaved.
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current)
+      if (cur.current && cur.current.text !== cur.current.base && st.current !== 'conflict') void write()
+    },
+    [id]
+  )
+  return { draft, state, change, flush, start, stop, resolve, moveTo }
+}
+
 /** A name being typed in place: a new name for a file or folder, or the name of a new one. */
 type Naming = { mode: 'rename'; path: string; where: 'tree' | 'preview' } | { mode: 'new'; parent: string; dir: boolean }
-
-/** Unsaved edits per files panel, kept when the panel closes or switches tab. */
-const drafts = new Map<string, Draft>()
 
 const parentOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
 const baseName = (path: string) => path.split('/').pop() ?? path
@@ -72,8 +206,7 @@ export function FilesPane({ id }: { id: string }) {
   const [changes, setChanges] = useState<LibraryChange[]>([])
   const [onlyChanged, setOnlyChanged] = useState(false)
   const [filter, setFilter] = useState('')
-  const [selected, setSelected] = useState<string | null>(() => drafts.get(id)?.path ?? null)
-  const [draft, setDraftState] = useState<Draft | null>(() => drafts.get(id) ?? null)
+  const [selected, setSelected] = useState<string | null>(null)
   const [naming, setNaming] = useState<Naming | null>(null)
   const [rendered, setRendered] = useState(true)
   const [full, setFull] = useState(false)
@@ -87,18 +220,6 @@ export function FilesPane({ id }: { id: string }) {
   })
   const threadsBusy = useApp((s) => s.conversations.filter((c) => c.projectId === id && c.status === 'working').length)
 
-  /** Takes the new draft, or a change to the latest one (a save that ends while typing goes on keeps the typing). */
-  const setDraft = useCallback(
-    (d: Draft | null | ((prev: Draft | null) => Draft | null)) =>
-      setDraftState((prev) => {
-        const next = typeof d === 'function' ? d(prev) : d
-        if (next) drafts.set(id, next)
-        else drafts.delete(id)
-        return next
-      }),
-    [id]
-  )
-  const saving = useRef(false)
   const load = useCallback(
     async (rel: string) => {
       const res = await api().listLibrary(id, rel)
@@ -117,12 +238,13 @@ export function FilesPane({ id }: { id: string }) {
     [id, load]
   )
   const reload = useCallback(() => reloadWith(open), [reloadWith, open])
+  const editor = useEditor(id, reload)
+  const draft = editor.draft
 
   useEffect(() => {
     setDirs({})
     setOpen(new Set())
-    setSelected(drafts.get(id)?.path ?? null)
-    setDraftState(drafts.get(id) ?? null)
+    setSelected(null)
     setNaming(null)
     setFull(false)
     setRoot(undefined)
@@ -157,16 +279,12 @@ export function FilesPane({ id }: { id: string }) {
     setOpen(next)
   }
 
-  /** Unsaved edits are only dropped once the user says so. */
-  const dropDraft = async (): Promise<boolean> => {
-    if (!draft) return true
-    if (draft.text !== draft.base && !(await confirmDialog(t('放弃对「{0}」没保存的修改？', baseName(draft.path)), { ok: t('放弃') }))) return false
-    setDraft(null)
-    setRendered(true)
-    return true
-  }
+  /** Opening another file saves the one being edited first (and stays on it if that failed). */
   const select = async (path: string) => {
-    if (draft && draft.path !== path && !(await dropDraft())) return
+    if (draft && draft.path !== path) {
+      if (!(await editor.stop())) return
+      setRendered(true)
+    }
     setSelected(path)
   }
 
@@ -212,13 +330,13 @@ export function FilesPane({ id }: { id: string }) {
     setNaming({ mode: 'new', parent, dir })
   }
   const edit = async (path: string) => {
-    const f = await api().readLibraryFile(id, path)
-    if (f?.text === undefined || f.readOnly) return
-    // A text box turns \r\n into \n; the file's own line end goes back on when saving.
-    const crlf = (f.text.match(/\r\n/g) ?? []).length
-    const text = f.text.replace(/\r\n/g, '\n')
-    setDraft({ path, text, base: text, eol: crlf > (text.match(/\n/g) ?? []).length / 2 ? '\r\n' : '\n', since: f.updatedAt })
+    await editor.start(path)
     setRendered(false)
+  }
+  const stopEditing = async () => {
+    if (!(await editor.stop())) return false
+    setRendered(true)
+    return true
   }
   /** Returns false to keep the name field open (the name was refused). */
   const commitName = async (value: string): Promise<boolean> => {
@@ -232,7 +350,7 @@ export function FilesPane({ id }: { id: string }) {
         const folders = new Set([...open].map((p) => moved(p, n.path, to)))
         setOpen(folders)
         if (selected) setSelected(moved(selected, n.path, to))
-        setDraft((d) => d && { ...d, path: moved(d.path, n.path, to) })
+        editor.moveTo((p) => moved(p, n.path, to))
         reloadWith(folders)
       } else {
         const path = await api().createLibraryEntry(id, n.parent, value, n.dir)
@@ -242,7 +360,7 @@ export function FilesPane({ id }: { id: string }) {
         if (n.dir) folders.add(path)
         setOpen(folders)
         reloadWith(folders)
-        if (!n.dir && (await dropDraft())) {
+        if (!n.dir && (await editor.stop())) {
           setSelected(path)
           await edit(path)
         }
@@ -262,44 +380,13 @@ export function FilesPane({ id }: { id: string }) {
     } catch (e) {
       return toastError(e)
     }
-    setDraft((d) => (d && under(d.path, path) ? null : d))
+    editor.moveTo((p) => (under(p, path) ? null : p))
     if (selected && under(selected, path)) {
       setSelected(null)
       setFull(false)
     }
     reload()
   }
-  const save = async (close: boolean, force = false): Promise<void> => {
-    if (!draft || saving.current) return
-    const { path, text, eol, since } = draft
-    // Nothing changed: nothing is written.
-    if (text === draft.base && !force) {
-      if (close) {
-        setDraft(null)
-        setRendered(true)
-      }
-      return
-    }
-    saving.current = true
-    try {
-      const r = await api().saveLibraryFile(id, path, eol === '\n' ? text : text.replace(/\n/g, eol), since, force)
-      if (r.conflict) {
-        saving.current = false
-        if (await confirmDialog(t('「{0}」在您编辑时被改过（可能是 agent 改的）。用您的版本覆盖它？', baseName(path)), { ok: t('覆盖') })) return save(close, true)
-        return toast(t('没有保存。想看文件现在的内容，点「取消」退出编辑。'))
-      }
-      // What was typed while saving stays, and stays unsaved.
-      const closing = close && draft.text === text
-      setDraft((d) => (!d || d.path !== path ? d : closing && d.text === text ? null : { ...d, base: text, since: r.updatedAt }))
-      if (closing) setRendered(true)
-      reload()
-    } catch (e) {
-      toastError(e)
-    } finally {
-      saving.current = false
-    }
-  }
-
   const fullPath = (path: string) => (root ? [root.replace(/[\\/]+$/, ''), ...path.split('/')].join(root.includes('\\') ? '\\' : '/') : path)
   const openWith = (path: string, reveal: boolean) => void api().openLibraryPath(id, path, reveal).then((r) => !r.ok && r.error && toast(r.error, 'error'))
   /** One list of actions for a file or folder, shown on right-click, on its … button and in the preview. */
@@ -457,12 +544,14 @@ export function FilesPane({ id }: { id: string }) {
         root={root}
         entry={findEntry(dirs, selected)}
         change={changed.get(selected)}
-        onBack={narrow && !inFull ? () => setSelected(null) : undefined}
+        onBack={narrow && !inFull ? () => void stopEditing().then((ok) => ok && setSelected(null)) : undefined}
         draft={draft?.path === selected ? draft : null}
-        onDraft={(text) => setDraft((d) => d && { ...d, text })}
+        saveState={editor.state}
+        onDraft={editor.change}
         onEdit={() => void edit(selected)}
-        onSave={(close) => void save(close)}
-        onCancelEdit={() => void dropDraft()}
+        onFlush={() => void editor.flush()}
+        onDone={() => void stopEditing()}
+        onResolve={(keepMine) => void editor.resolve(keepMine)}
         rendered={rendered}
         onRendered={setRendered}
         full={inFull}
@@ -666,10 +755,12 @@ function FilePreview({
   change,
   onBack,
   draft,
+  saveState,
   onDraft,
   onEdit,
-  onSave,
-  onCancelEdit,
+  onFlush,
+  onDone,
+  onResolve,
   rendered,
   onRendered,
   full,
@@ -686,10 +777,12 @@ function FilePreview({
   change?: LibraryChange
   onBack?: () => void
   draft: Draft | null
+  saveState: SaveState
   onDraft: (text: string) => void
   onEdit: () => void
-  onSave: (close: boolean) => void
-  onCancelEdit: () => void
+  onFlush: () => void
+  onDone: () => void
+  onResolve: (keepMine: boolean) => void
   rendered: boolean
   onRendered: (r: boolean) => void
   full: boolean
@@ -707,24 +800,24 @@ function FilePreview({
   const name = baseName(path)
   const md = /\.(md|markdown)$/i.test(name)
   const editing = !!draft
-  const dirty = !!draft && draft.text !== draft.base
-  const meta = editing
-    ? [dirty ? t('未保存') : t('正在编辑')]
+  // Saving is quiet: the line under the name says where it stands, like any editor.
+  const meta = editing && saveState !== 'clean'
+    ? [saveState === 'error' ? t('没能保存') : saveState === 'saved' ? t('已保存') : saveState === 'conflict' ? '' : t('正在保存…')]
     : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '', file?.readOnly ? t('不是 UTF-8 编码，只能查看') : '']
   // The rendered draft takes the keys (Ctrl+S, Esc) while it shows.
   const body = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (editing && md && rendered) body.current?.focus({ preventScroll: true })
   }, [editing, md, rendered])
-  /** Ctrl+S saves and Esc leaves, wherever focus is in the file being edited. */
+  /** Ctrl+S saves now and Esc finishes editing (what was typed is kept), wherever focus is in the file being edited. */
   const editKeys = (e: React.KeyboardEvent) => {
     if (!editing || e.defaultPrevented) return
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
       e.preventDefault()
-      onSave(false)
+      onFlush()
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      onCancelEdit()
+      onDone()
     }
   }
   const fullBtn = (
@@ -758,11 +851,8 @@ function FilePreview({
         )}
         {editing ? (
           <>
-            <button className="btn sm" onClick={onCancelEdit}>
-              {t('取消')}
-            </button>
-            <button className="btn sm primary" data-tip={t('保存 (Ctrl+S)')} disabled={!dirty} onClick={() => onSave(true)}>
-              {t('保存')}
+            <button className="pill-btn" data-tip={t('结束编辑 (Esc)')} onClick={onDone}>
+              {t('完成')}
             </button>
             {fullBtn}
           </>
@@ -780,6 +870,18 @@ function FilePreview({
           </>
         )}
       </div>
+      {saveState === 'conflict' && (
+        <div className="preview-conflict" role="alert">
+          <span>{t('这个文件在您编辑时被别处改过。')}</span>
+          <span className="spacer" />
+          <button className="pill-btn" onClick={() => onResolve(false)}>
+            {t('用现在的文件')}
+          </button>
+          <button className="pill-btn" onClick={() => onResolve(true)}>
+            {t('保留我的版本')}
+          </button>
+        </div>
+      )}
       <div className="preview-body" ref={body} tabIndex={editing && md && rendered ? -1 : undefined}>
         {draft ? (
           md && rendered ? (
@@ -794,6 +896,7 @@ function FilePreview({
               autoFocus
               aria-label={t('编辑 {0}', name)}
               onChange={(e) => onDraft(e.target.value)}
+              onBlur={onFlush}
               onKeyDown={(e) => {
                 if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
                   // A tab is text here (also full screen, where Tab would move between buttons); insertText keeps the undo history.

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Minus, Orbit, PanelLeft, Square, X } from 'lucide-react'
+import { CircleAlert, Minus, Orbit, PanelLeft, Square, X } from 'lucide-react'
 import { Dialogs } from './components/Dialogs'
 import { ConfirmHost } from './components/Modal'
 import { TooltipLayer } from './components/Tooltip'
@@ -8,7 +8,7 @@ import { PagePanel } from './components/PagePanel'
 import { ChatSidePane } from './components/SidePane'
 import { usePaneFit } from './components/ResizeHandle'
 import { Sidebar } from './components/Sidebar'
-import { api, toast, useApp } from './store'
+import { api, dismissToast, toast, useApp } from './store'
 import { langSetting, setLanguage, t } from './i18n'
 import { ChatView } from './views/ChatView'
 import { HomeView } from './views/HomeView'
@@ -85,9 +85,13 @@ export function App() {
       <TooltipLayer />
       {firstRun && <Onboarding />}
       <div className="toasts">
-        {toasts.map((t) => (
-          <div key={t.id} className={'toast ' + t.level}>
-            {t.text}
+        {toasts.map((n) => (
+          <div key={n.id} className={'toast ' + n.level} role={n.level === 'error' ? 'alert' : 'status'}>
+            {n.level === 'error' && <CircleAlert className="toast-icon" size={15} />}
+            <span className="toast-text">{n.text}</span>
+            <button className="toast-close" aria-label={t('关闭')} onClick={() => dismissToast(n.id)}>
+              <X size={13} />
+            </button>
           </div>
         ))}
       </div>

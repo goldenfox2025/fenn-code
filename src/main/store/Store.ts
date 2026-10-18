@@ -371,6 +371,19 @@ function writeAtomic(file: string, data: unknown, durable = true): void {
   } finally {
     closeSync(fd)
   }
-  if (existsSync(file)) renameSync(file, `${file}.bak`)
-  renameSync(tmp, file)
+  if (existsSync(file)) renameRetrying(file, `${file}.bak`)
+  renameRetrying(tmp, file)
+}
+
+/** On Windows a virus scanner or the indexer may hold a file for a moment just after it was written: try again briefly. */
+function renameRetrying(from: string, to: string): void {
+  for (let i = 1; ; i++) {
+    try {
+      return renameSync(from, to)
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (i >= 5 || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) throw e
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20 * i)
+    }
+  }
 }

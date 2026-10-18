@@ -21,7 +21,8 @@ import {
 } from "electron";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, watch } from "node:fs";
+import { existsSync, mkdirSync, watch } from "node:fs";
+import { moveAppData } from "./store/migrateFolder";
 import { API_METHODS, type ApiMethod, type CoreApi } from "../shared/ipc";
 
 // Filled in at build time (electron.vite.config.ts).
@@ -64,23 +65,20 @@ function adoptLoginShellPath(): void {
 adoptLoginShellPath();
 
 // The app used to be called openclaude, then Cove, then Ancora: the newest of their data moves to the new
-// folder once. Electron may already have created the new folder, so entries move one by one
-// (never overwriting); if the data can't be moved (e.g. an old copy is still running), the old
-// folder is used where it is.
+// folder once (store/migrateFolder.ts). While an old copy still runs on it, or if it can't be moved,
+// the old folder is used where it is.
 if (!process.env.FENN_DATA_DIR) {
   const current = app.getPath("userData");
   for (const oldName of ["Ancora", "Cove", "openclaude"]) {
     const legacy = join(app.getPath("appData"), oldName);
     if (current.toLowerCase() === legacy.toLowerCase() || !existsSync(join(legacy, "data")) || existsSync(join(current, "data"))) continue;
+    let ok = false;
     try {
-      mkdirSync(current, { recursive: true });
-      for (const name of readdirSync(legacy))
-        if (!existsSync(join(current, name))) renameSync(join(legacy, name), join(current, name));
-      // Everything moved: the empty old folder goes too.
-      if (!readdirSync(legacy).length) rmdirSync(legacy);
+      ok = moveAppData(legacy, current);
     } catch {
-      if (!existsSync(join(current, "data"))) app.setPath("userData", legacy);
+      // Left as it was.
     }
+    if (!ok) app.setPath("userData", legacy);
     break;
   }
 }
