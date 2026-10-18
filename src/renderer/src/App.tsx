@@ -5,6 +5,7 @@ import { ConfirmHost } from './components/Modal'
 import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
 import { PagePanel } from './components/PagePanel'
+import { FileViewPanel } from './components/FileViewPanel'
 import { ChatSidePane } from './components/SidePane'
 import { usePaneFit } from './components/ResizeHandle'
 import { Sidebar } from './components/Sidebar'
@@ -23,6 +24,7 @@ export function App() {
   const sidebarOpen = useApp((s) => s.sidebarOpen)
   usePaneFit(sidebarOpen)
   const page = useApp((s) => s.page)
+  const fileView = useApp((s) => s.fileView)
   const platform = useApp((s) => s.platform)
   const toasts = useApp((s) => s.toasts)
   // Shown until the guide is finished or skipped, so leaving it half-way brings it back next time.
@@ -77,7 +79,7 @@ export function App() {
         </div>
         <div className="workspace">
           <div className="center">{view}</div>
-          {page ? <PagePanel id={page.id} version={page.version} /> : route.view === 'chat' && <ChatSidePane conversationId={route.conversationId} />}
+          {page ? <PagePanel id={page.id} version={page.version} /> : fileView ? <FileViewPanel path={fileView.path} conversationId={fileView.conversationId} /> : route.view === 'chat' && <ChatSidePane conversationId={route.conversationId} />}
         </div>
       </main>
       <Dialogs />

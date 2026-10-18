@@ -24,7 +24,7 @@ import type {
 
 import { existsSync } from 'node:fs'
 import { t } from '../../shared/i18n'
-import { classifyError } from '../../shared/errors'
+import { classifyError, errorText } from '../../shared/errors'
 import { addToPath, latestVersion, npmGlobalBin, runStreaming } from './upgrade'
 
 export interface SettingsStore {
@@ -77,6 +77,8 @@ export class BackendManager {
         upgradeInstallOnly: p.upgrade?.installOnly,
         upgradeCommands: p.upgrade && [p.upgrade.run, ...(p.upgrade.after ? [p.upgrade.after] : [])].map(commandLine),
         upgradeNote: p.upgrade?.after && t(p.upgrade.after.label, ...(p.upgrade.after.labelArgs ?? [])),
+        slowStart: p.slowStart,
+        upgradeSetup: p.upgrade?.setup && t(p.upgrade.setup.label, ...(p.upgrade.setup.labelArgs ?? [])),
         images: this.instances.get(p.id)?.acceptsImages?.()
       }
     })
@@ -346,12 +348,34 @@ export class BackendManager {
     let r: { ok: boolean; output: string }
     try {
       await spec.before?.()
-      onLine(`> ${[spec.run.command, ...(spec.run.args ?? [])].join(' ')}`)
-      r = await runStreaming(spec.run, onLine)
-      if (r.ok && spec.after) {
-        onLine(`> ${t(spec.after.label, ...(spec.after.labelArgs ?? []))}`)
-        const a = await runStreaming(spec.after, onLine)
-        r = { ok: a.ok, output: r.output + a.output }
+      // Already installed, only the app's own setup step to do (see UpgradeSpec.setup).
+      const setupOnly = !!spec.setup && !!spec.installOnly && (await this.account(backendId)).setupPending === true
+      if (setupOnly) r = { ok: true, output: '' }
+      else {
+        onLine(`> ${[spec.run.command, ...(spec.run.args ?? [])].join(' ')}`)
+        r = await runStreaming(spec.run, onLine)
+        if (r.ok && spec.after) {
+          onLine(`> ${t(spec.after.label, ...(spec.after.labelArgs ?? []))}`)
+          const a = await runStreaming(spec.after, onLine)
+          r = { ok: a.ok, output: r.output + a.output }
+        }
+      }
+      if (r.ok && spec.setup) {
+        const label = t(spec.setup.label, ...(spec.setup.labelArgs ?? []))
+        onLine(`> ${label}`)
+        const lines: string[] = []
+        try {
+          await spec.setup.run((line) => {
+            lines.push(line)
+            onLine(line)
+          })
+        } catch (err) {
+          const line = t('没能完成：{0}', errorText(err))
+          lines.push(line)
+          onLine(line)
+          r = { ok: false, output: r.output }
+        }
+        r = { ok: r.ok, output: [r.output, `> ${label}`, ...lines].join('\n') }
       }
     } finally {
       this.upgrading.delete(backendId)

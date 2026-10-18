@@ -1,4 +1,5 @@
 import { useSyncExternalStore, type ComponentType } from 'react'
+import type { MenuItem } from '../components/Menu'
 
 /**
  * A card on the new-conversation page (usage figures, the heatmap, the most used models…).
@@ -20,6 +21,8 @@ export interface Widget {
   /** Where it goes among the built-in set when the user has not arranged them. */
   order: number
   Component: ComponentType
+  /** Its own items for its 「…」 menu, above moving and removing it. */
+  actions?: () => MenuItem[]
 }
 
 const widgets = new Map<string, Widget>()

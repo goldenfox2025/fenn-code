@@ -167,10 +167,10 @@ export function readPreview(root: string, rel: string): { text?: string; size: n
 /** Why a change to the folder was refused. */
 export type LibraryRefusal = 'name' | 'taken' | 'gone' | 'changed' | 'encoding'
 
-/** A name a file can have on every system: no separators or reserved characters or Windows device names, not . or .., no trailing dot or space. */
+/** A name a file can have on every system (and short enough for Windows paths): no separators or reserved characters or Windows device names, not . or .., no trailing dot or space. */
 export function fileName(name: string): string | undefined {
   const n = name.trim()
-  if (!n || n === '.' || n === '..' || /[\\/:*?"<>|\u0000-\u001f]/.test(n) || /[. ]$/.test(n) || /^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(n)) return undefined
+  if (!n || n.length > MAX_NAME || n === '.' || n === '..' || /[\\/:*?"<>|\u0000-\u001f]/.test(n) || /[. ]$/.test(n) || /^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(n)) return undefined
   return n
 }
 

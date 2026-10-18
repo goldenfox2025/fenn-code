@@ -2,7 +2,7 @@
 // Usage: npm run build && xvfb-run -a node scripts/e2e.mjs [screenshotDir]
 // Exits non-zero if any check fails.
 import { _electron as electron } from 'playwright-core'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { declareTestAgent } from './test-agent.mjs'
@@ -532,12 +532,15 @@ await check('the files panel makes, autosaves, renames, shows full screen and de
   await pane.locator('.preview-head .small:has-text("已保存")').waitFor({ timeout: 3000 })
   if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文') throw new Error('not saved to disk')
   if (await pane.locator('.preview-head .btn:has-text("取消"), .preview-head .btn:has-text("保存")').count()) throw new Error('取消/保存 still shown')
-  // Typing and leaving at once still saves.
+  if (await pane.locator('.preview-head .icon-btn[aria-label="编辑"]').count()) throw new Error('an edit button is still shown')
+  // Typing and switching to 预览 at once still saves; 预览 is read only.
   await editor.press('Control+End')
   await page.keyboard.type('。')
-  await pane.locator('.preview-head .pill-btn:has-text("完成")').click()
+  await pane.locator('.preview-head .seg-control button:has-text("预览")').click()
   await pane.locator('.preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
-  if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文。') throw new Error('not saved on 完成')
+  if (await pane.locator('.preview-editor').count()) throw new Error('预览 can be typed in')
+  await page.waitForFunction(() => document.querySelector('.files-pane .preview-head .small')?.textContent?.includes('已保存'), null, { timeout: 3000 })
+  if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文。') throw new Error('not saved on leaving the source')
   // Full screen shows the same file; Esc comes back.
   await pane.locator('.preview-head .icon-btn[aria-label="全屏"]').click()
   await page.locator('.modal.file-full .preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
@@ -575,16 +578,17 @@ await check('autosave keeps a file’s CRLF line ends, an agent’s change is ne
   await pane.locator('.files-head .icon-btn[aria-label="刷新"]').click()
   await pane.locator('.tree-row:has-text("gbk.txt")').click()
   await pane.locator('.preview-head .small:has-text("只能查看")').waitFor({ timeout: 3000 })
-  if (await pane.locator('.preview-head .icon-btn[aria-label="编辑"]').count()) throw new Error('a GBK file can be edited')
+  if (await pane.locator('.preview-editor').count()) throw new Error('a GBK file can be edited')
   await back()
   // A file open in a narrow pane: + → 新建文件 still shows the name field.
   await pane.locator('.files-head .icon-btn[aria-label="新建或添加文件"]').click()
   await page.click('.menu .menu-item:has-text("新建文件")')
   await pane.locator('.tree-input').waitFor({ timeout: 2000 })
   await page.keyboard.press('Escape')
+  // A text file opens ready to type in.
   await pane.locator('.tree-row:has-text("win.txt")').click()
-  await pane.locator('.preview-head .icon-btn[aria-label="编辑"]').click()
   const editor = pane.locator('.preview-editor')
+  await editor.waitFor({ timeout: 3000 })
   await editor.press('Control+End')
   await page.keyboard.type('three')
   await page.keyboard.press('Control+s')
@@ -606,11 +610,20 @@ await check('autosave keeps a file’s CRLF line ends, an agent’s change is ne
   await full.focus()
   await page.keyboard.press('Tab')
   if (!(await full.evaluate((el) => el === document.activeElement && el.value.includes('\t')))) throw new Error('Tab left the editor')
-  // Esc ends editing (the tab is saved), a second Esc leaves full screen; nothing asks.
+  // Esc leaves full screen, nothing asks, and the tab is saved.
   await page.keyboard.press('Escape')
-  await page.locator('.modal.file-full .preview-code').waitFor({ timeout: 3000 })
+  await page.waitForFunction(() => !document.querySelector('.modal.file-full'), null, { timeout: 2000 })
+  for (let i = 0; i < 30 && !readFileSync(join(root, 'win.txt'), 'utf8').includes('\t'); i++) await new Promise((r) => setTimeout(r, 100))
   if (!readFileSync(join(root, 'win.txt'), 'utf8').includes('\t')) throw new Error('the tab was not saved')
-  await page.keyboard.press('Escape')
+  // Moved away while open: a bar keeps what was typed and puts it back on request.
+  await editor.click()
+  await editor.press('Control+End')
+  await page.keyboard.type('moved')
+  renameSync(join(root, 'win.txt'), join(root, 'win-old.txt'))
+  await pane.locator('.preview-conflict:has-text("移走")').waitFor({ timeout: 3000 })
+  await pane.locator('.preview-conflict .pill-btn:has-text("在原位置重新保存")').click()
+  await pane.locator('.preview-conflict').waitFor({ state: 'detached', timeout: 3000 })
+  if (!readFileSync(join(root, 'win.txt'), 'utf8').endsWith('moved')) throw new Error('not saved again where it was')
   await page.waitForSelector('.modal.file-full', { state: 'detached', timeout: 2000 })
   await back()
 })
@@ -985,6 +998,22 @@ await check('the new-chat page shows usage widgets that can be removed and broug
   await rest.locator('.widget-more').click()
   await page.click('.menu .menu-item:has-text("恢复默认小组件")')
   await page.waitForFunction((n) => document.querySelectorAll('.widget').length === n, before, { timeout: 3000 })
+})
+
+await check('an agent puts a card on the home page from a chat; the card says where it came from and can be deleted', async () => {
+  await page.fill('.composer textarea', '#看板 服务器待办')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
+  await page.click('.sidebar .nav-item:has-text("新建")')
+  const card = page.locator('.widget.board-card:has-text("服务器待办")')
+  await card.waitFor({ timeout: 5000 })
+  if ((await card.locator('.board-list li').count()) !== 2) throw new Error('the list is not drawn')
+  if (!(await card.locator('.board-source').count())) throw new Error('no source line')
+  await card.hover()
+  await card.locator('.widget-more').click()
+  await page.click('.menu .menu-item:has-text("删除卡片")')
+  await page.click('.modal.confirm .btn.danger-solid')
+  await card.waitFor({ state: 'detached', timeout: 3000 })
 })
 
 await app.close()

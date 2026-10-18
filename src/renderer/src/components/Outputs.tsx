@@ -1,7 +1,7 @@
 import { ExternalLink, FileText, FolderOpen, Link2 } from 'lucide-react'
 import { routeFor } from '../actions'
 import type { Project, ProjectOutput } from '@shared/model'
-import { api, toast, useApp } from '../store'
+import { api, openFileInApp, toast, useApp } from '../store'
 import { t } from '../i18n'
 
 export function humanSize(n: number): string {
@@ -10,17 +10,17 @@ export function humanSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-type Output = Pick<ProjectOutput, 'kind' | 'title' | 'path' | 'url' | 'size'>
+type Output = Pick<ProjectOutput, 'kind' | 'title' | 'path' | 'url' | 'size'> & { conversationId?: string }
 
 async function openFile(path: string, reveal = false) {
   const r = await api().openOutput(path, reveal)
   if (!r.ok) toast(r.error ?? t('打不开这个文件'), 'error')
 }
 
-/** A file or link the agent handed over, under its reply (like Claude's output cards). */
+/** A file or link the agent handed over, under its reply (like Claude's output cards). A file opens in the app, beside the chat. */
 export function OutputCard({ o }: { o: Output }) {
   const isLink = o.kind === 'link'
-  const open = () => (isLink ? window.open(o.url, '_blank') : o.path && void openFile(o.path))
+  const open = () => (isLink ? window.open(o.url, '_blank') : o.path && openFileInApp(o.path, o.conversationId))
   const where = isLink ? o.url?.replace(/^https?:\/\//, '').split('/')[0] : o.path
   return (
     <div className="output-card">

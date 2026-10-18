@@ -117,6 +117,10 @@ export class Scheduler {
     if (updated.schedule.kind === 'once' && !ranEarly) Object.assign(updated, { enabled: false, nextRunAt: undefined })
     this.store.putRoutine(updated)
     this.core.publish({ type: 'routine', routine: updated })
+    // A card's refresh keeps only its latest run, and says nothing unless it failed.
+    if (r.widgetId && !lastError && fresh.lastRunConversationId && fresh.lastRunConversationId !== conversationId && this.store.conversation(fresh.lastRunConversationId)?.routineId === r.id)
+      await this.core.deleteConversation(fresh.lastRunConversationId).catch(() => undefined)
+    if (r.widgetId && !lastError) return
     this.core.publish({ type: 'toast', level: lastError ? 'error' : 'info', text: lastError ? t('定时任务「{0}」失败：{1}', r.name, lastError) : t('定时任务「{0}」已运行', r.name) })
   }
 }

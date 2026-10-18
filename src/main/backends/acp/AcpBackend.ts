@@ -87,6 +87,10 @@ export interface AcpQuirks {
   warmSession?: boolean
   /** / commands that do nothing over ACP, sent as another command that answers (Grok: /context → /session-info). */
   commandAliases?: Record<string, string>
+  /** Told once the agent's process has answered `initialize` (e.g. to look up the processes it started). */
+  started?(proc: ChildProcess): void
+  /** Stops the agent's process its own way (Antigravity: so it can clean up after itself); resolves once it is done. */
+  stop?(proc: ChildProcess): Promise<void>
 }
 
 export interface CommandOption {
@@ -264,6 +268,7 @@ export class AcpBackend implements AgentBackend {
     this.caps = init.agentCapabilities ?? undefined
     this.auth = (init.authMethods ?? []).map((m) => ({ id: m.id, name: m.name, description: m.description ?? undefined }))
     this.host.log('info', `${this.name} initialized (protocol v${init.protocolVersion})`)
+    this.quirks.started?.(proc)
   }
 
   private clientHandler(): acp.Client {
@@ -685,11 +690,11 @@ export class AcpBackend implements AgentBackend {
     const p = this.proc
     if (p && reason) this.stopReasons.set(p, reason)
     this.proc = undefined
-    if (p) stopAgentProcess(p)
     this.workspaces.closeAll()
     this.conn = undefined
     this.warmed = undefined
     this.starting = undefined
+    if (p) await (this.quirks.stop ? this.quirks.stop(p) : stopAgentProcess(p))
   }
 
   private captureModels(sessionId: string, configOptions: unknown, legacy: unknown): void {

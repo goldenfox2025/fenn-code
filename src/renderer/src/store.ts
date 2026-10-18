@@ -4,7 +4,7 @@ import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/c
 import { backendAvailable } from '@shared/backendAvailability'
 import { errorText, plainError } from '@shared/errors'
 import { routeFor } from './routes'
-import type { AppEvent, AppSettings, Conversation, Message, FennApi, PeerMessage, Project, Routine } from '@shared/model'
+import type { AppEvent, AppSettings, BoardWidget, Conversation, Message, FennApi, PeerMessage, Project, Routine } from '@shared/model'
 
 declare global {
   interface Window {
@@ -32,6 +32,8 @@ interface State {
   projects: Project[]
   conversations: Conversation[]
   routines: Routine[]
+  /** Cards agents put on the home board. */
+  boardWidgets: BoardWidget[]
   /** Messages between threads (see PeerMessage). */
   peerMessages: PeerMessage[]
   /** Bumped when a project's memory changes, so its memory view reloads. */
@@ -52,6 +54,8 @@ interface State {
   search: string
   /** The published page open beside the conversation. */
   page: { id: string; version?: number } | null
+  /** A file opened from a chat (an output card, a link), shown beside it. */
+  fileView: { path: string; conversationId?: string } | null
   /** The files / background pane beside a chat, if open (stays open from chat to chat). */
   sidePane: 'files' | 'background' | null
   /** A message to scroll to and flash once its conversation is shown (from search). */
@@ -82,6 +86,7 @@ export const useApp = create<State>((set, get) => ({
   projects: [],
   conversations: [],
   routines: [],
+  boardWidgets: [],
   peerMessages: [],
   memoryVersion: {},
   settings: { defaultBackendId: '', theme: 'system', userName: '' },
@@ -98,12 +103,13 @@ export const useApp = create<State>((set, get) => ({
   settingsOpen: false,
   search: '',
   page: null,
+  fileView: null,
   sidePane: null,
   focusMessage: null,
 
   async init() {
     const snap = await api().snapshot()
-    set({ ...snap, peerMessages: snap.peerMessages ?? [], ready: true })
+    set({ ...snap, peerMessages: snap.peerMessages ?? [], boardWidgets: snap.boardWidgets ?? [], ready: true })
     api().onEvent((e) => applyEvent(e, set, get))
   },
 
@@ -183,6 +189,10 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
       return set({ peerMessages: upsert(s.peerMessages, e.message) })
     case 'routine-removed':
       return set({ routines: s.routines.filter((r) => r.id !== e.id) })
+    case 'board-widget':
+      return set({ boardWidgets: upsert(s.boardWidgets, e.widget) })
+    case 'board-widget-removed':
+      return set({ boardWidgets: s.boardWidgets.filter((w) => w.id !== e.id) })
     case 'settings':
       return set({ settings: e.settings })
     case 'backends':
@@ -245,6 +255,11 @@ export function toast(text: string, level: 'info' | 'error' = 'info'): void {
 }
 
 /** Shows what went wrong, as the core said it. Fits straight into `.catch(toastError)`. */
+/** Opens a file in the app, beside the chat: editable in a working folder, read only elsewhere. */
+export function openFileInApp(path: string, conversationId?: string): void {
+  useApp.setState({ fileView: { path, conversationId }, page: null })
+}
+
 export function toastError(e: unknown): void {
   toast(plainError(errorText(e)), 'error')
 }

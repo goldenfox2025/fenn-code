@@ -1,10 +1,12 @@
-import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { execFile, type ChildProcess } from 'node:child_process'
+import { existsSync, promises as fs, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { acpPlugin } from '../acp'
 import { findOnPath } from '../install'
-import { tk } from '../../../shared/i18n'
+import { readPyiArchive, topNames, unpackPyi, unpackedEntries } from '../pyiArchive'
+import { stopAgentProcess, whenExited } from '../workspace'
+import { t, tk } from '../../../shared/i18n'
 
 /**
  * Google Antigravity's own ACP server (the ACP registry's `antigravity-acp`). The `agy`
@@ -34,6 +36,90 @@ export function findAgy(config: Record<string, string> = {}, env = process.env):
   return findOnPath(EXE, env) ?? findOnPath('agy_acp_server', env)
 }
 
+/*
+ * On Windows the server is a PyInstaller "onefile" program: each start unpacks some 330 MB of its
+ * own files into the temp folder, and deletes them only when it exits on its own. So 「安装」 unpacks
+ * them once into AGY_UNPACKED, and the server runs from there (the way its own bootloader hands that
+ * folder to the program it starts): no unpacking, nothing left in the temp folder.
+ */
+
+/**
+ * The folder 「安装」 unpacks into. Its name has the form the bootloader gives its temp folder
+ * (_MEI, eight hex digits, six more characters), which the program checks before running from it.
+ */
+export const AGY_UNPACKED = join(AGY_HOME, `_MEI00000000agy${VERSION.replace(/\D/g, '').slice(0, 3).padEnd(3, '0')}`)
+
+interface Stamp {
+  exe: string
+  size: number
+  mtimeMs: number
+  /** That executable can't be unpacked ahead (it keeps unpacking itself). */
+  unsupported?: boolean
+}
+
+/** What 「安装」 recorded about the unpacked folder, when it was made from this very executable (same path, size and time). */
+function stampFor(exe: string, home: string): Stamp | undefined {
+  try {
+    const st = statSync(exe)
+    const s = JSON.parse(readFileSync(`${home}.json`, 'utf8')) as Stamp
+    return s.exe === resolve(exe) && s.size === st.size && s.mtimeMs === st.mtimeMs ? s : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The unpacked folder, when it was made from this executable and is there; otherwise the server unpacks itself. */
+export function unpackedFor(exe: string | undefined, home = AGY_UNPACKED): string | undefined {
+  if (!exe) return undefined
+  const s = stampFor(exe, home)
+  return s && !s.unsupported && existsSync(home) ? home : undefined
+}
+
+/** Installed on Windows, but its files haven't been unpacked ahead for this copy yet. */
+export function needsUnpack(exe: string | undefined, platform = process.platform, home = AGY_UNPACKED): boolean {
+  return platform === 'win32' && !!exe && !stampFor(exe, home)
+}
+
+/** 「安装」's last step: unpacks the server's files once (see AGY_UNPACKED). */
+export async function unpackServer(exe: string, onLine: (line: string) => void, home = AGY_UNPACKED): Promise<void> {
+  const st = statSync(exe)
+  const stamp = (extra: Partial<Stamp> = {}) => writeFileSync(`${home}.json`, JSON.stringify({ exe: resolve(exe), size: st.size, mtimeMs: st.mtimeMs, ...extra }))
+  rmSync(`${home}.json`, { force: true })
+  const a = await readPyiArchive(exe)
+  if (!a || !unpackedEntries(a)) {
+    stamp({ unsupported: true })
+    onLine(t('这个版本的服务不能预先解出，每次启动仍会解压到临时文件夹。'))
+    return
+  }
+  const part = `${home}.part`
+  await fs.rm(part, { recursive: true, force: true })
+  let shown = 0
+  const r = await unpackPyi(exe, a, part, (done, total) => {
+    const tenth = Math.floor((done * 10) / total)
+    if (tenth > shown) onLine(`${(shown = tenth) * 10}%`)
+  })
+  if (existsSync(home)) {
+    const old = `${home}.old`
+    await fs.rm(old, { recursive: true, force: true })
+    await fs.rename(home, old)
+    await fs.rm(old, { recursive: true, force: true })
+  }
+  await fs.rename(part, home)
+  stamp()
+  onLine(t('已解出 {0} 个文件（{1} MB），以后启动不再解压到临时文件夹。', r.files, Math.round(r.bytes / 1048576)))
+}
+
+/** The environment that makes the server run from its unpacked folder (native paths; with others it unpacks again). */
+export function unpackedEnv(exe: string, home: string): Record<string, string> {
+  return { _PYI_ARCHIVE_FILE: resolve(exe), _PYI_APPLICATION_HOME_DIR: resolve(home), _PYI_PARENT_PROCESS_LEVEL: '1' }
+}
+
+const run = (script: string, timeout: number) =>
+  new Promise<string>((done) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout }, (_err, out) => done(String(out ?? '')))
+  })
+const quote = (s: string) => s.replace(/'/g, "''")
+
 /** Executables already checked for leftovers since the app started. */
 const reaped = new Set<string>()
 
@@ -41,14 +127,97 @@ const reaped = new Set<string>()
  * Ends servers a crash or a forced quit left running (their parent is gone). The server doesn't
  * exit when its input closes, so these stay, and keep its files locked against a reinstall.
  * Only copies of this very program whose parent has exited; one another app runs is left alone.
+ * A bootloader left behind has only the server it started ended, so it deletes its temp folder itself.
  */
 export function reapOrphans(exe: string | undefined): Promise<void> {
   if (process.platform !== 'win32' || !exe) return Promise.resolve()
-  const quoted = exe.replace(/'/g, "''")
-  const script = `Get-CimInstance Win32_Process -Filter "Name='${EXE}'" | Where-Object { $_.ExecutablePath -ieq '${quoted}' -and -not (Get-Process -Id $_.ParentProcessId -ErrorAction SilentlyContinue) } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }`
-  return new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 15_000 }, () => resolve())
+  const script = [
+    `$all = @(Get-CimInstance Win32_Process -Filter "Name='${EXE}'" | Where-Object { $_.ExecutablePath -ieq '${quote(exe)}' })`,
+    `$orphans = @($all | Where-Object { -not (Get-Process -Id $_.ParentProcessId -ErrorAction SilentlyContinue) })`,
+    `$waiting = @()`,
+    `foreach ($o in $orphans) { $kids = @($all | Where-Object { $_.ParentProcessId -eq $o.ProcessId }); if ($kids.Count) { foreach ($k in $kids) { taskkill /PID $k.ProcessId /T /F | Out-Null }; $waiting += $o } else { taskkill /PID $o.ProcessId /T /F | Out-Null } }`,
+    `$until = (Get-Date).AddSeconds(12)`,
+    `while ($waiting.Count -and (Get-Date) -lt $until -and @($waiting | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }).Count) { Start-Sleep -Milliseconds 300 }`,
+    `foreach ($o in $waiting) { if (Get-Process -Id $o.ProcessId -ErrorAction SilentlyContinue) { taskkill /PID $o.ProcessId /T /F | Out-Null } }`
+  ].join('; ')
+  return run(script, 25_000).then(() => undefined)
+}
+
+/** How long a temp folder must have sat unchanged before it may be one a crash left (not one being unpacked now). */
+const STALE_MS = 5 * 60_000
+
+/**
+ * Deletes temp folders earlier runs of the server left (a forced stop keeps it from deleting its own).
+ * One is the server's only when everything in it is a name the server unpacks, and at least half of
+ * them are there; one in use (Windows won't rename a folder whose files a running program holds) is
+ * left. Other programs' PyInstaller folders don't match and are never touched. Returns how many went.
+ */
+export async function cleanStaleTemp(exe: string, tmp = tmpdir(), now = Date.now()): Promise<number> {
+  const a = await readPyiArchive(exe).catch(() => undefined)
+  const names = a ? topNames(a) : new Set<string>()
+  if (names.size < 3) return 0
+  let removed = 0
+  for (const d of await fs.readdir(tmp, { withFileTypes: true }).catch(() => [])) {
+    const m = /^_MEI[0-9A-Za-z]+(-fenn-stale)?$/.exec(d.name)
+    if (!m || !d.isDirectory()) continue
+    const dir = join(tmp, d.name)
+    try {
+      const st = await fs.lstat(dir)
+      if (!st.isDirectory() || now - st.mtimeMs < STALE_MS) continue
+      const entries = (await fs.readdir(dir)).map((e) => e.toLowerCase())
+      if (!entries.every((e) => names.has(e))) continue
+      // One this cleanup renamed but couldn't finish deleting: what's left of it may be any part.
+      if (!m[1] && entries.length < Math.max(3, Math.ceil(names.size / 2))) continue
+      let gone = dir
+      if (!m[1]) {
+        gone = `${dir}-fenn-stale`
+        await fs.rename(dir, gone)
+      }
+      await fs.rm(gone, { recursive: true, force: true })
+      removed++
+    } catch {
+      // In use, or partly deleted: left for next time.
+    }
+  }
+  return removed
+}
+
+/** Servers started from their unpacked folder: they are the program itself, with nothing to clean up after. */
+const direct = new WeakSet<ChildProcess>()
+/** For each server that unpacked itself: the process it started (the program; the first is only its bootloader). */
+const programs = new WeakMap<ChildProcess, Promise<number | undefined>>()
+/** The last start ran from the unpacked folder and hasn't answered yet: if it never does, the next start unpacks as before. */
+let unpackedPending = false
+let unpackedFailed = false
+
+/** Finds the program a bootloader started, in the background (PowerShell takes a second or two). */
+function findProgram(proc: ChildProcess): Promise<number | undefined> {
+  const script = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${proc.pid}" | Where-Object { $_.Name -ieq '${EXE}' } | Select-Object -First 1 -ExpandProperty ProcessId`
+  return run(script, 15_000).then((out) => Number(out.trim()) || undefined)
+}
+
+/**
+ * Stops a server. One that unpacked itself to the temp folder has only its program ended, so the
+ * bootloader deletes that folder before it exits (forced after a while). Resolves once it has exited.
+ */
+function stopServer(proc: ChildProcess): Promise<void> {
+  const program = programs.get(proc)
+  if (process.platform !== 'win32' || direct.has(proc) || !program || proc.exitCode !== null) return stopAgentProcess(proc)
+  const done = whenExited(proc, 8000)
+  void Promise.race([program, new Promise<undefined>((r) => setTimeout(r, 2000))]).then((pid) => {
+    if (!pid) return void stopAgentProcess(proc)
+    execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => undefined)
   })
+  return done.then(() => (proc.exitCode === null && proc.signalCode === null ? stopAgentProcess(proc) : undefined))
+}
+
+/** Each app start: ends leftovers, then deletes the temp folders earlier runs left; never in a start's way. */
+function tidy(exe: string): void {
+  if (reaped.has(exe)) return
+  reaped.add(exe)
+  void reapOrphans(exe)
+    .then(() => (process.platform === 'win32' ? cleanStaleTemp(exe) : 0))
+    .catch(() => undefined)
 }
 
 const MISSING = tk('找不到 Antigravity 的 ACP 服务（agy_acp_server）。请在 设置 → Agent 后端 → Antigravity 里点「安装」，或填写它的路径，然后重试。')
@@ -58,6 +227,8 @@ export default acpPlugin({
   name: 'Antigravity',
   description: tk('Google Antigravity（agy）官方 ACP 服务'),
   signIn: true,
+  slowStart: true,
+  sessionLog: 'antigravity',
   settings: [
     {
       key: 'GEMINI_API_KEY',
@@ -73,11 +244,21 @@ export default acpPlugin({
   // Signed in when it has a key, or the Google sign-in it stores after 「登录」.
   accountState: (config) => {
     if (!findAgy(config)) return { installed: false }
-    if (config.GEMINI_API_KEY || process.env.GEMINI_API_KEY) return { installed: true, signedIn: true, detail: 'Gemini API Key' }
-    return existsSync(AGY_TOKEN) ? { installed: true, signedIn: true, detail: tk('Google 账号') } : { installed: true, signedIn: false }
+    const setupPending = needsUnpack(findAgy(config)) || undefined
+    if (config.GEMINI_API_KEY || process.env.GEMINI_API_KEY) return { installed: true, signedIn: true, detail: 'Gemini API Key', setupPending }
+    return existsSync(AGY_TOKEN) ? { installed: true, signedIn: true, detail: tk('Google 账号'), setupPending } : { installed: true, signedIn: false, setupPending }
   },
   quirks: {
     missingHint: MISSING,
+    // A new process signs in again (an OAuth refresh of several seconds) on its first session: warming up does that early.
+    warmSession: true,
+    started: (proc) => {
+      if (unpackedPending) {
+        unpackedPending = false
+        direct.add(proc)
+      } else if (process.platform === 'win32') programs.set(proc, findProgram(proc))
+    },
+    stop: stopServer,
     // It advertises `_meta.antigravity.systemPrompt.append` in its capabilities; rules there outlive its compaction.
     systemPromptMeta: 'antigravity.systemPrompt.append',
     // Each new server process asks for sign-in again: with a key, or the Google sign-in it stored.
@@ -89,22 +270,36 @@ export default acpPlugin({
     ? {
         installOnly: true,
         before: () => reapOrphans(join(AGY_HOME, EXE)),
+        ...(process.platform === 'win32'
+          ? {
+              setup: {
+                label: tk('在 {0} 预先解出服务的程序文件（约 330 MB），以后每次启动不再解压到临时文件夹'),
+                labelArgs: [AGY_UNPACKED],
+                run: async (onLine: (line: string) => void) => {
+                  const exe = findAgy()
+                  if (exe) await unpackServer(exe, onLine)
+                }
+              }
+            }
+          : {}),
         run: { command: 'curl', args: ['-fsSL', '--retry', '2', '--connect-timeout', '30', '--create-dirs', '-o', join(AGY_HOME, 'agy-acp-server.zip'), `https://dl.google.com/agy-extensions/releases/${archive}`] },
         after: { label: tk('解压 Antigravity 服务'), command: 'tar', args: ['-xf', join(AGY_HOME, 'agy-acp-server.zip'), '-C', AGY_HOME] }
       }
     : undefined,
   launch: async ({ config }) => {
-    // Leftovers can only come from an earlier run of the app, so one look per app start is enough.
     const exe = findAgy(config)
-    if (exe && !reaped.has(exe)) {
-      reaped.add(exe)
-      await reapOrphans(exe)
-    }
+    // Leftovers can only come from an earlier run of the app, so one look per app start is enough; it runs alongside.
+    if (exe) tidy(exe)
+    // The last start from the unpacked folder never answered (e.g. refused when run as administrator): unpack as before.
+    if (unpackedPending) unpackedFailed = true
+    const home = process.platform === 'win32' && !unpackedFailed ? unpackedFor(exe) : undefined
+    unpackedPending = !!home
     return {
-      command: findAgy(config) ?? EXE,
+      command: exe ?? EXE,
       // The registry's Linux entry passes an empty --uid.
       args: process.platform === 'linux' ? ['--uid='] : [],
       env: {
+        ...(exe && home ? unpackedEnv(exe, home) : {}),
         GEMINI_API_KEY: config.GEMINI_API_KEY || undefined,
         // A new session always opens on the default model: make that the chosen one (saves a model switch).
         AGY_ACP_DEFAULT_MODEL: config.model || undefined

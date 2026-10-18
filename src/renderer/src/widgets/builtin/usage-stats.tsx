@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { formatTokens } from '@shared/usage'
 import { t } from '../../i18n'
 import type { Widget } from '../registry'
-import { WidgetCard } from '../WidgetCard'
+import { WidgetCard, WidgetStat as Stat } from '../WidgetCard'
 import { dayKey, today as midnight, useUsageSummary } from '../usage'
 
 const YEAR = 365
@@ -36,15 +36,6 @@ function UsageStats() {
       <Stat value={String(figures.active)} label={t('有用量的天数')} />
       <Stat value={t('{0} 天', figures.streak)} label={t('最长连续')} />
     </WidgetCard>
-  )
-}
-
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="usage-stat">
-      <div className="usage-stat-value">{value}</div>
-      <div className="usage-stat-label">{label}</div>
-    </div>
   )
 }
 

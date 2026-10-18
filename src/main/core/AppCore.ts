@@ -4,16 +4,17 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
-import type { AppEvent, AppSettings, AppSnapshot, Attachment, Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
+import { boardWidgetKey, type AppEvent, type AppSettings, type AppSnapshot, type Attachment, type BoardWidget, type Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
 import { removeTurn } from '../../shared/usage'
 import { UsageCalendar } from './UsageCalendar'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import type { ToolServer } from '../tools/ToolServer'
-import type { BackendPlugin, BackendSummary, HostToolServer } from '../../shared/contract'
+import type { AccountStatus, BackendPlugin, BackendSummary, HostToolServer } from '../../shared/contract'
+import { prestartOn } from '../../shared/backendAvailability'
 import { ProjectFiles } from './ProjectFiles'
 import { addFile, changedFiles, createEntry, inside, listFolder, readPreview, removablePath, renameEntry, writeText, type LibraryRefusal } from './Library'
 import { Artifacts } from './Artifacts'
@@ -29,6 +30,7 @@ import { Scheduler } from './Scheduler'
 import { BACKENDS_EXAMPLE, PREFERRED_BACKENDS } from '../backends/registry'
 import { titleFrom } from './titles'
 import { routineTools } from './tools/routineTools'
+import { boardTools } from './tools/boardTools'
 import { applyPatch, removeItem } from './progress'
 import { FolderFinder, foldersInText, matchingFolders, rankFolders } from './folders'
 import { getLang, localeTag, t } from '../../shared/i18n'
@@ -87,6 +89,18 @@ export class AppCore {
     this.orchestrator.pickBackend = (preferred) => this.resolveBackend(preferred)
     this.orchestrator.extraTools = (conv) => [
       ...routineTools({ store, isUnattended: (id) => this.chat.isUnattended(id), notice: (id, text, key) => this.chat.notice(id, 'info', text, key), save: (r) => this.saveRoutine(r), remove: (id) => this.deleteRoutine(id) }, conv),
+      ...boardTools(
+        {
+          store,
+          isUnattended: (id) => this.chat.isUnattended(id),
+          notice: (id, text, key) => this.chat.notice(id, 'info', text, key),
+          put: (w) => this.putBoardWidget(w),
+          remove: (id) => this.deleteBoardWidget(id),
+          saveRoutine: (r) => this.saveRoutine(r),
+          deleteRoutine: (id) => this.deleteRoutine(id)
+        },
+        conv
+      ),
       ...(this.computer?.tools(conv) ?? [])
     ]
     // What the app keeps per conversation goes with it.
@@ -268,6 +282,7 @@ export class AppCore {
       projects: this.store.projects,
       conversations: this.store.conversations,
       routines: this.store.routines,
+      boardWidgets: this.store.boardWidgets,
       settings: this.store.settings,
       backends: this.backends.list(),
       platform: this.platform,
@@ -626,6 +641,24 @@ export class AppCore {
   async warmBackend(backendId: string): Promise<void> {
     if (!this.backends.has(backendId) || this.backends.list().find((b) => b.id === backendId)?.installed === false) return
     await this.backends.warm(backendId)
+  }
+
+  /**
+   * Starts the agents the user wants ready when the app opens (see prestartOn): installed and
+   * signed in ones only, and no prompt is sent. The rest start once a chat with them is opened.
+   */
+  async prestartBackends(): Promise<void> {
+    const settings = this.store.settings
+    await Promise.all(
+      this.backends
+        .list()
+        .filter((b) => b.slowStart && b.installed !== false && prestartOn(settings, b.id))
+        .map(async (b) => {
+          const account = await this.backends.account(b.id).catch(() => ({}) as AccountStatus)
+          if (account.installed === false || account.signedIn === false) return
+          await this.backends.warm(b.id).catch(() => undefined)
+        })
+    )
   }
 
   async prepareConversation(conversationId: string): Promise<void> {
@@ -1038,8 +1071,34 @@ export class AppCore {
   }
 
   async deleteRoutine(id: string): Promise<void> {
+    const r = this.store.routines.find((x) => x.id === id)
     this.store.removeRoutine(id)
     this.publish({ type: 'routine-removed', id })
+    // A card it refreshed keeps its last data.
+    const w = r?.widgetId && this.store.boardWidgets.find((x) => x.id === r.widgetId)
+    if (w && w.routineId === id) this.putBoardWidget({ ...w, routineId: undefined })
+  }
+
+  // ---- home board ---------------------------------------------------------
+
+  /** Adds or replaces a card; a new one also goes on the board when the user has arranged it. */
+  putBoardWidget(w: BoardWidget): void {
+    const isNew = !this.store.boardWidgets.some((x) => x.id === w.id)
+    this.store.putBoardWidget(w)
+    this.publish({ type: 'board-widget', widget: w })
+    const layout = this.store.settings.homeWidgets
+    if (isNew && layout && !layout.includes(boardWidgetKey(w.id))) this.publish({ type: 'settings', settings: this.store.patchSettings({ homeWidgets: [...layout, boardWidgetKey(w.id)] }) })
+  }
+
+  /** Deletes a card, and the routine that refreshed it. */
+  async deleteBoardWidget(id: string): Promise<void> {
+    const w = this.store.boardWidgets.find((x) => x.id === id)
+    if (!w) return
+    this.store.removeBoardWidget(id)
+    this.publish({ type: 'board-widget-removed', id })
+    if (w.routineId) await this.deleteRoutine(w.routineId)
+    const layout = this.store.settings.homeWidgets
+    if (layout?.includes(boardWidgetKey(id))) this.publish({ type: 'settings', settings: this.store.patchSettings({ homeWidgets: layout.filter((x) => x !== boardWidgetKey(id)) }) })
   }
 
   // ---- project memory -----------------------------------------------------
@@ -1098,6 +1157,29 @@ export class AppCore {
   async readLibraryFile(id: string, rel: string) {
     const { root } = this.libraryOf(id)
     return root ? this.fileOp(rel.split('/').pop() ?? rel, () => readPreview(root, rel), (n) => t('没能读取「{0}」。', n)) : undefined
+  }
+
+  /**
+   * Where a file shown in a chat lives: in a chat's or project's folder (opened there, editable),
+   * or elsewhere (shown read only). `near`: the conversation it was shown in, looked at first.
+   */
+  async locateFile(path: string, near?: string): Promise<{ libraryId?: string; rel?: string }> {
+    const conv = near ? this.store.conversation(near) : undefined
+    const ids = [...(conv ? [conv.id, ...(conv.projectId ? [conv.projectId] : [])] : []), ...this.store.projects.map((p) => p.id), ...this.store.conversations.map((c) => c.id)]
+    for (const id of ids) {
+      const { root } = this.libraryOf(id)
+      if (!root) continue
+      const rel = relative(resolve(root), resolve(path))
+      if (rel && !rel.startsWith('..') && !isAbsolute(rel) && inside(root, rel)) return { libraryId: id, rel: rel.split(sep).join('/') }
+    }
+    return {}
+  }
+
+  /** A file outside every working folder, to look at in the app: always read only. */
+  async readLocalFile(path: string) {
+    if (!isAbsolute(path)) return undefined
+    const r = this.fileOp(basename(path), () => readPreview(dirname(path), basename(path)), (n) => t('没能读取「{0}」。', n))
+    return r && { ...r, readOnly: r.text !== undefined ? true : r.readOnly }
   }
 
   async openLibraryPath(id: string, rel: string, reveal = false) {
@@ -1163,10 +1245,20 @@ export class AppCore {
     return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
   }
 
-  async saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean) {
+  async saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean, recreate?: boolean) {
     const name = rel.split('/').pop() ?? rel
-    const r = this.fileOp(name, () => writeText(this.libraryRoot(id), rel, text, since, force), (n) => t('没能保存「{0}」。', n))
-    if ('refused' in r) return r.refused === 'changed' ? { conflict: true } : this.refused(r.refused, name)
+    const root = this.libraryRoot(id)
+    const save = () => this.fileOp(name, () => writeText(root, rel, text, since, force), (n) => t('没能保存「{0}」。', n))
+    let r = save()
+    if ('refused' in r && r.refused === 'gone' && recreate) {
+      // Made again where it was (its folder too, if that went); never over something now in its place.
+      const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
+      const made = this.fileOp(name, () => createEntry(root, parent, name, false), (n) => t('没能保存「{0}」。', n))
+      if ('refused' in made) return this.refused(made.refused, name)
+      force = true
+      r = save()
+    }
+    if ('refused' in r) return r.refused === 'changed' ? { conflict: true } : r.refused === 'gone' ? { gone: true } : this.refused(r.refused, name)
     return { updatedAt: r.updatedAt }
   }
 

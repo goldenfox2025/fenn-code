@@ -7,13 +7,14 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, re
 import { join } from 'node:path'
 import { t } from '../../shared/i18n'
 import { remapMovedPaths, type MovedFolder } from './movedFolders'
-import { normalizeTheme, type AppSettings, type Connector, type Conversation, type Message, type PeerMessage, type Project, type Routine } from '../../shared/model'
+import { normalizeTheme, type AppSettings, type Connector, type Conversation, type Message, type PeerMessage, type Project, type Routine, type BoardWidget } from '../../shared/model'
 
 interface StateFile {
   version: 1
   projects: Project[]
   conversations: Conversation[]
   routines: Routine[]
+  boardWidgets?: BoardWidget[]
   connectors?: Connector[]
   peerMessages?: PeerMessage[]
   settings: AppSettings
@@ -56,6 +57,7 @@ export class Store {
       projects: loaded?.projects ?? [],
       conversations: loaded?.conversations ?? [],
       routines: loaded?.routines ?? [],
+      boardWidgets: loaded?.boardWidgets ?? [],
       connectors: loaded?.connectors ?? [],
       peerMessages: loaded?.peerMessages ?? [],
       settings: normalizeTheme({ ...DEFAULT_SETTINGS, ...loaded?.settings }),
@@ -282,6 +284,19 @@ export class Store {
   }
   removeRoutine(id: string): void {
     this.state.routines = this.state.routines.filter((r) => r.id !== id)
+    this.touch()
+  }
+
+  // ---- home board ---------------------------------------------------------
+  get boardWidgets(): BoardWidget[] {
+    return (this.state.boardWidgets ??= [])
+  }
+  putBoardWidget(w: BoardWidget): void {
+    upsert(this.boardWidgets, w)
+    this.touch()
+  }
+  removeBoardWidget(id: string): void {
+    this.state.boardWidgets = this.boardWidgets.filter((w) => w.id !== id)
     this.touch()
   }
 

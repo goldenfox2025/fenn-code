@@ -190,6 +190,11 @@ const handlers = {
       const m = raw.match(/#难点\s*([^\n<]*)/);
       await callTool(sessionId, s, "set_blocker", { text: (m?.[1] ?? "").trim() });
     }
+    // "#看板 标题" puts a card on the home board through the app's tool.
+    if (raw.includes("#看板") && s.mcp) {
+      const m = raw.match(/#看板\s*([^\n<]*)/);
+      await callTool(sessionId, s, "home_board", { action: "put", title: (m?.[1] ?? "").trim() || "看板", kind: "list", data: { items: [{ text: "重启 db", tone: "warn" }, { text: "换证书", done: true }] } });
+    }
     // "#进度 里程碑 / 任务" records work on the project board through the app's tool.
     if (raw.includes("#进度") && s.mcp) {
       const m = [...raw.matchAll(/#进度\s*([^\n<]*)/g)].pop();

@@ -8,7 +8,7 @@ import { api, refreshAccount, toast, useApp, useUsableBackends, toastError } fro
 import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
 import type { BackendSummary } from '@shared/contract'
-import { backendAvailable } from '@shared/backendAvailability'
+import { backendAvailable, prestartOn } from '@shared/backendAvailability'
 
 export function Dialogs() {
   const open = useApp((s) => s.settingsOpen)
@@ -596,6 +596,7 @@ function BackendSettings() {
                 {t('设为默认')}</button>
             ) : null}
           </div>
+          {b.slowStart && installed && <PrestartSwitch backendId={b.id} name={b.name} />}
           {b.settings.map((s) => (
             <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />
           ))}
@@ -637,6 +638,29 @@ function BackendSettings() {
       </div>
       </details>
     </>
+  )
+}
+
+/** 「打开 Fenn Code 时预先启动」: the agent starts with the app, so the first message doesn't wait for it. */
+function PrestartSwitch({ backendId, name }: { backendId: string; name: string }) {
+  const settings = useApp((s) => s.settings)
+  const on = prestartOn(settings, backendId)
+  return (
+    <div className="field">
+      <div className="row-between">
+        <div>
+          <label>{t('打开 Fenn Code 时预先启动')}</label>
+          <div className="help">{t('只启动 {0} 并连上，不发消息，不用额度。第一条消息就不用等它启动。', name)}</div>
+        </div>
+        <button
+          className={'switch' + (on ? ' on' : '')}
+          role="switch"
+          aria-checked={on}
+          aria-label={t('打开 Fenn Code 时预先启动')}
+          onClick={() => api().updateSettings({ prestartBackends: { ...settings.prestartBackends, [backendId]: !on } })}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -741,19 +765,28 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
     return () => window.removeEventListener('oc-upgrade-line', on)
   }, [backendId])
 
+  // Installed, with only the app's own step after installing still to do (Antigravity: unpacking its files ahead).
+  const setupOnly = state?.installed !== false && !!state?.setupPending && !!summary?.upgradeSetup
   const run = async () => {
     const installing = state?.installed === false
     // Never install on a single click: say exactly what will run, with 取消 focused.
-    const ok = await confirmDialog(
-      [
-        installing ? t('将在您的电脑上安装 {0}，会运行下面的命令：', name) : t('将把 {0} 升级到最新版，会运行下面的命令：', name),
-        summary?.upgradeNote ? t('然后：{0}。', summary.upgradeNote) : '',
-        busy ? t('升级前会先停止 {0}，正在进行的回复会中断。', name) : ''
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-      { title: installing ? t('安装 {0}？', name) : t('升级 {0}？', name), ok: installing ? t('安装') : t('升级'), danger: false, code: commands.join('\n') }
-    )
+    const ok = setupOnly
+      ? await confirmDialog([t('将{0}。', summary!.upgradeSetup!), busy ? t('开始前会先停止 {0}，正在进行的回复会中断。', name) : ''].filter(Boolean).join('\n\n'), {
+          title: t('准备 {0}？', name),
+          ok: t('开始'),
+          danger: false
+        })
+      : await confirmDialog(
+          [
+            installing ? t('将在您的电脑上安装 {0}，会运行下面的命令：', name) : t('将把 {0} 升级到最新版，会运行下面的命令：', name),
+            summary?.upgradeNote ? t('然后：{0}。', summary.upgradeNote) : '',
+            summary?.upgradeSetup ? t('最后：{0}。', summary.upgradeSetup) : '',
+            busy ? t('升级前会先停止 {0}，正在进行的回复会中断。', name) : ''
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+          { title: installing ? t('安装 {0}？', name) : t('升级 {0}？', name), ok: installing ? t('安装') : t('升级'), danger: false, code: commands.join('\n') }
+        )
     if (!ok) return
     setLog([])
     setFailed(null)
@@ -763,7 +796,9 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
       useApp.setState((s) => ({ accounts: { ...s.accounts, [backendId]: { ...r.account, at: Date.now() } } }))
       if (r.ok) {
         toast(
-          installing
+          setupOnly
+            ? t('{0} 已准备好，以后启动更快', name)
+            : installing
             ? t('{0} 已安装', name)
             : r.account.version
               ? t('{0} 已升级到 {1}', name, r.account.version)
@@ -787,7 +822,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
 
   const missing = state?.installed === false
   // A pinned install (Antigravity's server) has nothing to check for once it is there.
-  if (summary?.upgradeInstallOnly && !missing && !failed && !running) upgrade = false
+  if (summary?.upgradeInstallOnly && !missing && !failed && !running && !setupOnly) upgrade = false
   const newer = !!latest && !!state?.version && newerVersion(latest, state.version)
   const show = state && (state.signedIn !== undefined || state.detail || missing)
   const output = (log ?? []).join('\n')
@@ -803,7 +838,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
             )
           )}
           {state?.detail && <span className="muted account-detail" data-tip={state.detail}>{state.detail}</span>}
-          {upgrade && !missing && latest === undefined && (
+          {upgrade && !missing && !setupOnly && latest === undefined && (
             <button className="text-link" disabled={checking} onClick={() => void checkLatest()}>
               {checking ? <span className="shimmer">{t('正在检查…')}</span> : t('检查更新')}
             </button>
@@ -812,9 +847,17 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
             <span className="muted">{newer ? t('有新版本 {0}', latest) : state?.version ? t('已是最新') : t('最新版本 {0}', latest)}</span>
           )}
           {upgrade && latest === null && !missing && <span className="muted">{t('查不到最新版本')}</span>}
-          {upgrade && (missing || failed || (latest !== undefined && (newer || !latest || !state?.version))) && (
+          {upgrade && (missing || failed || setupOnly || (latest !== undefined && (newer || !latest || !state?.version))) && (
             <button className="text-link" disabled={!!running} onClick={() => void run()}>
-              {running ? <span className="shimmer">{running === 'install' ? t('正在安装…') : t('正在升级…')}</span> : missing ? t('安装') : t('升级')}
+              {running ? (
+                <span className="shimmer">{setupOnly ? t('正在准备…') : running === 'install' ? t('正在安装…') : t('正在升级…')}</span>
+              ) : missing ? (
+                t('安装')
+              ) : setupOnly ? (
+                t('加快启动')
+              ) : (
+                t('升级')
+              )}
             </button>
           )}
         </div>

@@ -993,7 +993,7 @@ const PEER_FIELDS = {
 /** How ordinary chats keep the user posted on longer work. */
 /** Cards, status and the working mark already acknowledge a message; text is for results. */
 /** Tools a thread doesn't get: they run the project, which is the coordinator's job. */
-const THREAD_LEAVES = new Set(['react', 'set_title', 'memory_list', 'memory_delete', 'progress_read', 'progress_update', 'create_routine', 'list_routines', 'delete_routine'])
+const THREAD_LEAVES = new Set(['react', 'set_title', 'memory_list', 'memory_delete', 'progress_read', 'progress_update', 'create_routine', 'list_routines', 'delete_routine', 'home_board'])
 
 const QUIET =
   '不要写“收到”“好的，我先……”这类回执，也不要在调用工具前预告要做什么：界面会自动显示你在工作。每条用户消息只回一次，开头就是结果或需要用户做的事。'

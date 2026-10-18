@@ -354,6 +354,35 @@ export interface Routine {
   lastRunConversationId?: string
   lastError?: string
   nextRunAt?: number
+  /** Refreshes this card on the home board: each run replaces its data, and only the latest run's chat is kept. */
+  widgetId?: string
+}
+
+/** How a card on the home board shows its data. Fenn Code draws every kind but 'html' itself, in the app's look. */
+export type BoardWidgetBody =
+  | { kind: 'stat'; items: { label: string; value: string; note?: string; tone?: BoardTone }[] }
+  | { kind: 'list'; items: { text: string; done?: boolean; note?: string; tone?: BoardTone }[] }
+  | { kind: 'table'; columns: string[]; rows: string[][] }
+  | { kind: 'chart'; style: 'bar' | 'line'; labels: string[]; series: { name: string; values: number[] }[]; unit?: string }
+  | { kind: 'markdown'; text: string }
+  /** A page of its own, in a sandboxed frame: no access to the app or the computer. */
+  | { kind: 'html'; html: string; height?: number }
+export type BoardTone = 'good' | 'warn' | 'bad'
+/** A card's place in the home layout (settings.homeWidgets), beside the built-in widgets' ids. */
+export const boardWidgetKey = (id: string) => `board:${id}`
+
+/** A card on the home board that an agent made (in any chat or project), or a plugin. */
+export interface BoardWidget {
+  id: string
+  title: string
+  size: 'wide' | 'half'
+  body: BoardWidgetBody
+  /** The conversation whose agent made it. */
+  createdBy?: string
+  /** The routine that refreshes it. */
+  routineId?: string
+  createdAt: number
+  updatedAt: number
 }
 
 export interface MemoryEntry {
@@ -430,6 +459,8 @@ export interface AppSettings {
    * so a new chat can show and pick a model before its first message.
    */
   backendModels?: Record<string, BackendModelCatalog>
+  /** Backends started when Fenn Code opens, before any chat needs them (no prompt is sent). Unset: the default backend only. */
+  prestartBackends?: Record<string, boolean>
   /** The model the user last chose for each backend, independent of its advertised default. */
   backendModelDefaults?: Record<string, string>
   /** User-pinned agents retain their explicit order in the searchable picker. */
@@ -475,6 +506,7 @@ export interface AppSnapshot {
   projects: Project[]
   conversations: Conversation[]
   routines: Routine[]
+  boardWidgets?: BoardWidget[]
   settings: AppSettings
   backends: BackendSummary[]
   platform: string
@@ -491,6 +523,8 @@ export type AppEvent =
   | { type: 'message-removed'; conversationId: string; id: string }
   | { type: 'routine'; routine: Routine }
   | { type: 'routine-removed'; id: string }
+  | { type: 'board-widget'; widget: BoardWidget }
+  | { type: 'board-widget-removed'; id: string }
   /** A project's memory was written or an entry removed. */
   | { type: 'memory-changed'; projectId: string }
   | { type: 'peer-message'; message: PeerMessage }
@@ -602,6 +636,12 @@ export interface FennApi {
 
   saveRoutine(r: Omit<Routine, 'id' | 'createdAt'> & { id?: string }): Promise<Routine>
   deleteRoutine(id: string): Promise<void>
+  /** Deletes a card from the home board, and the routine that refreshed it. */
+  deleteBoardWidget(id: string): Promise<void>
+  /** Where a file shown in a chat lives: a chat's or project's folder (and its path there), or nowhere the app manages. */
+  locateFile(path: string, near?: string): Promise<{ libraryId?: string; rel?: string }>
+  /** A file outside the working folders, read only. */
+  readLocalFile(path: string): Promise<Awaited<ReturnType<FennApi['readLibraryFile']>>>
   runRoutineNow(id: string): Promise<void>
 
   listMemory(projectId: string): Promise<MemoryEntry[]>
@@ -660,7 +700,8 @@ export interface FennApi {
   /** Makes an empty file (or folder) named `name` in folder `rel` of it; returns its path. */
   createLibraryEntry(id: string, rel: string, name: string, dir: boolean): Promise<string>
   /** Saves an edited text file. `since`: its updatedAt when editing began; if it changed after that, nothing is written (conflict) unless `force`. */
-  saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean): Promise<{ updatedAt?: number; conflict?: boolean }>
+  /** `conflict`: changed on disk since `since` (nothing written unless `force`). `gone`: moved, renamed or deleted meanwhile (nothing written unless `recreate`, which makes it again where it was). */
+  saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean, recreate?: boolean): Promise<{ updatedAt?: number; conflict?: boolean; gone?: boolean }>
   /** Moves a file or folder of it to the Recycle Bin (Trash). */
   deleteLibraryPath(id: string, rel: string): Promise<void>
   /** data is base64. */

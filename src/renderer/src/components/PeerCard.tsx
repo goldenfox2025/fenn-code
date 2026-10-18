@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { routeFor } from '../routes'
 import { ChevronRight, CornerDownRight, CornerUpRight, FileText, Link2, PanelRight } from 'lucide-react'
 import type { PeerMessage, PeerOutput } from '@shared/model'
-import { api, toast, useApp } from '../store'
+import { api, openFileInApp, useApp } from '../store'
 import { t } from '../i18n'
 import { tk } from '@shared/i18n'
 
@@ -23,12 +23,9 @@ function stateLabel(m: PeerMessage): string {
 function OutputChip({ o }: { o: PeerOutput }) {
   const set = useApp((s) => s.set)
   const open = async () => {
-    if (o.kind === 'page' && o.pageId) return set({ page: { id: o.pageId } })
+    if (o.kind === 'page' && o.pageId) return set({ page: { id: o.pageId }, fileView: null })
     if (o.kind === 'link' && o.url) return void window.open(o.url, '_blank')
-    if (o.path) {
-      const r = await api().openOutput(o.path, false)
-      if (!r.ok) toast(r.error ?? t('打不开这个文件'), 'error')
-    }
+    if (o.path) openFileInApp(o.path)
   }
   const Icon = o.kind === 'page' ? PanelRight : o.kind === 'link' ? Link2 : FileText
   return (

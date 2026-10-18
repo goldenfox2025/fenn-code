@@ -33,7 +33,7 @@ import {
 } from 'lucide-react'
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
 import { planHeadline } from './PlanLine'
-import { api, refreshAccount, toast, useApp } from '../store'
+import { api, openFileInApp, refreshAccount, toast, useApp } from '../store'
 import { dayLabel, textOf } from '../util'
 import { markdownParts } from '../markdownParts'
 import { useMenu } from './Menu'
@@ -353,7 +353,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           case 'artifact':
             return <PageCard key={i} id={g.artifactId} title={g.title} version={g.version} />
           case 'output':
-            return <OutputCard key={i} o={g} />
+            return <OutputCard key={i} o={{ ...g, conversationId: m.conversationId }} />
           case 'decision':
             return <DecisionCard key={i} m={m} index={m.blocks.indexOf(g)} d={g} />
           case 'peer-message':
@@ -426,12 +426,40 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
 /** The emoji a reply can be answered with, in one row. */
 const REACTIONS = ['👍', '❤️', '🎉', '👀', '🙏', '😄']
 
+/** The path a link points to when it is a file on this computer (file://, C:\\…, /…), else undefined. */
+function localFile(href?: string): string | undefined {
+  if (!href) return undefined
+  if (/^file:/i.test(href)) {
+    try {
+      const p = decodeURIComponent(new URL(href).pathname)
+      return /^\/[a-zA-Z]:\//.test(p) ? p.slice(1).replace(/\//g, '\\') : p
+    } catch {
+      return undefined
+    }
+  }
+  return /^([a-zA-Z]:[\\/]|\/(?!\/))/.test(href) ? decodeURIComponent(href) : undefined
+}
+
 const MD_COMPONENTS = {
-  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-    <a href={href} target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+    const file = localFile(href)
+    // A file on this computer opens in the app, beside the chat; a web link in the browser.
+    return file ? (
+      <a
+        href={href}
+        onClick={(e) => {
+          e.preventDefault()
+          openFileInApp(file)
+        }}
+      >
+        {children}
+      </a>
+    ) : (
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    )
+  },
   pre: ({ children }: { children?: React.ReactNode }) => <CodeBlock>{children}</CodeBlock>
 }
 
@@ -503,7 +531,7 @@ function StatusIcon({ status }: { status: ToolBlock['status'] }) {
 function PageCard({ id, title, version }: { id: string; title: string; version: number }) {
   const open = useApp((s) => s.page?.id === id && (s.page.version ?? version) === version)
   return (
-    <button className={'page-card' + (open ? ' open' : '')} onClick={() => useApp.getState().set({ page: { id, version } })}>
+    <button className={'page-card' + (open ? ' open' : '')} onClick={() => useApp.getState().set({ page: { id, version }, fileView: null })}>
       <span className="page-card-icon">
         <AppWindow size={18} />
       </span>

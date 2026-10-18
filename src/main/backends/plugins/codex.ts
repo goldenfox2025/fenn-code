@@ -70,6 +70,7 @@ export function codexLaunch(config: Record<string, string>): { command: string; 
 export default acpPlugin({
   id: 'codex',
   sessionLog: 'codex',
+  slowStart: true,
   name: 'Codex',
   description: tk('OpenAI 的 Codex 命令行，经 ACP 适配器接入'),
   settings: [

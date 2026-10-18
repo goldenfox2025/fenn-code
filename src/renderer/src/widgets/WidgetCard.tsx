@@ -32,3 +32,17 @@ export function WidgetCard({ title, className, children }: { title?: ReactNode; 
     </section>
   )
 }
+
+/** A figure and what it counts, the way every widget shows one. */
+export function WidgetStat({ value, label, note, before }: { value: string; label: string; note?: string; before?: ReactNode }) {
+  return (
+    <div className="widget-stat">
+      <div className="widget-stat-value">{value}</div>
+      <div className="widget-stat-label">
+        {before}
+        {label}
+      </div>
+      {note && <div className="widget-stat-note">{note}</div>}
+    </div>
+  )
+}

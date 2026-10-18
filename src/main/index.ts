@@ -29,7 +29,7 @@ import { API_METHODS, type ApiMethod, type CoreApi } from "../shared/ipc";
 declare const __OC_COMMIT__: string;
 declare const __OC_BUILT_AT__: string;
 declare const __OC_UPDATE_FEED__: string;
-import type { AppEvent, AppSettings } from "../shared/model";
+import type { AppEvent, AppSettings, BoardWidgetBody } from "../shared/model";
 import { BackendManager } from "./backends/BackendManager";
 import { builtinPlugins, loadPlugins } from "./backends/registry";
 import { openTerminal } from "./backends/terminal";
@@ -520,8 +520,14 @@ function createWindow(): void {
       quitting ||
       store.settings.runInBackground === false ||
       process.platform === "darwin"
-    )
+    ) {
+      // Text typed in a file a moment ago is saved before the window goes.
+      if (!editsFlushed && win && !quitting) {
+        e.preventDefault();
+        void flushEdits().then(() => win?.close());
+      }
       return;
+    }
     e.preventDefault();
     win?.hide();
     ensureTray();
@@ -532,8 +538,9 @@ function createWindow(): void {
 let quitting = false;
 let tray: Tray | null = null;
 
+/** On Windows the .ico, whose 16–256 px sizes are drawn for each size (a scaled-down PNG blurs in the taskbar). */
 function appIcon() {
-  return nativeImage.createFromPath(join(resourcesDir, "icon.png"));
+  return nativeImage.createFromPath(join(resourcesDir, process.platform === "win32" ? "icon.ico" : "icon.png"));
 }
 
 function showWindow(): void {
@@ -548,7 +555,7 @@ function showWindow(): void {
 function ensureTray(): void {
   if (tray) return;
   tray = new Tray(
-    appIcon().resize({ width: process.platform === "win32" ? 16 : 22 }),
+    process.platform === "win32" ? appIcon() : appIcon().resize({ width: 22 }),
   );
   tray.setToolTip("Fenn Code");
   tray.setContextMenu(
@@ -565,6 +572,12 @@ function ensureTray(): void {
 // into a sandboxed iframe: scripts run, but can't reach the app or the network
 // beyond loading assets.
 protocol.registerSchemesAsPrivileged([{ scheme: 'oc-page', privileges: { standard: true, secure: true } }])
+/** An html card's page, starting from the app's colors so it can match the look it sits in. */
+function boardPage(body: BoardWidgetBody | undefined, colors: URLSearchParams): string | undefined {
+  if (body?.kind !== 'html') return undefined
+  const vars = [...colors].filter(([k, v]) => /^[a-z0-9-]{1,24}$/.test(k) && /^[#(),.%\w\s-]{1,60}$/.test(v)).map(([k, v]) => `--${k}:${v}`).join(';')
+  return `<!doctype html><meta charset="utf-8"><style>:root{${vars}}html,body{margin:0;background:transparent;color:var(--text);font:13px/1.5 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}</style>${body.html}`
+}
 const PAGE_CSP =
   "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https:; style-src 'unsafe-inline' https:; img-src data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src 'none'"
 
@@ -602,9 +615,10 @@ app.whenReady().then(async () => {
   applyLanguage(store.settings);
   core.onSettingsChanged = applyLanguage;
   protocol.handle('oc-page', (req) => {
-    // oc-page://page/<id>/<version>
-    const [, id, version] = new URL(req.url).pathname.split('/')
-    const html = core.artifacts.html(id, Number(version) || undefined)
+    // oc-page://page/<id>/<version>, or oc-page://board/<card id>/<updated>?<the look's colors> for an html card on the home board
+    const url = new URL(req.url)
+    const [, id, version] = url.pathname.split('/')
+    const html = url.host === 'board' ? boardPage(core.snapshot().boardWidgets?.find((w) => w.id === id)?.body, url.searchParams) : core.artifacts.html(id, Number(version) || undefined)
     return new Response(html ?? 'not found', {
       status: html ? 200 : 404,
       headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': PAGE_CSP }
@@ -637,6 +651,8 @@ app.whenReady().then(async () => {
   createWindow();
   core.scheduler.start();
   core.resumeInterrupted();
+  // Once the window is up: the agents the user wants ready start alongside (no prompt is sent).
+  setTimeout(() => void core.prestartBackends(), 1500);
   app.on(
     "activate",
     () => BrowserWindow.getAllWindows().length === 0 && createWindow(),
@@ -647,12 +663,41 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
+/** Set once the window has saved what was typed in its files; quitting waits for that (a second at most). */
+let editsFlushed = false;
+async function flushEdits(): Promise<void> {
+  const w = win;
+  if (w && !w.isDestroyed())
+    await Promise.race([
+      w.webContents.executeJavaScript("window.__fennFlushEdits?.()").catch(() => undefined),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]);
+  editsFlushed = true;
+}
+
+/** Set once the agents' programs have been stopped; quitting waits for that (a few seconds at most). */
+let agentsStopped = false;
+let stoppingAgents = false;
+
+app.on("before-quit", (e) => {
+  if (!editsFlushed && win && !win.isDestroyed()) {
+    e.preventDefault();
+    void flushEdits().then(() => app.quit());
+    return;
+  }
+  if (agentsStopped) return;
+  e.preventDefault();
+  if (stoppingAgents) return;
+  stoppingAgents = true;
   quitting = true;
   clearTimeout(configReloadTimer);
   configWatcher.close();
   store.flush();
   tools.stop();
   core.scheduler.stop();
-  void backends.disposeAll();
+  // An agent's program outlives the app unless it is stopped first (Antigravity's server cleans up after itself only then).
+  void Promise.race([backends.disposeAll(), new Promise((r) => setTimeout(r, 6000))]).then(() => {
+    agentsStopped = true;
+    app.quit();
+  });
 });

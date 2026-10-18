@@ -252,8 +252,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (ready && conversation && !busy) void api().prepareConversation(conversation.id).catch(() => undefined)
   }, [conversation?.id, bid, ready])
 
-  // A new chat: start its agent now, so the first message doesn't wait for it to start.
-  const warmable = !conversation && !!currentBackend && !accountHint(bid)
+  // A chat with this agent is open: start it now, so the first message doesn't wait for it to start.
+  const warmable = !!currentBackend && !accountHint(bid)
   useEffect(() => {
     if (warmable) void api().warmBackend(bid).catch(() => undefined)
   }, [bid, warmable])

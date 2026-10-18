@@ -220,10 +220,10 @@
   flex-wrap: wrap;
 }
 
-/* Notices: at the top of the window, clear of the composer; a card like a menu in every look, an error marked by its icon. */
+/* Notices: centered below the headers (their buttons stay reachable) and far above the composer; a card like a menu in every look, an error marked by its icon. */
 .toasts {
   position: fixed;
-  top: 52px;
+  top: 116px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

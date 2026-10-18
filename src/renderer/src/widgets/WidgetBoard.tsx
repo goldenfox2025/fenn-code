@@ -5,6 +5,8 @@ import { api, useApp } from '../store'
 import { t } from '../i18n'
 import { useWidgets, type Widget } from './registry'
 import { WidgetSlot } from './WidgetCard'
+// Cards agents made register as widgets too.
+import './BoardCards'
 
 /**
  * The widgets the user chose, in their order (all registered ones until they change it).
@@ -24,6 +26,7 @@ export function WidgetBoard() {
   }
   const addItems = (): MenuItem[] => hidden.map((w) => ({ label: w.title, onClick: () => save([...ids, w.id]) }))
   const menuOf = (w: Widget, i: number) => (): MenuItem[] => [
+    ...(w.actions ? [...w.actions(), { separator: true }] : []),
     ...(i > 0 ? [{ icon: <ArrowUp size={15} />, label: t('上移'), onClick: () => move(w.id, -1) }] : []),
     ...(i < shown.length - 1 ? [{ icon: <ArrowDown size={15} />, label: t('下移'), onClick: () => move(w.id, 1) }] : []),
     ...(hidden.length ? [{ icon: <Plus size={15} />, label: t('添加小组件'), submenu: addItems() }] : []),

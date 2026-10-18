@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type { SessionContext } from '../../shared/contract'
 import type { MessageUsage } from '../../shared/usage'
 
-export type SessionLogKind = 'codex' | 'claude' | 'qoder' | 'grok'
+export type SessionLogKind = 'codex' | 'claude' | 'qoder' | 'grok' | 'antigravity'
 
 export type { SessionContext }
 
@@ -172,6 +172,45 @@ export function grokContext(lines: string[]): SessionContext | undefined {
   return used !== undefined ? { used } : undefined
 }
 
+/** A step of Antigravity's transcript with token counts (its MODEL / PLANNER_RESPONSE steps), at any depth. */
+const counted = (o: Record<string, any>) => typeof (o.output_tokens ?? o.outputTokens) === 'number'
+
+/**
+ * Antigravity: what the latest turn cost, from its transcript (over ACP it sends only how full the
+ * context is). The turn is every step with token counts after the user's latest input; its input
+ * counts cache reads (as Gemini reports them), so they are taken out of it.
+ */
+export function antigravityContext(lines: string[]): SessionContext | undefined {
+  let user = -1
+  for (let i = lines.length - 1; i >= 0 && user < 0; i--) if (/USER_INPUT/.test(lines[i]) && !/"output_?[tT]okens"/.test(lines[i])) user = i
+  const steps: { i: number; u: Record<string, any> }[] = []
+  for (let i = Math.max(0, user + 1); i < lines.length; i++) {
+    if (!/"output_?[tT]okens"/.test(lines[i])) continue
+    const u = find(parse(lines[i]), counted, 6)
+    if (u) steps.push({ i, u })
+  }
+  // No user input in the part read: only the newest step is surely this turn's.
+  const turnSteps = user < 0 ? steps.slice(-1) : steps
+  if (!turnSteps.length) return undefined
+  const sum = (key: string, alt: string) => {
+    const v = turnSteps.map((s) => n(s.u[key] ?? s.u[alt]))
+    return v.some((x) => x !== undefined) ? v.reduce<number>((a, b) => a + (b ?? 0), 0) : undefined
+  }
+  const output = sum('output_tokens', 'outputTokens')
+  const input = sum('input_tokens', 'inputTokens')
+  const cachedRead = sum('cache_read_tokens', 'cacheReadTokens')
+  const turn: MessageUsage = {
+    input: input !== undefined ? Math.max(0, input - (cachedRead ?? 0)) : undefined,
+    output,
+    cachedRead: cachedRead || undefined
+  }
+  for (const k of Object.keys(turn) as (keyof MessageUsage)[]) if (turn[k] === undefined) delete turn[k]
+  turn.total = (turn.input ?? 0) + (turn.output ?? 0)
+  const last = turnSteps[turnSteps.length - 1]
+  // The step itself names the turn (the part read moves as the file grows, so not its position).
+  return { turn, turnKey: `${lines[last.i].length}:${lines[last.i].slice(0, 160)}` }
+}
+
 export async function readSessionContext(kind: SessionLogKind, sessionId: string, home = homedir()): Promise<SessionContext | undefined> {
   if (!safeId(sessionId)) return undefined
   try {
@@ -192,6 +231,15 @@ export async function readSessionContext(kind: SessionLogKind, sessionId: string
         if (f) return claudeContext(await tailLines(f))
       }
       return undefined
+    }
+    if (kind === 'antigravity') {
+      const f = join(home, '.gemini', 'antigravity-acp', 'brain', sessionId, '.system_generated', 'logs', 'transcript_full.jsonl')
+      if (!(await exists(f))) return undefined
+      // The turn's last step may land in the file just after the reply ends.
+      const first = antigravityContext(await tailLines(f))
+      if (first) return first
+      await new Promise((r) => setTimeout(r, 400))
+      return antigravityContext(await tailLines(f))
     }
     const root = join(home, '.grok', 'sessions')
     for (const d of await dirs(root)) {

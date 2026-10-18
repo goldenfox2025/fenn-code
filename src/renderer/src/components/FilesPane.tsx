@@ -22,7 +22,8 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Upload
+  Upload,
+  X
 } from 'lucide-react'
 import type { LibraryChange, LibraryEntry } from '@shared/model'
 import { api, toast, useApp, toastError } from '../store'
@@ -45,18 +46,25 @@ interface Draft {
   eol: '\n' | '\r\n'
   since?: number
 }
-/** Where saving stands: nothing typed yet, saved, typed and not yet saved, saving, failed, or the file changed on disk meanwhile. */
-type SaveState = 'clean' | 'saved' | 'pending' | 'saving' | 'error' | 'conflict'
+/** Where saving stands: nothing typed yet, saved, typed and not yet saved, saving, failed, the file changed on disk meanwhile, or it was moved away. */
+export type SaveState = 'clean' | 'saved' | 'pending' | 'saving' | 'error' | 'conflict' | 'gone'
+/** Saving waits for the user's word: the file changed elsewhere, or went. */
+export const held = (s: SaveState) => s === 'conflict' || s === 'gone'
+
+/** Every open editor's 「save now」, for the window to call before it closes (main/index.ts flushEdits). */
+const flushers = new Set<() => Promise<boolean>>()
+;(window as unknown as { __fennFlushEdits: () => Promise<unknown> }).__fennFlushEdits = () => Promise.all([...flushers].map((f) => f()))
 
 /** Saved this long after the last keystroke, and at once on leaving the file, as editors do. */
 const AUTOSAVE_MS = 700
 
 /**
  * Editing with autosave. Nothing asks: what is typed is written shortly
- * after, and before the editor closes or another file opens. If an agent
- * changed the file meanwhile, saving stops until the user picks a version.
+ * after, and before the editor closes, another file opens or the window
+ * closes. If an agent changed the file meanwhile, or it was moved away,
+ * saving stops (what was typed is kept) until the user picks what to do.
  */
-function useEditor(id: string, onSaved: () => void) {
+export function useEditor(id: string, onSaved: () => void) {
   const [draft, setDraftState] = useState<Draft | null>(null)
   const [state, setStateRaw] = useState<SaveState>('clean')
   const cur = useRef<Draft | null>(null)
@@ -75,23 +83,23 @@ function useEditor(id: string, onSaved: () => void) {
   saved.current = onSaved
 
   /** Writes what is typed (one write at a time); false when it could not be saved. */
-  const write = async (force = false): Promise<boolean> => {
+  const write = async (force = false, recreate = false): Promise<boolean> => {
     while (running.current) await running.current
     const d = cur.current
     if (!d) return true
     if (d.text === d.base && !force) {
       // Typed and undone: nothing to write.
       if (st.current === 'pending' || st.current === 'error') setState('saved')
-      return st.current !== 'conflict'
+      return !held(st.current)
     }
     const text = d.text
     const failedBefore = st.current === 'error'
     const job = (async () => {
       setState('saving')
       try {
-        const r = await api().saveLibraryFile(id, d.path, d.eol === '\n' ? text : text.replace(/\n/g, d.eol), d.since, force)
-        if (r.conflict) {
-          setState('conflict')
+        const r = await api().saveLibraryFile(id, d.path, d.eol === '\n' ? text : text.replace(/\n/g, d.eol), d.since, force, recreate)
+        if (r.conflict || r.gone) {
+          setState(r.gone ? 'gone' : 'conflict')
           return false
         }
         const now = cur.current
@@ -121,13 +129,13 @@ function useEditor(id: string, onSaved: () => void) {
   /** Saves now (leaving the file, closing the editor); false when it could not be saved. */
   const flush = async (): Promise<boolean> => {
     clearTimeout(timer.current)
-    return st.current === 'conflict' ? false : write()
+    return held(st.current) ? false : write()
   }
   const change = (text: string) => {
     const d = cur.current
     if (!d) return
     set({ ...d, text })
-    if (st.current === 'conflict') return
+    if (held(st.current)) return
     setState('pending')
     schedule()
   }
@@ -147,6 +155,14 @@ function useEditor(id: string, onSaved: () => void) {
     set(null)
     setState('clean')
     return true
+  }
+  /** The file went: make it again where it was, with what was typed. */
+  const recreate = () => write(true, true)
+  /** Closes the file without saving what was typed (the user chose to, after it went). */
+  const discard = () => {
+    clearTimeout(timer.current)
+    set(null)
+    setState('clean')
   }
   /** After a conflict: keep the typed version (overwrite) or take the file as it is now. */
   const resolve = async (keepMine: boolean) => {
@@ -175,11 +191,26 @@ function useEditor(id: string, onSaved: () => void) {
   useEffect(
     () => () => {
       clearTimeout(timer.current)
-      if (cur.current && cur.current.text !== cur.current.base && st.current !== 'conflict') void write()
+      if (cur.current && cur.current.text !== cur.current.base && !held(st.current)) void write()
     },
     [id]
   )
-  return { draft, state, change, flush, start, stop, resolve, moveTo }
+  useEffect(() => {
+    flushers.add(flush)
+    return () => void flushers.delete(flush)
+  })
+  return { draft, state, change, flush, start, stop, resolve, moveTo, recreate, discard }
+}
+
+/** How a Markdown file shows: rendered (read only) or its source (typed in). */
+export type MdView = 'preview' | 'source'
+export const VIEW_KEY = 'oc-md-view'
+export const storedView = (): MdView => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'source' ? 'source' : 'preview'
+  } catch {
+    return 'preview'
+  }
 }
 
 /** A name being typed in place: a new name for a file or folder, or the name of a new one. */
@@ -208,7 +239,7 @@ export function FilesPane({ id }: { id: string }) {
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [naming, setNaming] = useState<Naming | null>(null)
-  const [rendered, setRendered] = useState(true)
+  const [view, setView] = useState<MdView>(storedView)
   const [full, setFull] = useState(false)
   const [narrow, setNarrow] = useState(false)
   const [menu, openMenu] = useMenu({ align: 'right' })
@@ -281,11 +312,12 @@ export function FilesPane({ id }: { id: string }) {
 
   /** Opening another file saves the one being edited first (and stays on it if that failed). */
   const select = async (path: string) => {
-    if (draft && draft.path !== path) {
-      if (!(await editor.stop())) return
-      setRendered(true)
+    if (draft && draft.path !== path && !(await editor.stop())) {
+      if (held(editor.state)) toast(t('先在文件上方选好怎么处理这个文件。'))
+      return
     }
     setSelected(path)
+    setView(storedView())
   }
 
   const add = async (list: FileList) => {
@@ -329,14 +361,14 @@ export function FilesPane({ id }: { id: string }) {
     if (parent && !open.has(parent)) toggle(parent)
     setNaming({ mode: 'new', parent, dir })
   }
-  const edit = async (path: string) => {
-    await editor.start(path)
-    setRendered(false)
-  }
-  const stopEditing = async () => {
-    if (!(await editor.stop())) return false
-    setRendered(true)
-    return true
+  /** Markdown shows rendered or as source; the choice is remembered for the next file. */
+  const pickView = (v: MdView) => {
+    setView(v)
+    try {
+      localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      // Not remembered this time.
+    }
   }
   /** Returns false to keep the name field open (the name was refused). */
   const commitName = async (value: string): Promise<boolean> => {
@@ -362,7 +394,8 @@ export function FilesPane({ id }: { id: string }) {
         reloadWith(folders)
         if (!n.dir && (await editor.stop())) {
           setSelected(path)
-          await edit(path)
+          // A new file is for typing in, Markdown too.
+          setView('source')
         }
       }
       return true
@@ -544,16 +577,21 @@ export function FilesPane({ id }: { id: string }) {
         root={root}
         entry={findEntry(dirs, selected)}
         change={changed.get(selected)}
-        onBack={narrow && !inFull ? () => void stopEditing().then((ok) => ok && setSelected(null)) : undefined}
+        onBack={narrow && !inFull ? () => void editor.stop().then((ok) => ok && setSelected(null)) : undefined}
         draft={draft?.path === selected ? draft : null}
         saveState={editor.state}
         onDraft={editor.change}
-        onEdit={() => void edit(selected)}
+        onEdit={() => void editor.start(selected)}
         onFlush={() => void editor.flush()}
-        onDone={() => void stopEditing()}
         onResolve={(keepMine) => void editor.resolve(keepMine)}
-        rendered={rendered}
-        onRendered={setRendered}
+        onRecreate={() => void editor.recreate()}
+        onDiscard={() => {
+          editor.discard()
+          setSelected(null)
+          setFull(false)
+        }}
+        view={view}
+        onView={pickView}
         full={inFull}
         onFull={setFull}
         renaming={naming?.mode === 'rename' && naming.where === 'preview' && naming.path === selected}
@@ -746,8 +784,13 @@ function FileIcon({ name }: { name: string }) {
   return <File size={15} className="muted" />
 }
 
-/** The opened file: shown (Markdown rendered), or edited in place; the same view in the pane and full screen. */
-function FilePreview({
+/**
+ * The opened file, the same in the pane and full screen. A text file is
+ * simply typed in (saved by itself); Markdown shows rendered (read only) or
+ * as its source (typed in), switched in the header. Text in another encoding,
+ * images and the rest are only shown.
+ */
+export function FilePreview({
   id,
   path,
   root,
@@ -759,16 +802,19 @@ function FilePreview({
   onDraft,
   onEdit,
   onFlush,
-  onDone,
   onResolve,
-  rendered,
-  onRendered,
+  onRecreate,
+  onDiscard,
+  view,
+  onView,
   full,
   onFull,
   renaming,
   onCommitName,
   onCancelName,
-  onMenu
+  onMenu,
+  load,
+  onClose
 }: {
   id: string
   path: string
@@ -781,50 +827,50 @@ function FilePreview({
   onDraft: (text: string) => void
   onEdit: () => void
   onFlush: () => void
-  onDone: () => void
   onResolve: (keepMine: boolean) => void
-  rendered: boolean
-  onRendered: (r: boolean) => void
+  onRecreate: () => void
+  onDiscard: () => void
+  view: MdView
+  onView: (v: MdView) => void
   full: boolean
   onFull: (f: boolean) => void
   renaming: boolean
   onCommitName: (name: string) => Promise<boolean>
   onCancelName: () => void
   onMenu: (anchor: HTMLElement) => void
+  /** Reads the file another way (one outside the working folders, read only). */
+  load?: () => ReturnType<ReturnType<typeof api>['readLibraryFile']>
+  /** A close button, for a file shown on its own beside a chat. */
+  onClose?: () => void
 }) {
   const [file, setFile] = useState<Awaited<ReturnType<ReturnType<typeof api>['readLibraryFile']>> | null>(null)
   useEffect(() => {
     setFile(null)
-    void api().readLibraryFile(id, path).then((f) => setFile(f ?? undefined))
+    void (load ? load() : api().readLibraryFile(id, path)).then((f) => setFile(f ?? undefined), () => setFile(undefined))
   }, [id, path, change?.changedAt, entry?.updatedAt])
   const name = baseName(path)
   const md = /\.(md|markdown)$/i.test(name)
-  const editing = !!draft
-  // Saving is quiet: the line under the name says where it stands, like any editor.
-  const meta = editing && saveState !== 'clean'
-    ? [saveState === 'error' ? t('没能保存') : saveState === 'saved' ? t('已保存') : saveState === 'conflict' ? '' : t('正在保存…')]
-    : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '', file?.readOnly ? t('不是 UTF-8 编码，只能查看') : '']
-  // The rendered draft takes the keys (Ctrl+S, Esc) while it shows.
-  const body = useRef<HTMLDivElement>(null)
+  const editable = !!file && file.text !== undefined && !file.readOnly
+  // A text file opens ready to type in; once changed on disk by someone else (nothing typed since), it reopens as it is now.
   useEffect(() => {
-    if (editing && md && rendered) body.current?.focus({ preventScroll: true })
-  }, [editing, md, rendered])
-  /** Ctrl+S saves now and Esc finishes editing (what was typed is kept), wherever focus is in the file being edited. */
+    if (!editable || !file) return
+    if (!draft || (draft.text === draft.base && saveState !== 'saving' && draft.since !== undefined && Math.abs(draft.since - file.updatedAt) > 1)) onEdit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, editable])
+  const preview = md && view === 'preview'
+  const meta =
+    draft && saveState !== 'clean' && !held(saveState)
+      ? [saveState === 'error' ? t('没能保存') : saveState === 'saved' ? t('已保存') : t('正在保存…')]
+      : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '', file?.readOnly ? t('不是 UTF-8 编码，只能查看') : '']
+  /** Ctrl+S saves at once (it saves by itself anyway). */
   const editKeys = (e: React.KeyboardEvent) => {
-    if (!editing || e.defaultPrevented) return
+    if (!draft || e.defaultPrevented) return
     if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
       e.preventDefault()
       onFlush()
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onDone()
     }
   }
-  const fullBtn = (
-    <button className="icon-btn sm" data-tip={full ? t('退出全屏') : t('全屏')} aria-label={full ? t('退出全屏') : t('全屏')} onClick={() => onFull(!full)}>
-      {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-    </button>
-  )
+  const text = draft?.text ?? file?.text
   return (
     <div className="files-preview" onKeyDown={editKeys}>
       <div className="preview-head">
@@ -844,33 +890,29 @@ function FilePreview({
           <span className="small muted">{meta.filter(Boolean).join(' · ')}</span>
         </div>
         <span className="spacer" />
-        {md && (editing || file?.text !== undefined) && (
-          <button className="pill-btn" onClick={() => onRendered(!rendered)}>
-            {rendered ? t('源码') : t('预览')}
+        {md && text !== undefined && (
+          <div className="seg-control sm" role="group" aria-label={t('显示方式')}>
+            <button className={preview ? 'on' : ''} aria-pressed={preview} onClick={() => onView('preview')}>
+              {t('预览')}
+            </button>
+            <button className={preview ? '' : 'on'} aria-pressed={!preview} onClick={() => onView('source')}>
+              {t('源码')}
+            </button>
+          </div>
+        )}
+        <button className="icon-btn sm" data-tip={full ? t('退出全屏') : t('全屏')} aria-label={full ? t('退出全屏') : t('全屏')} onClick={() => onFull(!full)}>
+          {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
+        <button className="icon-btn sm" data-focus-key={'preview-menu:' + path} data-tip={t('更多')} aria-label={t('更多')} onClick={(e) => onMenu(e.currentTarget)}>
+          <MoreHorizontal size={15} />
+        </button>
+        {onClose && !full && (
+          <button className="icon-btn sm" data-tip={t('关闭')} aria-label={t('关闭')} onClick={onClose}>
+            <X size={15} />
           </button>
         )}
-        {editing ? (
-          <>
-            <button className="pill-btn" data-tip={t('结束编辑 (Esc)')} onClick={onDone}>
-              {t('完成')}
-            </button>
-            {fullBtn}
-          </>
-        ) : (
-          <>
-            {file?.text !== undefined && !file.readOnly && (
-              <button className="icon-btn sm" data-tip={t('编辑')} aria-label={t('编辑')} onClick={onEdit}>
-                <Pencil size={14} />
-              </button>
-            )}
-            {fullBtn}
-            <button className="icon-btn sm" data-focus-key={'preview-menu:' + path} data-tip={t('更多')} aria-label={t('更多')} onClick={(e) => onMenu(e.currentTarget)}>
-              <MoreHorizontal size={15} />
-            </button>
-          </>
-        )}
       </div>
-      {saveState === 'conflict' && (
+      {draft && saveState === 'conflict' && (
         <div className="preview-conflict" role="alert">
           <span>{t('这个文件在您编辑时被别处改过。')}</span>
           <span className="spacer" />
@@ -882,18 +924,33 @@ function FilePreview({
           </button>
         </div>
       )}
-      <div className="preview-body" ref={body} tabIndex={editing && md && rendered ? -1 : undefined}>
-        {draft ? (
-          md && rendered ? (
+      {draft && saveState === 'gone' && (
+        <div className="preview-conflict" role="alert">
+          <span>{t('这个文件被移走或改名了，您打的字还在。')}</span>
+          <span className="spacer" />
+          <button className="pill-btn" onClick={onDiscard}>
+            {t('关闭')}
+          </button>
+          <button className="pill-btn" onClick={onRecreate}>
+            {t('在原位置重新保存')}
+          </button>
+        </div>
+      )}
+      <div className="preview-body">
+        {file === null && !draft ? null : file === undefined && !draft ? (
+          <div className="files-note">{t('文件已不在原来的位置。')}</div>
+        ) : file?.image ? (
+          <img className="preview-image" src={file.image} alt={name} />
+        ) : text !== undefined ? (
+          preview ? (
             <div className="preview-md">
-              <Markdown text={draft.text} />
+              <Markdown text={text} />
             </div>
-          ) : (
+          ) : draft ? (
             <textarea
               className="preview-editor"
               value={draft.text}
               spellCheck={false}
-              autoFocus
               aria-label={t('编辑 {0}', name)}
               onChange={(e) => onDraft(e.target.value)}
               onBlur={onFlush}
@@ -905,21 +962,11 @@ function FilePreview({
                 }
               }}
             />
-          )
-        ) : file === null ? null : file === undefined ? (
-          <div className="files-note">{t('文件已不在原来的位置。')}</div>
-        ) : file.image ? (
-          <img className="preview-image" src={file.image} alt={name} />
-        ) : file.text !== undefined ? (
-          md && rendered ? (
-            <div className="preview-md">
-              <Markdown text={file.text} />
-            </div>
           ) : (
-            <pre className="preview-code">{file.text}</pre>
+            <pre className="preview-code">{text}</pre>
           )
         ) : (
-          <div className="files-note">{file.tooBig ? t('文件太大，不在这里预览。') : t('这个文件不是文本，不在这里预览。')}</div>
+          <div className="files-note">{file?.tooBig ? t('文件太大，不在这里预览。') : t('这个文件不是文本，不在这里预览。')}</div>
         )}
       </div>
     </div>

@@ -157,6 +157,8 @@ export interface AccountStatus {
   installed?: boolean
   /** The installed program's version, when it says. */
   version?: string
+  /** Installed, but the setup step after installing (UpgradeSpec.setup) hasn't run for this copy yet. */
+  setupPending?: boolean
 }
 
 /** A command a plugin declares (run with the user's environment, proxy settings included). */
@@ -177,6 +179,11 @@ export interface UpgradeSpec {
   installOnly?: boolean
   /** Runs first, once the backend's own process is stopped: e.g. ending copies of it a crash left behind, which lock its files. */
   before?: () => Promise<void>
+  /**
+   * A step the app does itself after installing (no command), described in words before it runs.
+   * Offered on its own when the program is installed but the step hasn't run for it (AccountStatus.setupPending).
+   */
+  setup?: { label: string; labelArgs?: unknown[]; run: (onLine: (line: string) => void) => Promise<void> }
 }
 
 export type PromptPart =
@@ -289,6 +296,8 @@ export interface BackendPlugin {
   settings?: PluginSetting[]
   /** The agent can sign in from the app (ACP authenticate), so settings show a 「登录」 button. */
   signIn?: boolean
+  /** Starting it takes long enough to be worth doing when the app opens (settings offer 「打开 Fenn Code 时预先启动」). */
+  slowStart?: boolean
   /** A command that signs in from a terminal (e.g. `qodercli login`); settings show a 「登录」 button that opens it. */
   login?: { command: string; args?: string[] } | ((config: Record<string, string>) => { command: string; args?: string[] })
   /**
@@ -339,6 +348,10 @@ export interface BackendSummary {
   upgradeCommands?: string[]
   /** A follow-up step after the commands, described in words. */
   upgradeNote?: string
+  /** The app's own step after installing (UpgradeSpec.setup), described in words. */
+  upgradeSetup?: string
+  /** See BackendPlugin.slowStart. */
+  slowStart?: boolean
   /** Accepts images (needed for computer control); undefined until the backend has started. */
   images?: boolean
 }
