@@ -48,7 +48,18 @@ export interface ManagerOptions {
 export class BackendManager {
   private instances = new Map<string, AgentBackend>()
   private permissionWaiters = new Map<string, (d: PermissionDecision) => void>()
-  private lostListeners = new Set<(backendId: string) => void>()
+  private lostListeners = new Set<(backendId: string, lost: (sessionId: string) => boolean) => void>()
+  /** Which process (instance) each session the app opened lives in, so losing one process loses only its sessions. */
+  private owners = new Map<string, AgentBackend>()
+  /** Tells the listeners an instance is gone: the sessions it held (or any the app can't place) are lost. */
+  private lost(backendId: string, inst: AgentBackend | undefined): void {
+    const lost = (sessionId: string) => {
+      const owner = this.owners.get(`${backendId}:${sessionId}`)
+      return !owner || owner === inst
+    }
+    for (const fn of this.lostListeners) fn(backendId, lost)
+    for (const [k, owner] of this.owners) if (owner === inst) this.owners.delete(k)
+  }
   /** Lets internal callers (e.g. the project orchestrator) observe agent events. */
   private agentListeners = new Set<(backendId: string, sessionId: string, e: AgentEvent) => void>()
 
@@ -112,9 +123,12 @@ export class BackendManager {
     // A restart follows signing in again (or new settings); let the status command speak again.
     this.staleSignIn.delete(backendId)
     this.dropPermissions(backendId)
-    await this.instances.get(backendId)?.dispose(reason)
+    // Out of the list first: stopping can take a second, and a chat starting meanwhile gets a new process,
+    // never this one (QA: it was started again for that chat, then dropped under its reply).
+    const old = this.instances.get(backendId)
     this.instances.delete(backendId)
-    for (const fn of this.lostListeners) fn(backendId)
+    await old?.dispose(reason)
+    this.lost(backendId, old)
   }
 
   /**
@@ -134,11 +148,10 @@ export class BackendManager {
       restarted.push(id)
       this.dropPermissions(id)
       const name = old.get(id)?.name ?? id
-      await this.instances
-        .get(id)
-        ?.dispose(next ? t('{0} 的配置已更改，已重新启动。请点「重试」。', name) : t('{0} 已从 backends.json 中移除，回复已停止。', name))
+      const inst = this.instances.get(id)
       this.instances.delete(id)
-      for (const fn of this.lostListeners) fn(id)
+      await inst?.dispose(next ? t('{0} 的配置已更改，已重新启动。请点「重试」。', name) : t('{0} 已从 backends.json 中移除，回复已停止。', name))
+      this.lost(id, inst)
     }
     return restarted
   }
@@ -150,7 +163,8 @@ export class BackendManager {
     return l && { command: l.command, args: l.args ?? [] }
   }
 
-  onSessionsLost(fn: (backendId: string) => void): () => void {
+  /** `lost` says which of the backend's sessions went (another process of it may already hold new ones). */
+  onSessionsLost(fn: (backendId: string, lost: (sessionId: string) => boolean) => void): () => void {
     this.lostListeners.add(fn)
     return () => this.lostListeners.delete(fn)
   }
@@ -180,8 +194,8 @@ export class BackendManager {
       },
       requestPermission: (req) => this.askPermission(backendId, req),
       sessionsLost: () => {
-        this.dropPermissions(backendId)
-        for (const fn of this.lostListeners) fn(backendId)
+        if (this.instances.get(backendId) === inst) this.dropPermissions(backendId)
+        this.lost(backendId, inst)
       },
       log: (level, message) => {
         if (level !== 'debug') console[level === 'warn' ? 'warn' : level === 'error' ? 'error' : 'log'](message)
@@ -194,7 +208,15 @@ export class BackendManager {
 
   async newSession(backendId: string, opts: { cwd?: string; folder?: string; tools?: HostToolServer[]; system?: string } = {}): Promise<SessionInfo> {
     return this.signedInSince(backendId, () =>
-      this.whileOpening(backendId, () => this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })))
+      this.whileOpening(backendId, () => this.owned(backendId, (b) => b.newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system }))))
+  }
+
+  /** Opens a session on the backend's current process and notes that it lives there. */
+  private async owned<T extends { sessionId: string } | null>(backendId: string, open: (b: AgentBackend) => Promise<T>): Promise<T> {
+    const b = this.get(backendId)
+    const info = await open(b)
+    if (info) this.owners.set(`${backendId}:${info.sessionId}`, b)
+    return info
   }
 
   /** Replies running now, per backend: a restart would stop them. */
@@ -328,9 +350,9 @@ export class BackendManager {
     sessionId: string,
     opts: { cwd?: string; folder?: string; tools?: HostToolServer[]; system?: string } = {}
   ): Promise<SessionInfo | null> {
-    const b = this.get(backendId)
-    if (!b.resumeSession) return null
-    return this.whileOpening(backendId, () => b.resumeSession!({ sessionId, cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system }))
+    if (!this.get(backendId).resumeSession) return null
+    return this.whileOpening(backendId, () =>
+      this.owned(backendId, (b) => b.resumeSession!({ sessionId, cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })))
   }
 
   async prompt(backendId: string, sessionId: string, parts: PromptPart[]): Promise<TurnResult> {

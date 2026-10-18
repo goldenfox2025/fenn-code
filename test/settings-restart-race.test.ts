@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentBackend, BackendPlugin, SessionInfo } from '../src/shared/contract'
 import { BackendManager } from '../src/main/backends/BackendManager'
+import { acpPlugin } from '../src/main/backends/acp'
+import { join } from 'node:path'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -70,4 +72,57 @@ describe('a key entered while an earlier model read is still failing as signed o
     expect(stopped).toEqual([])
     expect((await chat).sessionId).toMatch(/^p1-/)
   })
+})
+
+
+describe('a model read in flight, then a key, then a reply, all at once (QA: RC29 still cut it, 2 of 40)', () => {
+  it('keeps the reply on the new process whole, whatever the old one does after it was replaced', async () => {
+    const config: Record<string, string> = {}
+    let launches = 0
+    const plugin = acpPlugin({
+      id: 'keyed-acp',
+      name: 'KeyedAcp',
+      // Stopping takes a while too (Grok exits about a second after it is told to).
+      quirks: { stop: async (proc) => { await sleep(800); proc.kill() } },
+      // Starting takes a moment (finding the program); without a key every session/new says signed out.
+      launch: async ({ nodeCommand, resourcesDir, config }) => {
+        launches++
+        await sleep(80)
+        return { command: nodeCommand.command, args: [join(resourcesDir, 'mock-agent.mjs')], env: { ...nodeCommand.env, ...(config.KEY ? {} : { MOCK_AUTH: '1' }) } }
+      }
+    })
+    const lost: ((sessionId: string) => boolean)[] = []
+    const events: string[] = []
+    const mgr = new BackendManager({
+      plugins: [plugin],
+      settings: { get: () => ({ ...config }), set: (_id, k, v) => void (config[k] = v) },
+      resourcesDir: join(__dirname, '../resources'),
+      nodeCommand: { command: process.execPath, env: {} },
+      defaultCwd: process.cwd(),
+      emit: (e) => { if (e.type === 'agent' && e.event.kind === 'message.delta') events.push(`${e.sessionId}:${e.event.text}`) }
+    })
+    mgr.onSessionsLost((_id, isLost) => void lost.push(isLost))
+    try {
+      // The model list is being read on the first process, which is up by now.
+      const probe = mgr.modelCatalog('keyed-acp').catch((e) => e)
+      await mgr.warm('keyed-acp')
+      // Not waited for, as the app's separate calls aren't: the chat starts while the old process is still stopping.
+      const set = mgr.setSetting('keyed-acp', 'KEY', 'xai-1')
+      await sleep(30)
+      const chat = await mgr.newSession('keyed-acp', { cwd: process.cwd() })
+      const reply = mgr.prompt('keyed-acp', chat.sessionId, [{ type: 'text', text: '#啰嗦慢' }])
+      await probe
+      await set
+      const r = await reply
+      expect(r.stopReason).toBe('end_turn')
+      // The old process went (and said so), but the chat's session on the new one was never among the lost.
+      expect(lost.some((isLost) => isLost(chat.sessionId))).toBe(false)
+      const text = events.filter((e) => e.startsWith(chat.sessionId + ':')).map((e) => e.slice(chat.sessionId.length + 1)).join('')
+      expect(text).toContain('不会另开新的对话')
+      // Only the process the key started is used from then on: no third one.
+      expect(launches).toBeLessThanOrEqual(2)
+    } finally {
+      await mgr.disposeAll()
+    }
+  }, 40000)
 })

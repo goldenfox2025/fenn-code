@@ -214,9 +214,11 @@ export class ChatService {
     private readonly publish: (e: AppEvent) => void
   ) {
     backends.onAgentEvent((backendId, sessionId, event) => this.onAgentEvent(backendId, sessionId, event))
-    backends.onSessionsLost((backendId) => {
-      for (const [convId, live] of this.live) if (live.backendId === backendId) this.forgetSession(convId)
-      this.dropSpare(backendId, false)
+    backends.onSessionsLost((backendId, lost) => {
+      // Only the sessions of the process that went: a chat already on the agent's new process keeps its reply.
+      for (const [convId, live] of this.live) if (live.backendId === backendId && lost(live.sessionId)) this.forgetSession(convId)
+      const spare = this.spares.get(backendId)
+      if (spare && (!spare.sessionId || lost(spare.sessionId))) this.dropSpare(backendId, false)
       // Its sessions were never closed in the agent, so the ones kept out of its app weren't archived.
       void this.syncAgentApp(backendId)
     })
