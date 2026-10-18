@@ -96,7 +96,7 @@
 .choice.on .radio {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
 }
 /* Not installed: shown, not pickable; its 安装 link is the way in. */
 .choice.unavailable {

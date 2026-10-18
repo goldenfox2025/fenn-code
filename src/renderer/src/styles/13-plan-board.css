@@ -168,6 +168,7 @@
 }
 .check-box.on {
   background: var(--accent);
+  color: var(--accent-fg);
   border-color: var(--accent);
 }
 .thread-view .plan-line {

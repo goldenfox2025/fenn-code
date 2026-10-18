@@ -61,8 +61,8 @@
   border-color: rgba(255, 255, 255, 0.12);
 }
 :root[data-theme='glass'] .composer:focus-within {
-  border-color: rgba(143, 157, 255, 0.5);
-  box-shadow: var(--shadow), 0 0 24px rgba(143, 157, 255, 0.14);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: var(--shadow), 0 0 24px rgba(var(--accent-rgb), 0.14);
 }
 :root[data-theme='glass'] .menu,
 :root[data-theme='glass'] .toast {
@@ -104,9 +104,9 @@
   box-shadow: var(--hairline-top);
 }
 :root[data-theme='glass'] :focus-visible {
-  outline: 2px solid rgba(178, 189, 255, 0.95);
+  outline: 2px solid rgba(120, 230, 250, 0.95);
   outline-offset: 2px;
-  box-shadow: 0 0 0 5px rgba(143, 157, 255, 0.22);
+  box-shadow: 0 0 0 5px rgba(var(--accent-rgb), 0.22);
 }
 :root[data-theme='glass'] :is(input, textarea, [contenteditable]):focus-visible {
   /* Text fields light up their own border (the composer its whole box): no second ring. */
@@ -117,8 +117,8 @@
   outline-offset: -2px;
 }
 :root[data-theme='glass'] :is(.input, .textarea):focus {
-  border-color: rgba(143, 157, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(143, 157, 255, 0.14);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14);
 }
 :root[data-theme='glass'] .menu-item.active,
 :root[data-theme='glass'] .nav-item.selected,
@@ -130,17 +130,17 @@
   color: var(--accent);
 }
 :root[data-theme='glass'] .logo {
-  filter: drop-shadow(0 0 10px rgba(143, 157, 255, 0.45));
+  filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), 0.45));
 }
 :root[data-theme='glass'] .send-btn:not(:disabled) {
   color: #0a0c18;
-  box-shadow: 0 0 16px rgba(143, 157, 255, 0.35);
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.35);
 }
 :root[data-theme='glass'] .btn.accent {
   color: #0a0c18;
 }
 :root[data-theme='glass'] .switch.on {
-  box-shadow: 0 0 12px rgba(143, 157, 255, 0.35);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.35);
 }
 :root[data-theme='glass'] ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
@@ -148,7 +148,7 @@
 }
 .glass-toggle.on {
   color: var(--accent);
-  filter: drop-shadow(0 0 6px rgba(143, 157, 255, 0.6));
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.6));
 }
 
 /* No GPU compositing: skip the blur, and make the panels a little more solid instead. */

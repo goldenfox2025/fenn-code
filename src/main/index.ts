@@ -304,9 +304,9 @@ let minimizedForControl = false;
 const CONTROL_BAR_HTML = `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:transparent;font:13px system-ui,-apple-system,"Segoe UI",sans-serif}
 .bar{display:flex;align-items:center;gap:10px;height:100%;box-sizing:border-box;padding:0 6px 0 14px;border-radius:12px;background:#1f1e1d;color:#f5f4ef}
-.dot{width:8px;height:8px;border-radius:50%;background:#d97757;animation:p 1.2s infinite}
+.dot{width:8px;height:8px;border-radius:50%;background:#3fd6f5;animation:p 1.2s infinite}
 @keyframes p{50%{opacity:.35}}span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;-webkit-app-region:drag}
-button{border:0;border-radius:8px;padding:6px 12px;background:#d97757;color:#fff;font:inherit;cursor:pointer}
+button{border:0;border-radius:8px;padding:6px 12px;background:#3fd6f5;color:#062630;font:inherit;cursor:pointer}
 </style><div class="bar"><i class="dot"></i><span id="t">${t("Fenn Code 正在操控电脑")}</span><button onclick="location.href='oc-stop:now'">${t("停止")}</button></div>`;
 
 function showControlBar(): void {
