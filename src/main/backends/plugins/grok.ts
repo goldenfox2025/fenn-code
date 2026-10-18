@@ -143,7 +143,8 @@ export function grokExt(method: string, params: Record<string, unknown>): { sess
         kind: 'notice',
         level: 'warning',
         key: 'grok-retry',
-        text: t('连接 Grok 失败，正在重试（{0}/{1}）：{2}', u.attempt, u.max_retries, str(u.reason).slice(0, 160))
+        // Its reason is raw service text (often English); the reply says only that it is retrying.
+        text: t('连接 Grok 失败，正在重试（{0}/{1}）', u.attempt, u.max_retries)
       })
       break
     case 'goal_updated': {

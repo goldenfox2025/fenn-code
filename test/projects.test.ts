@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { textOf } from '../src/main/core/ChatService'
 import { makeCore, until } from './helpers'
 
@@ -104,13 +104,20 @@ describe('restart', () => {
 
 describe('agent crash', () => {
   it('reports a readable error and the chat keeps working afterwards', async () => {
+    const warned: string[] = []
+    const spy = vi.spyOn(console, 'warn').mockImplementation((...a: unknown[]) => void warned.push(a.join(' ')))
     const { core, store, dispose } = await makeCore()
     const c = await core.startChat({ text: '你好', backendId: 'mock' })
     await until(() => store.messagesOf(c.id).some((m) => m.role === 'assistant' && m.state === 'done'))
     await core.chat.send(c.id, '/crash')
+    expect(warned.join('\n')).toContain('simulated crash')
+    spy.mockRestore()
     const failed = store.messagesOf(c.id).filter((m) => m.role === 'assistant').pop()!
     expect(failed.state).toBe('error')
-    expect(failed.error).toContain('simulated crash')
+    // One calm line; what the agent printed on its way out goes only to the log (QA: raw JSON from Claude Code).
+    expect(failed.error).toMatch(/^\S.* 意外退出了，点「重试」继续。$/)
+    expect(failed.error).not.toContain('simulated crash')
+    expect(failed.error).not.toMatch(/code 3|SIG/)
     await core.chat.send(c.id, '还在吗？')
     const ok = store.messagesOf(c.id).filter((m) => m.role === 'assistant').pop()!
     expect(ok.state).toBe('done')
@@ -290,4 +297,13 @@ describe('sub-conversations', () => {
     expect(store.conversation(await core.runCommand(b, 'subchat', '丙'))!.parentId).toBe(b)
     await dispose()
   }, 30000)
+})
+
+describe('what a failed reply shows', () => {
+  it('never shows an agent\'s raw text, nor more than the first line of the app\'s own', async () => {
+    const { errorLead } = await import('../src/shared/errors')
+    expect(errorLead('Unexpected case: {"type":"autocompact_state"}')).toEqual({ reword: true })
+    expect(errorLead('Claude Code 启动后立即退出（code 1）\nError: Cannot find module')).toEqual({ line: 'Claude Code 启动后立即退出（code 1）' })
+    expect(errorLead('Claude Code 意外退出了，点「重试」继续。')).toBeNull()
+  })
 })

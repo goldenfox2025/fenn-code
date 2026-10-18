@@ -51,6 +51,18 @@ export function isFriendly(raw: string): boolean {
   return /[一-鿿]/.test(raw.trim().slice(0, 40))
 }
 
+/**
+ * How a failed reply shows its error: 'reword' for the agent's own text (never shown as it is; a sentence by
+ * kind, or a general one, with the text under 「详情」), the first line of a longer message the app wrote (the
+ * rest under 「详情」), or null to show the app's one-line message as it is.
+ */
+export function errorLead(raw: string): { reword: true } | { line: string } | null {
+  const text = raw.trim()
+  if (!text) return null
+  if (!isFriendly(text)) return { reword: true }
+  return text.includes('\n') ? { line: text.split('\n')[0] } : null
+}
+
 /** The message of anything thrown, without Electron's "Error invoking remote method 'oc:x': Error: " wrapper. */
 export function errorText(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e)

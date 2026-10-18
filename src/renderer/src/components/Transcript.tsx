@@ -42,7 +42,7 @@ import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
 import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
-import { classifyError, isFriendly, type ErrorKind } from '@shared/errors'
+import { classifyError, errorLead, type ErrorKind } from '@shared/errors'
 
 import { segmentBlocks, type ToolBlock } from '../turn'
 import { limitSentence, turnNote, type TurnNoteView } from '../turnNote'
@@ -966,8 +966,10 @@ export function ErrorBar({ m, last = true, busy }: { m: Message; last?: boolean;
   const secret = backend?.settings.find((x) => x.secret)
   const canLogin = !!(backend?.signIn || backend?.terminalLogin)
   const how = canLogin ? t('点下方「登录」，完成后点「重试」。') : secret ? t('请在设置里填写「{0}」，然后重试。', secret.label) : t('请按它的说明登录后重试。')
-  // Messages the app wrote itself are already in plain Chinese; only the agent's raw text gets reworded.
-  const reworded = kind && raw && !isFriendly(raw) ? errorSentence(kind, name, how, raw) : null
+  // Messages the app wrote itself are already in plain Chinese; only the agent's raw text gets reworded, and
+  // text the app doesn't recognise is never shown as it is: it stays under 「详情」, as does anything after a first line.
+  const lead = errorLead(raw)
+  const reworded = !lead ? null : 'line' in lead ? lead.line : kind ? errorSentence(kind, name, how, raw) : t('{0} 没能完成这次回复。', name)
   const needsLogin = (kind === 'auth' || kind === 'refresh') && !!backend
   return (
     <div className="msg-error">

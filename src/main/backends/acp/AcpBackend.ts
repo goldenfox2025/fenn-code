@@ -343,7 +343,10 @@ export class AcpBackend implements AgentBackend {
         const how = signal ?? `code ${code}`
         this.exitReason = /is not recognized as an internal or external command|command not found/i.test(errTail.join(''))
           ? this.missing(spec.command)
-          : this.stopReasons.get(proc) ?? (ready ? t('{0} 已退出（{1}）', this.name, how) : t('{0} 启动后立即退出（{1}）', this.name, how)) + tail(errTail)
+          : this.stopReasons.get(proc) ??
+            // Once running, what it printed (often raw JSON) goes only to the log; at start it says what is missing.
+            (ready ? t('{0} 意外退出了，点「重试」继续。', this.name) : t('{0} 启动后立即退出（{1}）', this.name, how) + tail(errTail))
+        if (ready && !wasUs && !this.stopReasons.has(proc)) this.host.log('warn', `${this.name} exited (${how})${tail(errTail)}`)
         reject(new Error(this.exitReason))
         // Sessions lived in that process; tell the app so it can start over cleanly.
         if (!wasUs) this.host.sessionsLost()
