@@ -67,15 +67,6 @@
 .chat-title:hover {
   background: var(--bg-hover);
 }
-.chat-title-input {
-  font-size: 15px;
-  font-weight: 500;
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  padding: var(--space-1) var(--space-4);
-  background: var(--bg-input);
-  outline: none;
-}
 .proj-icon {
   width: 28px;
   height: 28px;

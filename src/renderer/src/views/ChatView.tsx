@@ -11,7 +11,7 @@ import { t } from '../i18n'
 import { PlanLine } from '../components/PlanLine'
 import { UsageButton } from '../components/Usage'
 import { useRunning } from '../components/SidePane'
-import { imeComposing } from '../util'
+import { RenameInput, useRenaming } from '../components/InlineRename'
 
 export function ChatView({ conversationId }: { conversationId: string }) {
   const conv = useApp((s) => s.conversations.find((c) => c.id === conversationId))
@@ -141,35 +141,29 @@ function Handoff({ conv, parent }: { conv: Conversation; parent?: Conversation }
   )
 }
 
+/**
+ * A conversation's title in its header. A double click renames it in place (Enter
+ * from the keyboard too); a single click does nothing else.
+ */
 export function EditableTitle({ conv }: { conv: Conversation }) {
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(conv.title)
-  if (editing)
+  const rn = useRenaming()
+  if (rn.editing)
     return (
-      <input
-        className="chat-title-input"
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => {
-          setEditing(false)
-          if (value.trim() && value !== conv.title) void api().updateConversation(conv.id, { title: value.trim() })
-        }}
-        onKeyDown={(e) => {
-          if (imeComposing(e)) return
-          if (e.key === 'Enter') e.currentTarget.blur()
-          if (e.key === 'Escape') setEditing(false)
+      <RenameInput
+        value={conv.title}
+        onDone={(title) => {
+          rn.stop()
+          if (title) void api().updateConversation(conv.id, { title }).catch(toastError)
         }}
       />
     )
   return (
     <button
       className="chat-title"
-      data-tip={t('点击重命名')}
-      onClick={() => {
-        setValue(conv.title)
-        setEditing(true)
-      }}
+      data-tip={t('双击重命名')}
+      {...rn.onTitle(conv.id)}
+      // A click from the keyboard (Enter, Space) has no pointer: it renames.
+      onClick={(e) => e.detail === 0 && rn.start(conv.id)}
     >
       {conv.title}
     </button>

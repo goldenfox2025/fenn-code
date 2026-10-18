@@ -1,7 +1,9 @@
 /* Live plan under a conversation's title */
 .plan-line {
   flex: none;
-  margin: calc(-1 * var(--space-3)) var(--space-8) var(--space-2);
+  /* The transcript's column, so its edges line up with the turns below. */
+  width: calc(min(100%, var(--turn-width) + 2 * var(--turn-gutter)) - 2 * var(--turn-gutter));
+  margin: calc(-1 * var(--space-3)) auto var(--space-2);
   font-size: 12.5px;
   color: var(--text-3);
   border: 1px solid var(--border);
@@ -172,6 +174,7 @@
   border-color: var(--accent);
 }
 .thread-view .plan-line {
+  width: auto;
   margin: var(--space-3) 14px 0;
 }
 

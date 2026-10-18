@@ -1,0 +1,55 @@
+/* ---------- what can be selected ----------
+ * The app is chrome: rows, menus, chips, headers, tabs and labels show the
+ * arrow (or the hand on what opens), never the I-beam, and a double click on
+ * them selects nothing. What is there to read and copy opts back in: the
+ * conversation, rendered Markdown, code, file previews, error details, and
+ * anything marked .selectable. Fields keep their I-beam. The rule sits on body
+ * so menus, tooltips and dialogs portalled there follow it too; every other
+ * selector is in :where(), so any component's own cursor still wins.
+ */
+body {
+  cursor: default;
+  user-select: none;
+}
+:where(body) :where(.transcript, .md, pre, code, .preview-body, .tool-detail, .msg-error-detail, .confirm-text, .toast-text, .thread-root-text, .board-md, .board-table, .selectable) {
+  cursor: auto;
+  user-select: text;
+}
+:where(body) :where(button, [role='button'], [role='menuitem'], [role='tab'], summary, .menu) {
+  user-select: none;
+}
+:where(body) :where([role='button']:not([aria-disabled='true'])) {
+  cursor: pointer;
+}
+:where(body) :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit'], [type='color'], [type='file']), textarea, [contenteditable]:not([contenteditable='false'])) {
+  cursor: text;
+  user-select: text;
+}
+
+/* The field an inline rename puts in place of a name (see InlineRename.tsx). */
+.rename-input {
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--focus-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-0) var(--space-2);
+  outline: none;
+}
+.nav-item .rename-input {
+  margin-left: calc(-1 * var(--space-2) - 1px);
+}
+:is(.chat-header, .panel-head) > .rename-input {
+  flex: 0 1 50%;
+  font-size: var(--font-body);
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-4);
+}
+.thread-row .title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

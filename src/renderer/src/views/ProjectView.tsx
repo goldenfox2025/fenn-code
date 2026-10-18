@@ -41,6 +41,7 @@ import { api, useApp, toastError } from '../store'
 import { errorText } from '@shared/errors'
 import { duration, imeComposing, minuteTime, relTime, threadState } from '../util'
 import { EditableTitle } from './ChatView'
+import { RenameInput, useRenaming } from '../components/InlineRename'
 import { t } from '../i18n'
 import { tk } from '@shared/i18n'
 import { FilesPane } from '../components/FilesPane'
@@ -100,6 +101,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
     }
   }, [floating])
   const [menu, openMenu] = useMenu({ align: 'right' })
+  const rn = useRenaming()
   if (!project || !conv) return <div className="empty">{t('项目不存在或已被删除')}</div>
 
   const go = (patch: { threadId?: string; overview?: boolean }) => {
@@ -114,9 +116,19 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
           <span className="proj-icon">
             <FolderKanban size={15} />
           </span>
-          <span className="chat-title" style={{ cursor: 'default' }}>
-            {project.name}
-          </span>
+          {rn.editing ? (
+            <RenameInput
+                    value={project.name}
+              onDone={(name) => {
+                rn.stop()
+                if (name) void api().updateProject(project.id, { name }).catch(toastError)
+              }}
+            />
+          ) : (
+            <span className="chat-title" data-tip={t('双击重命名')} {...rn.onTitle(project.id)}>
+              {project.name}
+            </span>
+          )}
           <span className="spacer" />
           <button className={'pill-btn' + (panelOpen && !threadId ? ' active' : '')} onClick={() => go({})}>
             <ListChecks size={15} />
@@ -740,12 +752,36 @@ function ThreadRow({ th, onOpen }: { th: Conversation; onOpen: (id: string) => v
   // A message from another thread waiting to be handed over says so on the board.
   const waiting = useApp((s) => s.peerMessages.find((m) => m.toId === th.id && m.state === 'pending'))
   const from = useApp((s) => (waiting ? s.conversations.find((c) => c.id === waiting.fromId)?.title : undefined))
+  const rn = useRenaming()
   return (
-    <button className="thread-row" onClick={() => onOpen(th.id)}>
+    // Not a <button>: the rename field goes inside it.
+    <div
+      className="thread-row"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(th.id)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+        e.preventDefault()
+        onOpen(th.id)
+      }}
+    >
       <span className="text">
         <span className="title">
           {th.unread && <span className="dot unread" />}
-          {th.title}
+          {rn.editing ? (
+            <RenameInput
+              value={th.title}
+              onDone={(title) => {
+                rn.stop()
+                if (title) void api().updateConversation(th.id, { title }).catch(toastError)
+              }}
+            />
+          ) : (
+            <span className="title-text" {...rn.onTitle(th.id)}>
+              {th.title}
+            </span>
+          )}
         </span>
         <span className="sub">{st === 'working' && step ? step : st === 'error' ? t('出错') : th.lastPreview ?? ''}</span>
         {waiting && (
@@ -762,7 +798,7 @@ function ThreadRow({ th, onOpen }: { th: Conversation; onOpen: (id: string) => v
         </span>
       )}
       <span className="meta">{st === 'working' ? duration(Date.now() - th.createdAt) : relTime(th.updatedAt)}</span>
-    </button>
+    </div>
   )
 }
 

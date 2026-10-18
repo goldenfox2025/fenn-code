@@ -7,7 +7,7 @@ import { Switch } from './Switch'
 import { api, errorMessage, refreshAccount, toast, useApp, useUsableBackends, toastError } from '../store'
 import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
-import type { BackendSummary } from '@shared/contract'
+import type { BackendSummary, PluginSetting } from '@shared/contract'
 import { backendAvailable, prestartOn } from '@shared/backendAvailability'
 import { imeComposing } from '../util'
 import appIcon from '../../../../build/icon.svg'
@@ -652,17 +652,18 @@ function BackendSettings() {
             ) : null}
           </div>
           {installed && <PrestartSwitch backendId={b.id} name={b.name} />}
-          {b.settings.length > 0 &&
+          {installed && b.settings.filter((s) => s.type === 'toggle').map((s) => <BackendToggle key={s.key} backendId={b.id} setting={s} on={!!b.toggles?.[s.key]} />)}
+          {b.settings.some((s) => s.type !== 'toggle') &&
             // Signed in and working: its raw settings fold away. Otherwise they are what it takes to get there.
             (installed && account?.signedIn === true ? (
               <details className="advanced backend-advanced">
                 <summary>{t('高级设置')}</summary>
-                {b.settings.map((s) => (
+                {b.settings.filter((s) => s.type !== 'toggle').map((s) => (
                   <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />
                 ))}
               </details>
             ) : (
-              b.settings.map((s) => <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />)
+              b.settings.filter((s) => s.type !== 'toggle').map((s) => <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />)
             ))}
         </div>
         )
@@ -718,9 +719,24 @@ function PrestartSwitch({ backendId, name }: { backendId: string; name: string }
         </div>
         <Switch
           on={on}
-          label={t('打开 Fenn Code 时预先启动')}
+          label={t('{0}：打开 Fenn Code 时预先启动', name)}
           onChange={(next) => api().updateSettings({ prestartBackends: { ...settings.prestartBackends, [backendId]: next } })}
         />
+      </div>
+    </div>
+  )
+}
+
+/** An on/off setting of a backend plugin (PluginSetting type 'toggle'), shown like the app's own switches. */
+function BackendToggle({ backendId, setting, on }: { backendId: string; setting: PluginSetting; on: boolean }) {
+  return (
+    <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
+      <div className="row-between">
+        <div>
+          <label>{setting.label}</label>
+          {setting.help && <div className="help">{setting.help}</div>}
+        </div>
+        <Switch on={on} label={setting.label} onChange={(next) => void api().setBackendSetting(backendId, setting.key, next ? '1' : '0').catch(toastError)} />
       </div>
     </div>
   )

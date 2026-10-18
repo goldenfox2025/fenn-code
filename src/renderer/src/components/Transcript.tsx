@@ -785,11 +785,11 @@ function ToolRow({ tool: s, ended }: { tool: ToolBlock; ended: boolean }) {
   )
 }
 
-/** The agent's checklist for the turn, folded: 「清单完成 2/5」. */
+/** The agent's plan for the turn, folded: 「计划 2/5」 while under way, 「计划已完成 5/5」 once every step is done. */
 function PlanFold({ entries }: { entries: Extract<Block, { type: 'plan' }>['entries'] }) {
   const done = entries.filter((e) => e.status === 'completed').length
   return (
-    <Fold label={t('清单完成 {0}/{1}', done, entries.length)}>
+    <Fold label={done === entries.length ? t('计划已完成 {0}/{1}', done, entries.length) : t('计划 {0}/{1}', done, entries.length)}>
       <Plan entries={entries} />
     </Fold>
   )

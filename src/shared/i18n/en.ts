@@ -1136,4 +1136,10 @@ export const en: Record<string, string> = {
   "允许运行命令": "Allow running commands",
   "定时任务运行时没有人能确认。打开后，agent 可以直接运行命令；关闭时，要运行命令的步骤会被跳过。": "Nobody is there to confirm while a scheduled task runs. When on, the agent may run commands directly; when off, steps that need a command are skipped.",
   "发送": "Send",
+  "在 Codex 桌面版中显示 Fenn 的 Codex 对话": "Show Fenn's Codex chats in Codex Desktop",
+  "关闭时，Fenn 用完一个对话的会话后会在 Codex 里把它归档（不删除，桌面版的「已归档」里还在）。正在 Fenn 里打开的对话仍会暂时出现在桌面版。": "When off, Fenn archives a chat in Codex once it is done with its session (nothing is deleted; Desktop still has it under Archived). A chat open in Fenn right now may still show in Desktop for a while.",
+  "Codex 桌面版": "Codex Desktop",
+  "双击重命名": "Double-click to rename",
+  "{0}：打开 Fenn Code 时预先启动": "{0}: start when Fenn Code opens",
+  "计划 {0}/{1}": "Plan {0}/{1}",
 }

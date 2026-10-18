@@ -149,6 +149,8 @@ export class AppCore {
       this.chat.turnEndListeners.add((id) => computer.turnEnded(id))
     }
     this.repairBackends()
+    // Sessions left open at the last quit (or crash) were never archived; after startup, not during it.
+    setTimeout(() => void this.chat.syncAgentApp().catch(() => {}), 5_000).unref?.()
     this.separateChatsFromProjects()
     this.leaveUnsafeFolders()
     this.endStaleCommands()
@@ -1542,7 +1544,10 @@ export class AppCore {
     const models = { ...this.store.settings.backendModels }
     delete models[backendId]
     this.publish({ type: 'settings', settings: this.store.patchSettings({ backendModels: models }) })
-    for (const c of this.store.conversations) if (c.backendId === backendId) this.chat.forgetSession(c.id)
+    const live = !this.backends.restartsOnSetting(backendId, key)
+    // A setting read when needed: open sessions are released after any running reply, as the setting now says.
+    for (const c of this.store.conversations) if (c.backendId === backendId) live ? this.chat.renewSession(c.id) : this.chat.forgetSession(c.id)
+    void this.chat.syncAgentApp(backendId)
     this.publish({ type: 'backends', backends: this.backends.list() })
   }
 

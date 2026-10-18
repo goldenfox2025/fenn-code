@@ -827,12 +827,89 @@ await check('a chat can be renamed from the sidebar', async () => {
   await row.hover()
   await row.locator('.trail .icon-btn').click()
   await page.click('.menu-item:has-text("重命名")')
-  await page.waitForSelector('.modal.confirm input')
-  // Focus starts in the name field with the old name selected, so typing replaces it.
-  await page.waitForFunction(() => document.activeElement?.matches('.modal.confirm input'), null, { timeout: 2000 })
+  // Renamed in the row itself: focus starts in the field with the old name selected, so typing replaces it.
+  await row.locator('input.rename-input').waitFor({ timeout: 2000 })
+  await page.waitForFunction(() => document.activeElement?.matches('.sidebar .nav-item input.rename-input'), null, { timeout: 2000 })
+  if (await page.locator('.modal').count()) throw new Error('rename opened a dialog')
   await page.keyboard.type('接口排查')
   await page.keyboard.press('Enter')
   await page.waitForSelector('.sidebar .nav-item.selected:has-text("接口排查")', { timeout: 3000 })
+})
+
+await check('a double click on a title renames it in place: Enter keeps, Esc, an empty name and IME keys do not', async () => {
+  const row = page.locator('.sidebar .nav-item.selected')
+  const id = await page.evaluate(async () => (await window.fenn.snapshot()).conversations.find((c) => c.title === '接口排查')?.id)
+  if (!id) throw new Error('no chat named 接口排查')
+  const title = async () => page.evaluate(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.title, id)
+  const field = row.locator('input.rename-input')
+  const open = async () => {
+    await row.locator('.label').dblclick()
+    await field.waitFor({ timeout: 2000 })
+  }
+  await open()
+  if ((await field.inputValue()) !== '接口排查') throw new Error('the field holds ' + (await field.inputValue()))
+  const sel = await field.evaluate((el) => [el.selectionStart, el.selectionEnd, el.value.length])
+  if (sel[0] !== 0 || sel[1] !== sel[2]) throw new Error('the old name is not selected: ' + sel)
+  if (await page.locator('.modal, .menu').count()) throw new Error('the double click also opened something else')
+  // A key the input method is still composing neither saves nor cancels.
+  await field.evaluate((el) => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }))
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true }))
+  })
+  if (!(await field.count())) throw new Error('an IME key ended the rename')
+  await page.keyboard.type('文档核对')
+  await page.keyboard.press('Enter')
+  await field.waitFor({ state: 'detached', timeout: 2000 })
+  await page.waitForSelector('.sidebar .nav-item.selected .label:text-is("文档核对")', { timeout: 3000 })
+  await page.waitForFunction(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.title === '文档核对', id, { timeout: 3000 })
+  // Esc puts the old name back.
+  await open()
+  await page.keyboard.type('不要这个')
+  await page.keyboard.press('Escape')
+  await field.waitFor({ state: 'detached', timeout: 2000 })
+  if ((await row.locator('.label').innerText()) !== '文档核对') throw new Error('Esc kept the new name')
+  // So does an empty name.
+  await open()
+  await page.keyboard.press('Backspace')
+  await page.keyboard.press('Enter')
+  await field.waitFor({ state: 'detached', timeout: 2000 })
+  await page.waitForTimeout(200)
+  if ((await title()) !== '文档核对') throw new Error('an empty name was saved as ' + JSON.stringify(await title()))
+  // The header title renames the same way, and a single click there does nothing.
+  const head = page.locator('.chat-header .chat-title')
+  await head.click()
+  if (await page.locator('.chat-header input.rename-input').count()) throw new Error('a single click on the header renames')
+  await head.dblclick()
+  const headField = page.locator('.chat-header input.rename-input')
+  await headField.waitFor({ timeout: 2000 })
+  if ((await headField.inputValue()) !== '文档核对') throw new Error('the header field holds ' + (await headField.inputValue()))
+  await page.keyboard.press('Escape')
+  await headField.waitFor({ state: 'detached', timeout: 2000 })
+})
+
+await check('the app chrome shows no I-beam, while the conversation and fields stay selectable', async () => {
+  const look = (sel) => page.locator(sel).first().evaluate((el) => ({ cursor: getComputedStyle(el).cursor, select: getComputedStyle(el).userSelect }))
+  for (const sel of ['.sidebar .nav-item.selected', '.sidebar .nav-item.selected .label', '.sidebar .section-head', '.chat-header .chat-title']) {
+    const st = await look(sel)
+    if (!['default', 'pointer'].includes(st.cursor) || st.select !== 'none') throw new Error(`${sel}: cursor ${st.cursor}, user-select ${st.select}`)
+  }
+  const row = page.locator('.sidebar .nav-item.selected')
+  await row.hover()
+  await row.locator('.trail .icon-btn').click()
+  await page.waitForSelector('.menu .menu-item')
+  const item = await look('.menu .menu-item')
+  if (!['default', 'pointer'].includes(item.cursor) || item.select !== 'none') throw new Error(`menu item: cursor ${item.cursor}, user-select ${item.select}`)
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('.menu', { state: 'detached' })
+  const text = await look('.transcript .md')
+  if (!['auto', 'text'].includes(text.cursor) || text.select !== 'text') throw new Error(`transcript: cursor ${text.cursor}, user-select ${text.select}`)
+  const box = await look('.composer textarea')
+  if (box.cursor !== 'text') throw new Error('the composer shows ' + box.cursor)
+  // The transcript's words can really be selected.
+  await page.locator('.transcript .md').first().click({ clickCount: 3 })
+  const picked = await page.evaluate(() => getSelection()?.toString() ?? '')
+  if (!picked.trim()) throw new Error('nothing selected in the transcript')
+  await page.evaluate(() => getSelection()?.removeAllRanges())
 })
 
 await check('the chats page groups chats by folder, and selects several to delete at once', async () => {

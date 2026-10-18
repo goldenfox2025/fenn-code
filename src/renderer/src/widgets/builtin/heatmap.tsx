@@ -58,7 +58,7 @@ function Heatmap() {
     let last = -9
     const months = cols.map((col, i) => {
       const starts = i === 0 || col[0].date.getMonth() !== cols[i - 1][0].date.getMonth()
-      if (!starts || i - last < 3 || i > weeks - 3) return null
+      if (!starts || i - last < 3) return null
       if (i === 0 && cols[2][0].date.getMonth() !== col[0].date.getMonth()) return null
       last = i
       return col[0].date
@@ -81,7 +81,8 @@ function Heatmap() {
         <div className="heatmap-months">
           {grid.months.map((m, i) =>
             m ? (
-              <span key={i} style={{ left: LABELS + i * step }}>
+              // The month that starts in the last columns ends at the right edge rather than past it.
+              <span key={i} style={i > weeks - 3 ? { right: 0 } : { left: LABELS + i * step }}>
                 {monthName.format(m)}
               </span>
             ) : null

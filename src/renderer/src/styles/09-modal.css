@@ -235,6 +235,13 @@
   z-index: 60;
   pointer-events: none;
 }
+/* Over a dialog, inside its top edge instead of on it (a wide dialog is a fixed height, centered). */
+body:has(.overlay .modal.wide) .toasts {
+  top: calc((100vh - min(620px, 100vh - 64px)) / 2 + var(--space-6));
+}
+body:has(.overlay .modal:not(.wide)) .toasts {
+  top: var(--space-9);
+}
 .toast {
   pointer-events: auto;
   display: flex;

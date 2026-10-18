@@ -25,7 +25,7 @@ import { api, toastError, useApp } from '../store'
 import { initials } from '../util'
 import { useMenu } from './Menu'
 import { t } from '../i18n'
-import { promptDialog } from './Modal'
+import { RenameInput, useRenaming } from './InlineRename'
 import { groupByFolder, isNested } from '../folderGroups'
 import { ResizeHandle, paneStyle, usePaneWidth } from './ResizeHandle'
 
@@ -91,15 +91,32 @@ export function Sidebar() {
 
   const projectActivity = (p: Project) => stats.get(p.id)?.activity ?? ''
 
+  // Renaming happens in the row itself: a double click on the name, or 重命名 in its menu.
+  const rn = useRenaming()
+  const renameChat = (c: Conversation, title: string | null) => {
+    rn.stop()
+    if (title) void api().updateConversation(c.id, { title }).catch(toastError)
+  }
+  const renameProject = (p: Project, name: string | null) => {
+    rn.stop()
+    if (name) void api().updateProject(p.id, { name }).catch(toastError)
+  }
+  /** A row's name, or the field renaming it. */
+  const rowTitle = (key: string, text: string, done: (name: string | null) => void) =>
+    rn.editing === key ? (
+      <RenameInput value={text} onDone={done} className="nav-rename" />
+    ) : (
+      <span className="label" {...rn.onTitle(key)}>
+        {text}
+      </span>
+    )
+
   const chatMenu = (el: HTMLElement, c: Conversation) =>
     openMenu(el, [
       {
         icon: <Pencil size={15} />,
         label: t('重命名'),
-        onClick: async () => {
-          const title = await promptDialog(t('重命名对话'), c.title)
-          if (title && title !== c.title) void api().updateConversation(c.id, { title }).catch(toastError)
-        }
+        onClick: () => rn.start('chat:' + c.id)
       },
       {
         icon: c.pinned ? <PinOff size={15} /> : <Pin size={15} />,
@@ -126,10 +143,7 @@ export function Sidebar() {
       {
         label: t('重命名'),
         shortcut: 'R',
-        onClick: async () => {
-          const name = await promptDialog(t('重命名项目'), p.name)
-          if (name?.trim() && name.trim() !== p.name) void api().updateProject(p.id, { name: name.trim() })
-        }
+        onClick: () => rn.start('project:' + p.id)
       },
       {
         label: t('通知'),
@@ -164,15 +178,17 @@ export function Sidebar() {
         className={'nav-item' + (selected ? ' selected' : '') + (nested ? ' nested' : '')}
         role="button"
         onClick={() => s.navigate({ view: 'chat', conversationId: c.id })}
-        data-tip={c.title}
+        data-tip={rn.editing === 'chat:' + c.id ? undefined : c.title}
       >
         <span className={'dot ' + (c.status === 'working' ? 'working' : c.status === 'waiting' ? 'waiting' : c.unread ? 'unread' : '')} />
-        <span className="label">{c.title}</span>
-        <span className="trail">
-          <button className="icon-btn sm" data-focus-key={'chat-menu:' + c.id} onClick={(e) => (e.stopPropagation(), chatMenu(e.currentTarget, c))}>
-            <MoreHorizontal size={15} />
-          </button>
-        </span>
+        {rowTitle('chat:' + c.id, c.title, (title) => renameChat(c, title))}
+        {rn.editing !== 'chat:' + c.id && (
+          <span className="trail">
+            <button className="icon-btn sm" data-focus-key={'chat-menu:' + c.id} onClick={(e) => (e.stopPropagation(), chatMenu(e.currentTarget, c))}>
+              <MoreHorizontal size={15} />
+            </button>
+          </span>
+        )}
       </div>
     )
   }
@@ -192,13 +208,15 @@ export function Sidebar() {
         }}
       >
         <FolderKanban size={15} style={{ flex: 'none' }} />
-        <span className="label">{p.name}</span>
+        {rowTitle('project:' + p.id, p.name, (name) => renameProject(p, name))}
         {act && <span className={'dot ' + act} />}
-        <span className="trail">
-          <button className="icon-btn sm" data-focus-key={'project-menu:' + p.id} onClick={(e) => (e.stopPropagation(), projectMenu(e.currentTarget, p))}>
-            <MoreHorizontal size={15} />
-          </button>
-        </span>
+        {rn.editing !== 'project:' + p.id && (
+          <span className="trail">
+            <button className="icon-btn sm" data-focus-key={'project-menu:' + p.id} onClick={(e) => (e.stopPropagation(), projectMenu(e.currentTarget, p))}>
+              <MoreHorizontal size={15} />
+            </button>
+          </span>
+        )}
       </div>
     )
   }
@@ -344,7 +362,7 @@ export function Sidebar() {
                   data-tip={`${project} · ${c.title}`}
                 >
                   <MessagesSquare size={15} style={{ flex: 'none' }} />
-                  <span className="label">{c.title}</span>
+                  {rowTitle('thread:' + c.id, c.title, (title) => renameChat(c, title))}
                   <span className="muted small thread-hit-project">{project}</span>
                 </div>
               ))}

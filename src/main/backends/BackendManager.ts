@@ -98,7 +98,7 @@ export class BackendManager {
 
   async setSetting(backendId: string, key: string, value: string): Promise<void> {
     this.opts.settings.set(backendId, key, value)
-    if (this.opts.plugins.find((p) => p.id === backendId)?.settings?.find((s) => s.key === key)?.noRestart) return
+    if (!this.restartsOnSetting(backendId, key)) return
     // Restart so the new settings take effect on the next call.
     await this.restart(backendId, t('{0} 的设置已更改，已重新启动。请点「重试」。', this.nameOf(backendId)))
   }
@@ -242,6 +242,11 @@ export class BackendManager {
     const inst = this.instances.get(backendId)
     if (inst?.closeSession) void inst.closeSession(sessionId, { hide: hide && this.hasAppListing(backendId) }).catch(() => {})
     else if (hide) void this.setShownInApp(backendId, sessionId, false)
+  }
+
+  /** Changing this setting restarts the agent (all but those read when needed, PluginSetting.noRestart). */
+  restartsOnSetting(backendId: string, key: string): boolean {
+    return !this.opts.plugins.find((p) => p.id === backendId)?.settings?.find((s) => s.key === key)?.noRestart
   }
 
   hasAppListing(backendId: string): boolean {
