@@ -130,7 +130,14 @@ const notifier = new Notifier({
   },
 });
 
-const store = new Store(dataDir);
+// Paths saved while the data lived in a former folder (output cards, chats' folders) point here now.
+const movedFolders = process.env.FENN_DATA_DIR
+  ? []
+  : ["Ancora", "Cove", "openclaude"]
+      .map((n) => join(app.getPath("appData"), n))
+      .filter((old) => old.toLowerCase() !== app.getPath("userData").toLowerCase() && !existsSync(join(old, "data")))
+      .map((from) => ({ from, to: app.getPath("userData") }));
+const store = new Store(dataDir, movedFolders);
 let core: AppCore;
 
 // backends.json sits next to the data folder; it can be edited and reloaded live.

@@ -6,6 +6,7 @@ import { demoAgentEnabled } from '../demo'
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { t } from '../../shared/i18n'
+import { remapMovedPaths, type MovedFolder } from './movedFolders'
 import { normalizeTheme, type AppSettings, type Connector, type Conversation, type Message, type PeerMessage, type Project, type Routine } from '../../shared/model'
 
 interface StateFile {
@@ -42,9 +43,14 @@ export class Store {
   /** Conversations whose turn was cut off by the last shutdown or crash. */
   readonly interrupted: string[] = []
 
-  constructor(readonly dir: string) {
+  /** `moved`: the app's former data folders, whose saved paths now point into the new one. */
+  constructor(
+    readonly dir: string,
+    private readonly moved: MovedFolder[] = []
+  ) {
     mkdirSync(join(dir, 'messages'), { recursive: true })
     const loaded = readJson<StateFile>(join(dir, 'state.json'))
+    if (remapMovedPaths(loaded, moved)) this.touch()
     this.state = {
       version: 1,
       projects: loaded?.projects ?? [],
@@ -129,6 +135,10 @@ export class Store {
     let list = this.messages.get(conversationId)
     if (!list) {
       list = readJson<Message[]>(join(this.dir, 'messages', `${conversationId}.json`)) ?? []
+      if (remapMovedPaths(list, this.moved)) {
+        this.dirtyMessages.add(conversationId)
+        this.schedule()
+      }
       // A reply cut off by a quit: drop it if nothing was said yet (unless a thread card hangs on it).
       if (list.some((m) => m.state === 'streaming' && !m.blocks.length)) {
         const anchors = new Set(this.conversations.map((c) => c.anchorMessageId).filter(Boolean))
@@ -145,7 +155,11 @@ export class Store {
   }
   /** A conversation's messages without keeping them loaded (for a pass over every chat). */
   peekMessages(conversationId: string): Message[] {
-    return this.messages.get(conversationId) ?? readJson<Message[]>(join(this.dir, 'messages', `${conversationId}.json`)) ?? []
+    const cached = this.messages.get(conversationId)
+    if (cached) return cached
+    const list = readJson<Message[]>(join(this.dir, 'messages', `${conversationId}.json`)) ?? []
+    remapMovedPaths(list, this.moved)
+    return list
   }
   message(conversationId: string, id: string): Message | undefined {
     return this.messagesOf(conversationId).find((m) => m.id === id)
@@ -180,6 +194,7 @@ export class Store {
     let v = this.variants.get(conversationId)
     if (!v) {
       v = readJson<Record<string, VariantGroup>>(this.variantsFile(conversationId)) ?? {}
+      remapMovedPaths(v, this.moved)
       this.variants.set(conversationId, v)
     }
     return v
