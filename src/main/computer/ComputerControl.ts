@@ -80,9 +80,14 @@ export interface ComputerDeps {
   onActive?(conversationId: string, active: boolean): void
   /** What the agent is doing now, for the stop control. */
   onAction?(conversationId: string, label: string): void
+  /** Overrides ANSWER_WAIT_MS (tests). */
+  answerWaitMs?: number
   /** A conversation asks the user for access, or has its answer: the app brings the question in front while it waits. */
   onAsking?(conversationId: string, asking: boolean): void
 }
+
+/** How long computer_request_access waits for the user before returning "not answered yet" (agents' tool deadlines are ~3 min). */
+export const ANSWER_WAIT_MS = 150_000
 
 /** A grant lasts this long after the agent's last action; then it asks again. */
 export const GRANT_IDLE_MS = 30 * 60_000
@@ -139,7 +144,7 @@ export class ComputerControl {
   /** Declined or stopped for the rest of the current turn. */
   private denied = new Set<string>()
   private active = new Set<string>()
-  private asking = new Map<string, Promise<unknown>>()
+  private asking = new Map<string, Promise<string>>()
 
   constructor(private readonly deps: ComputerDeps) {}
 
@@ -526,16 +531,36 @@ export class ComputerControl {
     }
     if (!wanted.length) return this.grantSummary(id, '这些程序已经被允许。')
 
-    let pending = this.asking.get(id) as Promise<Record<string, TierChoice> | null> | undefined
-    if (!pending) {
+    let settled = this.asking.get(id)
+    if (!settled) {
       this.deps.onAsking?.(id, true)
-      pending = this.deps.askAccess(id, { reason: String(a.reason ?? '').slice(0, 300), apps: wanted }).finally(() => {
-        this.asking.delete(id)
-        this.deps.onAsking?.(id, false)
-      })
-      this.asking.set(id, pending)
+      settled = this.deps.askAccess(id, { reason: String(a.reason ?? '').slice(0, 300), apps: wanted })
+        .finally(() => {
+          this.asking.delete(id)
+          this.deps.onAsking?.(id, false)
+        })
+        // Applied when the user answers, even after this call has returned (see below).
+        .then((answer) => this.applyAnswer(id, wanted, answer))
+      settled.catch(() => {})
+      this.asking.set(id, settled)
     }
-    const answer = await pending
+    // Agents give a tool call a deadline (Antigravity: 3 minutes, counting the time the user takes), so the
+    // call returns before it while the card stays up; asking again gets the answer.
+    let timer: NodeJS.Timeout | undefined
+    const later = new Promise<string>((resolve) => {
+      timer = setTimeout(
+        () => resolve('用户还没有回答（卡片还在 Fenn Code 里等着）。稍等一会儿，再用同样的参数调用 computer_request_access 就能拿到结果；不要改用别的办法操控电脑。'),
+        this.deps.answerWaitMs ?? ANSWER_WAIT_MS
+      )
+    })
+    try {
+      return await Promise.race([settled, later])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private applyAnswer(id: string, wanted: AccessRequest['apps'], answer: Record<string, TierChoice> | null): string {
     if (!answer) {
       this.denied.add(id)
       throw new Error('用户没有允许（或没有回应）操控电脑。不要再试，直接告诉用户需要什么。')

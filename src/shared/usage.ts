@@ -144,3 +144,11 @@ export function formatCost(c: Cost): string {
   return sym[c.currency.toUpperCase()] ? `${sym[c.currency.toUpperCase()]}${v}` : `${v} ${c.currency}`
 }
 
+/**
+ * The input the agent reported. A bare 0 with nothing read from or written to the cache is an agent
+ * that didn't count it (Antigravity on a stopped reply), so it isn't shown as 0: no estimates.
+ */
+export function reportedInput(u: MessageUsage | UsageTotals): number | undefined {
+  if (u.input === 0 && !u.cachedRead && !u.cachedWrite) return undefined
+  return u.input
+}

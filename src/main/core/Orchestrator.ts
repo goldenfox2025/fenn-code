@@ -70,6 +70,7 @@ export class Orchestrator {
       instructions: (conv) => this.instructions(conv),
       history: (conv, prior) => this.handoff(conv, prior),
       tools: (conv) => [this.tools.endpoint(conv.id, () => this.toolsFor(conv.id)), ...(this.extraServers?.(conv) ?? [])],
+      ownTools: (id) => this.toolsFor(id).map((t) => t.name),
       afterTurn: (conv, reply, result) => this.afterTurn(conv, reply, result),
       beforePrompt: (conv) => this.pendingDigest(conv)
     }

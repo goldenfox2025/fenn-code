@@ -51,6 +51,8 @@ export interface TurnHooks {
   instructions?(conv: Conversation): string
   /** MCP-style tool server the agent session may use. */
   tools?(conv: Conversation): HostToolServer[]
+  /** The names of the app's own tools (its `fenn` server) this conversation's agent has. */
+  ownTools?(conversationId: string): string[]
   /**
    * Context for a fresh session of a conversation that already has history.
    * Defaults to replaying the transcript.
@@ -1200,12 +1202,21 @@ export class ChatService {
    * files inside the chat's own working folder, goes ahead; a run nobody watches (a scheduled task,
    * a board refresh) skips anything else and says so in its reply. The rest is asked inline, in its chat.
    */
+  /** A tool call titled as one of the app's own tools: `fenn_update_status`, `mcp__fenn__update_status`, `fenn/update_status`… */
+  private isOwnTool(conversationId: string, title: string): boolean {
+    const m = /^\s*(?:mcp__)?fenn\s*(?:__|[_.:/]|\s)\s*([A-Za-z0-9_]+)\b/.exec(title)
+    return !!m && !!this.hooks.ownTools?.(conversationId).includes(m[1])
+  }
+
   private autoAnswer(conversationId: string, request: PermissionRequest): { decision: string | null; note?: string } | undefined {
     const pick = (...kinds: PermissionRequest['options'][number]['kind'][]) => kinds.map((k) => request.options.find((o) => o.kind === k)).find(Boolean)?.id
     const conv = this.store.conversation(conversationId)
     if (!conv) return undefined
     const unattended = this.isUnattended(conversationId)
     const allow = pick('allow_once', 'allow_always')
+    // The app's own tools (status, threads, asking for computer access…) are the app's to allow: an agent that
+    // asks first (Antigravity) gets yes at once, and what needs the user (computer control) asks with its own card.
+    if (allow && !request.apps && this.isOwnTool(conversationId, request.title)) return { decision: pick('allow_always', 'allow_once')! }
     if (allow && !request.apps && request.toolKind) {
       const kind = request.toolKind
       // Inside the chat's own folders, symlinks resolved, so a link can't lead an "inside" path elsewhere.

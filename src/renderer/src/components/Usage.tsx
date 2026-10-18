@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge, Minimize2 } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
-import { formatCost, formatTokens, headline, MIN_STREAM_MS, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
+import { formatCost, formatTokens, headline, MIN_STREAM_MS, reportedInput, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
 import { useMenu, type MenuItem } from './Menu'
 import { api, useApp } from '../store'
 import { t } from '../i18n'
@@ -15,7 +15,9 @@ import { tk } from '@shared/i18n'
 export function usageLine(u: MessageUsage): string {
   const parts: string[] = []
   const total = headline(u)
-  if (u.input !== undefined && u.output !== undefined) parts.push(t('输入 {0}', formatTokens(u.input)), t('输出 {0}', formatTokens(u.output)))
+  const input = reportedInput(u)
+  if (input !== undefined && u.output !== undefined) parts.push(t('输入 {0}', formatTokens(input)), t('输出 {0}', formatTokens(u.output)))
+  else if (u.output !== undefined && u.output > 0) parts.push(t('输出 {0}', formatTokens(u.output)))
   else if (total > 0) parts.push(t('{0} tokens', formatTokens(total)))
   // ACP reports a running cost; a reply that added nothing shows none rather than $0.0000.
   if (u.cost && u.cost.amount > 0) parts.push(formatCost(u.cost))
@@ -24,7 +26,8 @@ export function usageLine(u: MessageUsage): string {
 
 function detailLines(u: MessageUsage | UsageTotals): string[] {
   const out: string[] = []
-  if (u.input !== undefined) out.push(t('输入 {0}', formatTokens(u.input)))
+  const input = reportedInput(u)
+  if (input !== undefined) out.push(t('输入 {0}', formatTokens(input)))
   if (u.output !== undefined) out.push(t('输出 {0}', formatTokens(u.output)))
   if (u.thought) out.push(t('思考 {0}', formatTokens(u.thought)))
   if (u.cachedRead) out.push(t('缓存读取 {0}', formatTokens(u.cachedRead)))

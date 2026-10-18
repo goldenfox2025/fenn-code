@@ -11,7 +11,7 @@ import { Readable, Writable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import { basename, join } from 'node:path'
 import { Workspaces, outputDecoder, stopAgentProcess } from '../workspace'
-import { t } from '../../../shared/i18n'
+import { t, tk } from '../../../shared/i18n'
 import { classifyError } from '../../../shared/errors'
 import { trustsAgent, visibleSessionOptions } from '../../../shared/sessionOptions'
 import { resolveModelAliases, resolveOptionAliases } from '../../../shared/aliases'
@@ -142,6 +142,13 @@ async function said<T>(run: () => Promise<T>): Promise<T> {
     if (err instanceof acp.RequestError) throw err
     throw new acp.RequestError(-32603, errorText(err))
   }
+}
+
+const OPTION_LABEL: Record<string, string> = {
+  allow_always: tk('总是允许'),
+  allow_once: tk('允许'),
+  reject_once: tk('不允许'),
+  reject_always: tk('不允许')
 }
 
 const TOOL_STATUS: Record<string, ToolStatus> = {
@@ -349,7 +356,8 @@ export class AcpBackend implements AgentBackend {
           sessionId,
           title: toolCall.title ?? t('工具调用'),
           detail: stringify(toolCall.rawInput),
-          options: options.map((o) => ({ id: o.optionId, label: o.name, kind: o.kind })),
+          // The app's own words, by kind: an agent's labels are in its language ("Allow Always").
+          options: options.map((o) => ({ id: o.optionId, label: OPTION_LABEL[o.kind] ? t(OPTION_LABEL[o.kind]) : o.name, kind: o.kind })),
           toolKind: toolCall.kind ?? undefined,
           paths: toolCall.locations?.map((l) => l.path)
         })

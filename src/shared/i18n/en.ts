@@ -1142,4 +1142,5 @@ export const en: Record<string, string> = {
   "双击重命名": "Double-click to rename",
   "{0}：打开 Fenn Code 时预先启动": "{0}: start when Fenn Code opens",
   "计划 {0}/{1}": "Plan {0}/{1}",
+  "总是允许": "Always allow",
 }

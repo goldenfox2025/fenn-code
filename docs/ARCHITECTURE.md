@@ -57,7 +57,7 @@ flowchart TB
   CORE --> PEERS["PeerMail<br/>thread-to-thread notes"]
   CORE --> SCHED["Scheduler<br/>routines"]
   CORE --> AUTO["AutoAssigner<br/>local titles · folders"]
-  CORE --> COMP["ComputerControl<br/>(only while 电脑控制 is on)"]
+  CORE --> COMP["ComputerControl<br/>(only while 允许操控电脑 is on)"]
   ORCH --> TOOLS["core/tools/<br/>args · progress · project data · routines"]
   ORCH --> MEM["ProjectMemory"] & FILES["ProjectFiles"] & ART["Artifacts"]
   CHAT --> STORE[("Store")]

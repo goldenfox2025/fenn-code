@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { settledTitle } from '../toolTitle'
 import { openInFileManager, routeFor } from '../actions'
 import { StatusChip } from './StatusChip'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
@@ -605,7 +606,11 @@ function webTitle(title: string, a: Record<string, unknown>): string | undefined
   return /fetch|open/i.test(name) ? t('打开网页') : t('搜索网页')
 }
 
-function toolTitle(tool: ToolBlock): string {
+function toolTitle(tool: ToolBlock, ended = false): string {
+  return describeTool({ ...tool, title: settledTitle(tool.title, ended || tool.status === 'completed' || tool.status === 'failed') })
+}
+
+function describeTool(tool: ToolBlock): string {
   let a: Record<string, unknown> = {}
   try {
     a = JSON.parse(tool.input ?? '{}')
@@ -771,7 +776,7 @@ function ToolRow({ tool: s, ended }: { tool: ToolBlock; ended: boolean }) {
         ) : (
           toolIcon(s.toolKind)
         )}
-        <span className="t" data-tip={toolTitle(s) !== s.title ? s.title : undefined}>{toolTitle(s)}</span>
+        <span className="t" data-tip={toolTitle(s, ended) !== s.title ? s.title : undefined}>{toolTitle(s, ended)}</span>
         {/* Like Claude: a finished step needs no mark; running and failed ones do. */}
         {s.status !== 'completed' && !unfinished && <StatusIcon status={s.status} />}
       </button>
