@@ -15,7 +15,7 @@ import type { Store } from '../store/Store'
 import type { ToolServer } from '../tools/ToolServer'
 import type { BackendPlugin, BackendSummary, HostToolServer } from '../../shared/contract'
 import { ProjectFiles } from './ProjectFiles'
-import { addFile, changedFiles, createEntry, inside, listFolder, readPreview, renameEntry, writeText, type LibraryRefusal } from './Library'
+import { addFile, changedFiles, createEntry, inside, listFolder, readPreview, removablePath, renameEntry, writeText, type LibraryRefusal } from './Library'
 import { Artifacts } from './Artifacts'
 import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
 import { ChatService, excerpt, textOf } from './ChatService'
@@ -1118,38 +1118,60 @@ export class AppCore {
 
   private refused(r: LibraryRefusal, name: string): never {
     throw new Error(
-      r === 'name' ? t('「{0}」不能用作文件名。', name) : r === 'taken' ? t('这里已经有「{0}」了。', name) : r === 'changed' ? t('文件在您编辑时被改过。') : t('文件已不在原来的位置。')
+      r === 'name'
+        ? t('「{0}」不能用作文件名。', name)
+        : r === 'taken'
+          ? t('这里已经有「{0}」了。', name)
+          : r === 'changed'
+            ? t('文件在您编辑时被改过。')
+            : r === 'encoding'
+              ? t('这个文件不是 UTF-8 编码，在这里保存会弄坏它。')
+              : t('文件已不在原来的位置。')
     )
   }
 
+  /** A change to the folder, with the system's errors (EEXIST, EACCES…) in words. */
+  private fileOp<T>(name: string, op: () => T): T {
+    try {
+      return op()
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (code === 'EEXIST') this.refused('taken', name)
+      if (code === 'ENOENT') this.refused('gone', name)
+      if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY') throw new Error(t('没有权限修改「{0}」，或它正被别的程序占用。', name))
+      if (code === 'ELOOP') throw new Error(t('「{0}」是一个链接，不能在这里编辑。', name))
+      throw e
+    }
+  }
+
   async renameLibraryPath(id: string, rel: string, name: string) {
-    const r = renameEntry(this.libraryRoot(id), rel, name)
+    const r = this.fileOp(name.trim(), () => renameEntry(this.libraryRoot(id), rel, name))
     return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
   }
 
   async createLibraryEntry(id: string, rel: string, name: string, dir: boolean) {
-    const r = createEntry(this.libraryRoot(id), rel, name, dir)
+    const r = this.fileOp(name.trim(), () => createEntry(this.libraryRoot(id), rel, name, dir))
     return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
   }
 
   async saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean) {
-    const r = writeText(this.libraryRoot(id), rel, text, since, force)
-    if ('refused' in r) return r.refused === 'changed' ? { conflict: true } : this.refused(r.refused, rel)
+    const name = rel.split('/').pop() ?? rel
+    const r = this.fileOp(name, () => writeText(this.libraryRoot(id), rel, text, since, force))
+    if ('refused' in r) return r.refused === 'changed' ? { conflict: true } : this.refused(r.refused, name)
     return { updatedAt: r.updatedAt }
   }
 
-  /** Moves a file or folder of it to the Recycle Bin (Trash); never the folder itself. */
+  /** Moves a file or folder of it (a link: the link) to the Recycle Bin (Trash); never the folder itself. */
   async deleteLibraryPath(id: string, rel: string) {
-    const root = this.libraryRoot(id)
-    const abs = rel ? inside(root, rel) : undefined
-    if (!abs || !existsSync(abs)) throw new Error(t('文件已不在原来的位置。'))
+    const abs = removablePath(this.libraryRoot(id), rel)
+    if (!abs) throw new Error(t('文件已不在原来的位置。'))
     if (this.shellTrash) {
       try {
         await this.shellTrash(abs)
       } catch (e) {
         throw new Error(t('没能移到回收站：{0}', e instanceof Error ? e.message : String(e)))
       }
-    } else rmSync(abs, { recursive: true })
+    } else this.fileOp(rel, () => rmSync(abs, { recursive: true }))
   }
 
   // ---- connectors ---------------------------------------------------------

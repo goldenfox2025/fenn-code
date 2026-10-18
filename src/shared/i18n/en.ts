@@ -1033,4 +1033,9 @@ export const en: Record<string, string> = {
   "这里已经有「{0}」了。": "There’s already a \"{0}\" here.",
   "文件在您编辑时被改过。": "The file changed while you were editing it.",
   "没能移到回收站：{0}": "Couldn’t move it to the Recycle Bin: {0}",
+  "不是 UTF-8 编码，只能查看": "Not UTF-8, view only",
+  "没有保存。想看文件现在的内容，点「取消」退出编辑。": "Not saved. To see the file as it is now, click Cancel to stop editing.",
+  "这个文件不是 UTF-8 编码，在这里保存会弄坏它。": "This file isn’t UTF-8; saving it here would damage it.",
+  "没有权限修改「{0}」，或它正被别的程序占用。": "No permission to change \"{0}\", or another program is using it.",
+  "「{0}」是一个链接，不能在这里编辑。": "\"{0}\" is a link and can’t be edited here.",
 }

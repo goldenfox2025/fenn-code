@@ -90,7 +90,8 @@ export function Overlay({ onClose, children, initialFocus }: { onClose: () => vo
     }
   }, [])
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Tab') return
+    // A text editor inside keeps its Tab.
+    if (e.key !== 'Tab' || e.defaultPrevented) return
     const items = focusables(ref.current!)
     if (!items.length) return e.preventDefault()
     const i = items.indexOf(document.activeElement as HTMLElement)

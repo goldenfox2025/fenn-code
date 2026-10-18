@@ -33,11 +33,16 @@ import { Markdown } from './Transcript'
 import { useMenu, type MenuItem } from './Menu'
 import { confirmDialog, Overlay } from './Modal'
 
-/** A file being edited: its text now, the text it was opened with, and when it was read (to catch an agent writing it meanwhile). */
+/**
+ * A file being edited: its text now and as last saved (both with \n line
+ * ends, as a text box keeps them), the line end the file uses, and when it was
+ * read (to catch an agent writing it meanwhile).
+ */
 interface Draft {
   path: string
   text: string
   base: string
+  eol: '\n' | '\r\n'
   since?: number
 }
 /** A name being typed in place: a new name for a file or folder, or the name of a new one. */
@@ -82,14 +87,18 @@ export function FilesPane({ id }: { id: string }) {
   })
   const threadsBusy = useApp((s) => s.conversations.filter((c) => c.projectId === id && c.status === 'working').length)
 
+  /** Takes the new draft, or a change to the latest one (a save that ends while typing goes on keeps the typing). */
   const setDraft = useCallback(
-    (d: Draft | null) => {
-      if (d) drafts.set(id, d)
-      else drafts.delete(id)
-      setDraftState(d)
-    },
+    (d: Draft | null | ((prev: Draft | null) => Draft | null)) =>
+      setDraftState((prev) => {
+        const next = typeof d === 'function' ? d(prev) : d
+        if (next) drafts.set(id, next)
+        else drafts.delete(id)
+        return next
+      }),
     [id]
   )
+  const saving = useRef(false)
   const load = useCallback(
     async (rel: string) => {
       const res = await api().listLibrary(id, rel)
@@ -197,13 +206,18 @@ export function FilesPane({ id }: { id: string }) {
   const startNew = (parent: string, dir: boolean) => {
     setOnlyChanged(false)
     setFilter('')
+    // A narrow pane shows the list or the file: the name is typed in the list.
+    if (narrow) setSelected(null)
     if (parent && !open.has(parent)) toggle(parent)
     setNaming({ mode: 'new', parent, dir })
   }
   const edit = async (path: string) => {
     const f = await api().readLibraryFile(id, path)
-    if (f?.text === undefined) return
-    setDraft({ path, text: f.text, base: f.text, since: f.updatedAt })
+    if (f?.text === undefined || f.readOnly) return
+    // A text box turns \r\n into \n; the file's own line end goes back on when saving.
+    const crlf = (f.text.match(/\r\n/g) ?? []).length
+    const text = f.text.replace(/\r\n/g, '\n')
+    setDraft({ path, text, base: text, eol: crlf > (text.match(/\n/g) ?? []).length / 2 ? '\r\n' : '\n', since: f.updatedAt })
     setRendered(false)
   }
   /** Returns false to keep the name field open (the name was refused). */
@@ -218,7 +232,7 @@ export function FilesPane({ id }: { id: string }) {
         const folders = new Set([...open].map((p) => moved(p, n.path, to)))
         setOpen(folders)
         if (selected) setSelected(moved(selected, n.path, to))
-        if (draft) setDraft({ ...draft, path: moved(draft.path, n.path, to) })
+        setDraft((d) => d && { ...d, path: moved(d.path, n.path, to) })
         reloadWith(folders)
       } else {
         const path = await api().createLibraryEntry(id, n.parent, value, n.dir)
@@ -248,7 +262,7 @@ export function FilesPane({ id }: { id: string }) {
     } catch (e) {
       return toastError(e)
     }
-    if (draft && under(draft.path, path)) setDraft(null)
+    setDraft((d) => (d && under(d.path, path) ? null : d))
     if (selected && under(selected, path)) {
       setSelected(null)
       setFull(false)
@@ -256,20 +270,33 @@ export function FilesPane({ id }: { id: string }) {
     reload()
   }
   const save = async (close: boolean, force = false): Promise<void> => {
-    if (!draft) return
-    try {
-      const r = await api().saveLibraryFile(id, draft.path, draft.text, draft.since, force)
-      if (r.conflict) {
-        if (await confirmDialog(t('「{0}」在您编辑时被改过（可能是 agent 改的）。用您的版本覆盖它？', baseName(draft.path)), { ok: t('覆盖') })) return save(close, true)
-        return
-      }
+    if (!draft || saving.current) return
+    const { path, text, eol, since } = draft
+    // Nothing changed: nothing is written.
+    if (text === draft.base && !force) {
       if (close) {
         setDraft(null)
         setRendered(true)
-      } else setDraft({ ...draft, base: draft.text, since: r.updatedAt })
+      }
+      return
+    }
+    saving.current = true
+    try {
+      const r = await api().saveLibraryFile(id, path, eol === '\n' ? text : text.replace(/\n/g, eol), since, force)
+      if (r.conflict) {
+        saving.current = false
+        if (await confirmDialog(t('「{0}」在您编辑时被改过（可能是 agent 改的）。用您的版本覆盖它？', baseName(path)), { ok: t('覆盖') })) return save(close, true)
+        return toast(t('没有保存。想看文件现在的内容，点「取消」退出编辑。'))
+      }
+      // What was typed while saving stays, and stays unsaved.
+      const closing = close && draft.text === text
+      setDraft((d) => (!d || d.path !== path ? d : closing && d.text === text ? null : { ...d, base: text, since: r.updatedAt }))
+      if (closing) setRendered(true)
       reload()
     } catch (e) {
       toastError(e)
+    } finally {
+      saving.current = false
     }
   }
 
@@ -284,7 +311,7 @@ export function FilesPane({ id }: { id: string }) {
           { separator: true }
         ]
       : []),
-    { icon: <Pencil size={15} />, label: t('重命名'), hint: 'F2', onClick: () => setNaming({ mode: 'rename', path, where }) },
+    { icon: <Pencil size={15} />, label: t('重命名'), hint: where === 'tree' ? 'F2' : undefined, onClick: () => setNaming({ mode: 'rename', path, where }) },
     { icon: <Copy size={15} />, label: t('复制路径'), onClick: () => void navigator.clipboard.writeText(fullPath(path)).then(() => toast(t('已复制路径'))) },
     ...(dir ? [] : [{ icon: <ExternalLink size={15} />, label: t('用默认应用打开'), onClick: () => openWith(path, false) }]),
     { icon: <FolderOpen size={15} />, label: t('在文件夹中显示'), onClick: () => openWith(path, true) },
@@ -405,7 +432,7 @@ export function FilesPane({ id }: { id: string }) {
               </button>
             ))
           ) : (
-            <div className="files-note">{t('agent 还没有改过这个文件夹里的文件。')}</div>
+            <div className="files-note">{changes.length ? t('没有匹配的文件') : t('agent 还没有改过这个文件夹里的文件。')}</div>
           )
         ) : rows.length ? (
           rows
@@ -432,7 +459,7 @@ export function FilesPane({ id }: { id: string }) {
         change={changed.get(selected)}
         onBack={narrow && !inFull ? () => setSelected(null) : undefined}
         draft={draft?.path === selected ? draft : null}
-        onDraft={(text) => draft && setDraft({ ...draft, text })}
+        onDraft={(text) => setDraft((d) => d && { ...d, text })}
         onEdit={() => void edit(selected)}
         onSave={(close) => void save(close)}
         onCancelEdit={() => void dropDraft()}
@@ -683,14 +710,30 @@ function FilePreview({
   const dirty = !!draft && draft.text !== draft.base
   const meta = editing
     ? [dirty ? t('未保存') : t('正在编辑')]
-    : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '']
+    : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '', file?.readOnly ? t('不是 UTF-8 编码，只能查看') : '']
+  // The rendered draft takes the keys (Ctrl+S, Esc) while it shows.
+  const body = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (editing && md && rendered) body.current?.focus({ preventScroll: true })
+  }, [editing, md, rendered])
+  /** Ctrl+S saves and Esc leaves, wherever focus is in the file being edited. */
+  const editKeys = (e: React.KeyboardEvent) => {
+    if (!editing || e.defaultPrevented) return
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      onSave(false)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancelEdit()
+    }
+  }
   const fullBtn = (
     <button className="icon-btn sm" data-tip={full ? t('退出全屏') : t('全屏')} aria-label={full ? t('退出全屏') : t('全屏')} onClick={() => onFull(!full)}>
       {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
     </button>
   )
   return (
-    <div className="files-preview">
+    <div className="files-preview" onKeyDown={editKeys}>
       <div className="preview-head">
         {onBack && (
           <button className="icon-btn sm" aria-label={t('返回文件列表')} data-tip={t('返回文件列表')} onClick={onBack}>
@@ -725,7 +768,7 @@ function FilePreview({
           </>
         ) : (
           <>
-            {file?.text !== undefined && (
+            {file?.text !== undefined && !file.readOnly && (
               <button className="icon-btn sm" data-tip={t('编辑')} aria-label={t('编辑')} onClick={onEdit}>
                 <Pencil size={14} />
               </button>
@@ -737,7 +780,7 @@ function FilePreview({
           </>
         )}
       </div>
-      <div className="preview-body">
+      <div className="preview-body" ref={body} tabIndex={editing && md && rendered ? -1 : undefined}>
         {draft ? (
           md && rendered ? (
             <div className="preview-md">
@@ -752,14 +795,8 @@ function FilePreview({
               aria-label={t('编辑 {0}', name)}
               onChange={(e) => onDraft(e.target.value)}
               onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-                  e.preventDefault()
-                  onSave(false)
-                } else if (e.key === 'Escape') {
-                  e.preventDefault()
-                  onCancelEdit()
-                } else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                  // A tab is text here; insertText keeps the undo history.
+                if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                  // A tab is text here (also full screen, where Tab would move between buttons); insertText keeps the undo history.
                   e.preventDefault()
                   document.execCommand('insertText', false, '\t')
                 }

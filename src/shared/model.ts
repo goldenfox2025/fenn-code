@@ -647,8 +647,8 @@ export interface FennApi {
   listLibrary(id: string, rel?: string): Promise<{ root: string; entries: LibraryEntry[]; truncated: boolean } | undefined>
   /** Files the agents changed in that folder (a project's conversations, or a chat and its sub-conversations), newest first. */
   libraryChanges(id: string): Promise<LibraryChange[]>
-  /** A text file of that folder for the preview (undefined: not text, or too big). */
-  readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined>
+  /** A file of that folder for the preview. readOnly: text that is not UTF-8 (shown as GBK), never edited here. */
+  readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean; readOnly?: boolean } | undefined>
   /** Opens a file of that folder with its app (folders and safe files), or shows it in its folder. */
   openLibraryPath(id: string, rel: string, reveal?: boolean): Promise<{ ok: boolean; error?: string }>
   /** Gives a chat or project without a folder one under the default folder (named after it); returns its path. */

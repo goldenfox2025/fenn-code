@@ -322,7 +322,7 @@ const snap = (page, name, clip) => page.screenshot({ path: join(out, `${name}.pn
   await wait(page, 800)
   await snap(page, 'project-overview')
   await page.click('.panel-head [data-more]')
-  await page.click('.menu .menu-item:has-text("成果")')
+  await page.click(`.menu .menu-item:has-text("${L('Outputs', '成果')}")`)
   await wait(page, 600)
   await snap(page, 'outputs')
 

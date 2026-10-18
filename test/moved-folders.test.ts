@@ -11,12 +11,12 @@ describe('paths into a former data folder', () => {
   it('point at the same place in the new folder, on Windows in any case or slash', () => {
     const v = {
       path: 'C:\\Users\\me\\AppData\\Roaming\\Ancora\\data\\workspaces\\a\\功能测试.txt',
-      list: ['c:/users/me/appdata/roaming/ancora/data/x.md', 'C:\\Users\\me\\AppData\\Roaming\\Ancora2\\x', 'D:\\Ancora\\x'],
+      list: ['c:/users/me/appdata/roaming/ancora/data/x.md', 'C:\\Users\\me\\AppData\\Roaming\\Ancora2\\x', 'D:\\Ancora\\x', 'C:\\Users\\me\\AppData\\Roaming\\Ancora notes\\a.txt', 'C:\\Users\\me\\AppData\\Roaming\\Ancora.bak'],
       text: '已写好 C:\\Users\\me\\AppData\\Roaming\\Ancora\\data\\y.md。'
     }
     expect(remapMovedPaths(v, win)).toBe(true)
     expect(v.path).toBe('C:\\Users\\me\\AppData\\Roaming\\Fenn Code\\data\\workspaces\\a\\功能测试.txt')
-    expect(v.list).toEqual(['C:\\Users\\me\\AppData\\Roaming\\Fenn Code/data/x.md', 'C:\\Users\\me\\AppData\\Roaming\\Ancora2\\x', 'D:\\Ancora\\x'])
+    expect(v.list).toEqual(['C:\\Users\\me\\AppData\\Roaming\\Fenn Code/data/x.md', 'C:\\Users\\me\\AppData\\Roaming\\Ancora2\\x', 'D:\\Ancora\\x', 'C:\\Users\\me\\AppData\\Roaming\\Ancora notes\\a.txt', 'C:\\Users\\me\\AppData\\Roaming\\Ancora.bak'])
     expect(v.text).toBe('已写好 C:\\Users\\me\\AppData\\Roaming\\Fenn Code\\data\\y.md。')
     expect(remapMovedPaths(v, win)).toBe(false)
   })

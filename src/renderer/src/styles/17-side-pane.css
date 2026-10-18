@@ -270,6 +270,9 @@
   min-height: 0;
   overflow: auto;
 }
+.preview-body:focus {
+  outline: none;
+}
 .preview-code {
   margin: var(--space-0);
   padding: var(--space-6) var(--space-7);

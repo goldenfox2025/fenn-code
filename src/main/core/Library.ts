@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { LibraryEntry, LibraryChange, Message } from '../../shared/model'
 
 /**
@@ -26,6 +26,44 @@ export function inside(root: string, rel = ''): string | undefined {
     // Not there (yet): the textual check above is all there is.
   }
   return abs
+}
+
+/**
+ * Where a change to `rel` lands: the entry itself (a link stays a link, never
+ * followed), in a folder that really is inside `root`. Never `root` itself.
+ */
+export function entryPath(root: string, rel: string): string | undefined {
+  if (!rel || isAbsolute(rel)) return undefined
+  const base = resolve(root)
+  const abs = resolve(base, rel)
+  if (!abs.startsWith(base + sep)) return undefined
+  try {
+    const realBase = realpathSync(base)
+    const parent = realpathSync(dirname(abs))
+    if (parent !== realBase && !parent.startsWith(realBase + sep)) return undefined
+    return join(parent, basename(abs))
+  } catch {
+    return undefined
+  }
+}
+
+/** Whether anything (a broken link too) has this name. */
+function taken(abs: string): boolean {
+  try {
+    lstatSync(abs)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Text that is not valid UTF-8 (GBK, Shift-JIS…): shown, but never saved back as UTF-8. */
+function utf8(buf: Buffer): string | undefined {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
+  } catch {
+    return undefined
+  }
 }
 
 export function listFolder(root: string, rel = ''): { entries: LibraryEntry[]; truncated: boolean } | undefined {
@@ -89,7 +127,7 @@ const TEXT_MAX = 512 * 1024
 const IMAGE_MAX = 8 * 1024 * 1024
 const IMAGES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml' }
 
-export function readPreview(root: string, rel: string): { text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined {
+export function readPreview(root: string, rel: string): { text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean; readOnly?: boolean } | undefined {
   const abs = inside(root, rel)
   if (!abs || !existsSync(abs)) return undefined
   const st = statSync(abs)
@@ -104,11 +142,15 @@ export function readPreview(root: string, rel: string): { text?: string; size: n
   const buf = readFileSync(abs)
   // A NUL in the first few kilobytes: not text.
   if (buf.subarray(0, 8192).includes(0)) return { ...base, binary: true }
-  return { ...base, text: buf.toString('utf8') }
+  const text = utf8(buf)
+  // The byte-order mark is not shown; saving puts it back.
+  if (text !== undefined) return { ...base, text: text.replace(/^\uFEFF/, '') }
+  // Most likely a Chinese file saved as GBK: shown as such, and read-only.
+  return { ...base, text: new TextDecoder('gb18030').decode(buf), readOnly: true }
 }
 
 /** Why a change to the folder was refused. */
-export type LibraryRefusal = 'name' | 'taken' | 'gone' | 'changed'
+export type LibraryRefusal = 'name' | 'taken' | 'gone' | 'changed' | 'encoding'
 
 /** A name a file can have on every system: no separators or reserved characters or Windows device names, not . or .., no trailing dot or space. */
 export function fileName(name: string): string | undefined {
@@ -117,19 +159,19 @@ export function fileName(name: string): string | undefined {
   return n
 }
 
-/** Renames a file or folder in place (the folder itself never); returns its new path, or why not. */
+/** Renames a file or folder (a link: the link) in place, never the folder itself; returns its new path, or why not. */
 export function renameEntry(root: string, rel: string, name: string): { path: string } | { refused: LibraryRefusal } {
-  const abs = rel ? inside(root, rel) : undefined
-  if (!abs || !existsSync(abs)) return { refused: 'gone' }
+  const abs = entryPath(root, rel)
+  if (!abs || !taken(abs)) return { refused: 'gone' }
   const n = fileName(name)
   if (!n) return { refused: 'name' }
   const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
   const path = parent ? `${parent}/${n}` : n
   if (path === rel) return { path }
-  const target = inside(root, path)
+  const target = entryPath(root, path)
   if (!target) return { refused: 'name' }
-  // Only a change of case may land on the same file (case-insensitive disks).
-  if (existsSync(target) && realpathSync(target) !== realpathSync(abs)) return { refused: 'taken' }
+  // Only a change of case may land on the same entry (case-insensitive disks).
+  if (taken(target) && target.toLowerCase() !== abs.toLowerCase()) return { refused: 'taken' }
   renameSync(abs, target)
   return { path }
 }
@@ -141,28 +183,48 @@ export function createEntry(root: string, rel: string, name: string, dir: boolea
   const n = fileName(name)
   if (!n) return { refused: 'name' }
   const path = rel ? `${rel}/${n}` : n
-  const target = inside(root, path)
+  const target = entryPath(root, path)
   if (!target) return { refused: 'name' }
-  if (existsSync(target)) return { refused: 'taken' }
+  if (taken(target)) return { refused: 'taken' }
   if (dir) mkdirSync(target)
   else writeFileSync(target, '', { flag: 'wx' })
   return { path }
 }
 
+/** The file or folder to delete (a link: the link itself), never the folder itself. */
+export function removablePath(root: string, rel: string): string | undefined {
+  const abs = entryPath(root, rel)
+  return abs && taken(abs) ? abs : undefined
+}
+
 /**
- * Saves the text of a file. `since` is when it was read for editing: if it
+ * Saves the text of a file, as UTF-8 (with its byte-order mark if it had
+ * one). Only a plain file inside the folder: never through a link, never a
+ * file in another encoding. `since` is when it was read for editing: if it
  * changed on disk after that (an agent wrote it), nothing is written unless
  * `force`. Returns the new modification time.
  */
 export function writeText(root: string, rel: string, text: string, since?: number, force = false): { updatedAt: number } | { refused: LibraryRefusal } {
-  const abs = rel ? inside(root, rel) : undefined
-  if (!abs || !existsSync(dirname(abs))) return { refused: 'gone' }
-  if (existsSync(abs)) {
-    const st = statSync(abs)
-    if (!st.isFile()) return { refused: 'gone' }
-    if (!force && since !== undefined && Math.abs(st.mtimeMs - since) > 1) return { refused: 'changed' }
-  } else if (!force) return { refused: 'gone' }
-  writeFileSync(abs, text)
+  const abs = entryPath(root, rel)
+  if (!abs) return { refused: 'gone' }
+  let st
+  try {
+    st = lstatSync(abs)
+  } catch {
+    return { refused: 'gone' }
+  }
+  if (!st.isFile()) return { refused: 'gone' }
+  if (!force && since !== undefined && Math.abs(st.mtimeMs - since) > 1) return { refused: 'changed' }
+  const old = readFileSync(abs)
+  if (utf8(old) === undefined) return { refused: 'encoding' }
+  const bom = old[0] === 0xef && old[1] === 0xbb && old[2] === 0xbf && !text.startsWith('\uFEFF') ? '\uFEFF' : ''
+  // O_NOFOLLOW where the system has it: a link swapped in meanwhile is not written through.
+  const fd = openSync(abs, constants.O_WRONLY | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0))
+  try {
+    writeSync(fd, Buffer.from(bom + text, 'utf8'))
+  } finally {
+    closeSync(fd)
+  }
   return { updatedAt: statSync(abs).mtimeMs }
 }
 
@@ -174,7 +236,7 @@ export function addFile(root: string, rel: string, name: string, data: Buffer): 
   const ext = extname(base)
   const stem = base.slice(0, base.length - ext.length)
   let target = join(dir, base)
-  for (let n = 2; existsSync(target); n++) target = join(dir, `${stem} (${n})${ext}`)
-  writeFileSync(target, data)
+  for (let n = 2; taken(target); n++) target = join(dir, `${stem} (${n})${ext}`)
+  writeFileSync(target, data, { flag: 'wx' })
   return target
 }

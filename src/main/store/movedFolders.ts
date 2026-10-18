@@ -11,12 +11,13 @@ export interface MovedFolder {
   to: string
 }
 
-/** One pattern per moved folder: its path as a whole path segment, either slash, any case on Windows paths. */
+/** One pattern per moved folder: its path as whole path segments, either slash, any case on Windows paths. */
 function patterns(moved: MovedFolder[]): { re: RegExp; to: string }[] {
   return moved.map(({ from, to }) => {
     const parts = from.replace(/[\\/]+$/, '').split(/[\\/]+/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     const windows = /^[A-Za-z]:/.test(from) || from.includes('\\')
-    return { re: new RegExp(parts.join('[\\\\/]') + '(?=[\\\\/]|$|[^\\w.-])', windows ? 'gi' : 'g'), to: to.replace(/[\\/]+$/, '') }
+    // The folder ends at a separator, the end of the text, or (in prose) a quote, bracket or CJK punctuation; never a space: "Ancora notes" is another folder.
+    return { re: new RegExp(parts.join('[\\\\/]') + '(?=[\\\\/]|$|["\'`)\\]>]|[\\u3000-\\u303f\\uff00-\\uffef])', windows ? 'gi' : 'g'), to: to.replace(/[\\/]+$/, '') }
   })
 }
 

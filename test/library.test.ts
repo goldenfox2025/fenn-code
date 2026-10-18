@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { addFile, changedFiles, createEntry, fileName, inside, listFolder, readPreview, renameEntry, writeText } from '../src/main/core/Library'
+import { addFile, changedFiles, createEntry, fileName, inside, listFolder, readPreview, removablePath, renameEntry, writeText } from '../src/main/core/Library'
 import type { Message } from '../src/shared/model'
 
 function folder() {
@@ -116,5 +116,43 @@ describe('the files panel', () => {
     expect(writeText(root, '../out.md', 'x')).toEqual({ refused: 'gone' })
     expect(statSync(join(root, 'src')).isDirectory()).toBe(true)
     expect(writeText(root, 'src', 'x')).toEqual({ refused: 'gone' })
+  })
+
+  it('never writes, renames or deletes through a link or outside the folder, nor the folder itself', () => {
+    const root = folder()
+    const outside = mkdtempSync(join(tmpdir(), 'lib-out-'))
+    writeFileSync(join(outside, 'x.txt'), 'outside\n')
+    symlinkSync(outside, join(root, 'evil'))
+    symlinkSync(join(outside, 'x.txt'), join(root, 'link.txt'))
+    symlinkSync(join(outside, 'missing.txt'), join(root, 'dangling.txt'))
+    expect(writeText(root, 'evil/x.txt', 'pwned', undefined, true)).toEqual({ refused: 'gone' })
+    expect(writeText(root, 'link.txt', 'pwned', undefined, true)).toEqual({ refused: 'gone' })
+    expect(writeText(root, 'dangling.txt', 'pwned', undefined, true)).toEqual({ refused: 'gone' })
+    expect(readFileSync(join(outside, 'x.txt'), 'utf8')).toBe('outside\n')
+    expect(existsSync(join(outside, 'missing.txt'))).toBe(false)
+    expect(createEntry(root, 'evil', 'new.txt', false)).toEqual({ refused: 'gone' })
+    expect(createEntry(root, '', 'dangling.txt', false)).toEqual({ refused: 'taken' })
+    expect(addFile(root, '', 'dangling.txt', Buffer.from('x'))).toBe(join(root, 'dangling (2).txt'))
+    expect(existsSync(join(outside, 'missing.txt'))).toBe(false)
+    for (const rel of ['', '.', '..', '../' + root.split('/').pop(), 'src/..', 'evil/x.txt', '/etc/passwd']) expect(removablePath(root, rel)).toBeUndefined()
+    expect(removablePath(root, 'dangling.txt')).toBe(join(root, 'dangling.txt'))
+    expect(removablePath(root, 'evil')).toBe(join(root, 'evil'))
+    expect(renameEntry(root, '.', 'x')).toEqual({ refused: 'gone' })
+    expect(renameEntry(root, 'dangling.txt', 'gone.txt')).toEqual({ path: 'gone.txt' })
+  })
+
+  it('shows text in another encoding read-only and never saves over it; keeps a byte-order mark', () => {
+    const root = folder()
+    // 「中文」 in GBK.
+    writeFileSync(join(root, 'gbk.txt'), Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x0d, 0x0a]))
+    const r = readPreview(root, 'gbk.txt')!
+    expect(r).toMatchObject({ text: '中文\r\n', readOnly: true })
+    expect(writeText(root, 'gbk.txt', '中文\r\n', r.updatedAt, true)).toEqual({ refused: 'encoding' })
+    expect(readFileSync(join(root, 'gbk.txt'))).toEqual(Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x0d, 0x0a]))
+    writeFileSync(join(root, 'bom.txt'), '\uFEFFhello\r\n')
+    const b = readPreview(root, 'bom.txt')!
+    expect(b.text).toBe('hello\r\n')
+    writeText(root, 'bom.txt', 'bye\r\n', b.updatedAt)
+    expect(readFileSync(join(root, 'bom.txt'), 'utf8')).toBe('\uFEFFbye\r\n')
   })
 })
