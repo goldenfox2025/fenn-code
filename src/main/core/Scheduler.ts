@@ -86,10 +86,10 @@ export class Scheduler {
       const project = this.store.project(r.target.projectId)
       if (project) {
         conversationId = project.conversationId
-        await this.core.chat.send(conversationId, `【${t('定时任务')} · ${r.name}】\n${r.prompt}`, { unattended: true })
+        await this.core.chat.send(conversationId, `【${t('定时任务')} · ${r.name}】\n${r.prompt}`, { unattended: true, allowCommands: r.allowCommands })
       } else if (r.target.conversationId && this.store.conversation(r.target.conversationId)) {
         conversationId = r.target.conversationId
-        await this.core.chat.send(conversationId, r.prompt, { unattended: true })
+        await this.core.chat.send(conversationId, r.prompt, { unattended: true, allowCommands: r.allowCommands })
       } else {
         const conv = this.core.chat.createConversation({
           kind: 'chat',
@@ -98,7 +98,7 @@ export class Scheduler {
           backendId: this.core.resolveBackend(r.backendId)
         })
         conversationId = conv.id
-        await this.core.chat.send(conv.id, r.prompt, { unattended: true })
+        await this.core.chat.send(conv.id, r.prompt, { unattended: true, allowCommands: r.allowCommands })
       }
       const last = this.store.messagesOf(conversationId).filter((m) => m.role === 'assistant').pop()
       if (last?.state === 'error') lastError = last.error ?? t('运行出错')

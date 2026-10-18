@@ -6,13 +6,15 @@
  */
 import { t } from './i18n'
 
-export type ErrorKind = 'filesystem' | 'refresh' | 'auth' | 'forbidden' | 'quota' | 'rate' | 'network' | 'timeout' | 'server'
+export type ErrorKind = 'filesystem' | 'refresh' | 'auth' | 'forbidden' | 'limit' | 'quota' | 'rate' | 'network' | 'timeout' | 'server'
 
 const RULES: [ErrorKind, RegExp][] = [
   // Local .auth/session paths can contain "auth" even when credentials are valid.
   ['filesystem', /\b(EPERM|EACCES|EROFS|operation not permitted|read-only file system)\b/i],
   // Another process of the same CLI was renewing the sign-in at that moment; retrying usually works.
   ['refresh', /failed to refresh (?:the )?oauth token|another \S+(?: \S+)? process is refreshing/i],
+  // A plan's usage limit that resets on its own (Antigravity: "Usage Limit Reached ... reset in 56 seconds").
+  ['limit', /\busage limit (?:reached|exceeded|hit)\b|\breached (?:your|the) usage limit\b/i],
   ['quota', /\b(quota|insufficient[_ ](?:balance|credits?|funds)|billing|credit balance|out of credits|payment required|\b402\b)/i],
   [
     'auth',
@@ -25,8 +27,17 @@ const RULES: [ErrorKind, RegExp][] = [
     /\b(ECONNREFUSED|ENOTFOUND|ECONNRESET|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|fetch failed|socket hang up|getaddrinfo|network (?:error|is unreachable)|unable to connect|could not connect|connection (?:refused|reset|error)|proxy error|certificate|self[- ]signed|TLS)\b/i
   ],
   ['timeout', /\b(ETIMEDOUT|timed? ?out|deadline exceeded|\b504\b)/i],
-  ['server', /\b(50[0-3]|internal server error|bad gateway|service unavailable)\b/i]
+  ['server', /\b(50[0-3]|internal server error|bad gateway|service unavailable|session not found|agent connection was lost)\b/i]
 ]
+
+/** When a usage limit says it resets ("reset in 56 seconds", "resets in 2 hours"), in words; else ''. */
+export function limitResetIn(raw: string): string {
+  const m = /\breset(?:s)?\s+in\s+(\d+)\s*(second|sec|minute|min|hour|hr|day)s?\b/i.exec(raw)
+  if (!m) return ''
+  const unit = m[2].toLowerCase()
+  const n = Number(m[1])
+  return unit.startsWith('s') ? t('{0} 秒', n) : unit.startsWith('m') ? t('{0} 分钟', n) : unit.startsWith('h') ? t('{0} 小时', n) : t('{0} 天', n)
+}
 
 /** Only English (or mixed) text gets a kind; a message the app already wrote in Chinese is shown as is. */
 export function classifyError(raw: string | undefined): ErrorKind | null {

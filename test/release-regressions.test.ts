@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BackendPlugin } from '../src/shared/contract'
@@ -139,5 +139,20 @@ describe('switching an existing conversation to another agent', () => {
       await core.updateConversation(first.id, { backendId: 'mock' })
       expect(store.conversation(first.id)).toMatchObject({ backendId: 'mock', status: 'idle' })
     } finally { await dispose() }
+  })
+})
+
+describe('the macOS Info.plist', () => {
+  it('drops Electron\'s generic camera, microphone and Bluetooth requests, and names Fenn Code in the rest', () => {
+    const yml = readFileSync(join(__dirname, '../electron-builder.yml'), 'utf8')
+    for (const key of ['NSCameraUsageDescription', 'NSMicrophoneUsageDescription', 'NSAudioCaptureUsageDescription', 'NSBluetoothAlwaysUsageDescription', 'NSBluetoothPeripheralUsageDescription'])
+      expect(yml, key).toMatch(new RegExp(`^\\s+${key}: null$`, 'm'))
+    for (const m of yml.matchAll(/^\s+(NS\w+UsageDescription): (.+)$/gm)) if (m[2] !== 'null') expect(m[2], m[1]).toMatch(/^Fenn Code /)
+  })
+})
+
+describe('the build scripts', () => {
+  it('name no particular local proxy port', () => {
+    for (const f of ['build.ps1', 'build.sh', 'build.cmd']) expect(readFileSync(join(__dirname, '..', f), 'utf8'), f).not.toMatch(/127\.0\.0\.1:\d+/)
   })
 })

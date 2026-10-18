@@ -230,6 +230,16 @@ export class BackendManager {
     void this.instances.get(backendId)?.closeSession?.(sessionId, { discard: true }).catch(() => {})
   }
 
+  /** Closes a session the app is done with; unlike discardSession it stays in the agent's history, to resume. */
+  releaseSession(backendId: string, sessionId: string): void {
+    void this.instances.get(backendId)?.closeSession?.(sessionId).catch(() => {})
+  }
+
+  /** See AgentBackend.openSessionLimit. */
+  openSessionLimit(backendId: string): number | undefined {
+    return this.has(backendId) ? this.get(backendId).openSessionLimit?.() : undefined
+  }
+
   /** See AgentBackend.wantsSpare. */
   wantsSpare(backendId: string): boolean {
     return this.has(backendId) && !!this.get(backendId).wantsSpare?.()

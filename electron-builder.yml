@@ -32,6 +32,12 @@ mac:
     # Computer control drives other apps through System Events (Apple Events) and takes screenshots.
     NSAppleEventsUsageDescription: Fenn Code controls other apps only when you turn on computer control and allow an agent to use them.
     NSScreenCaptureUsageDescription: Fenn Code takes screenshots only when you turn on computer control, so the agent can see the apps you allow.
+    # Electron's template asks for these in generic English; Fenn Code uses none of them, so null drops them.
+    NSCameraUsageDescription: null
+    NSMicrophoneUsageDescription: null
+    NSAudioCaptureUsageDescription: null
+    NSBluetoothAlwaysUsageDescription: null
+    NSBluetoothPeripheralUsageDescription: null
 win:
   target: [nsis, zip]
   artifactName: Fenn-Code-${version}-win.${ext}

@@ -11,10 +11,12 @@
  * told which ones to fill in again.
  *
  * This runs once, and only while the OS keychain is usable: a keychain that is
- * locked or missing at launch must never cost the user their secrets.
+ * locked or missing at launch must never cost the user their secrets. It runs after
+ * the window is up and waits for the keychain without blocking the app (macOS may
+ * ask the user first).
  */
 import { createDecipheriv, pbkdf2Sync } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import type { Store } from './Store'
 import { t } from '../../shared/i18n'
 
@@ -35,19 +37,17 @@ export function decryptMacV10(data: Buffer, key: Buffer): string {
   return Buffer.concat([d.update(data.subarray(3)), d.final()]).toString('utf8')
 }
 
-/** An old name's key from the macOS keychain (macOS may ask the user to allow this once). */
-export function legacyMacKey(oldName: string): Buffer | undefined {
-  try {
-    const pw = execFileSync('security', ['find-generic-password', '-w', '-s', `${oldName} Safe Storage`], {
-      encoding: 'utf8',
-      timeout: 60_000,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      windowsHide: true
-    }).trim()
-    return pw ? macKeyFromPassword(pw) : undefined
-  } catch {
-    return undefined
-  }
+/**
+ * An old name's key from the macOS keychain (macOS may ask the user to allow this once).
+ * Refused, missing or timed out: undefined, which keeps every value it might have opened.
+ */
+export function legacyMacKey(oldName: string): Promise<Buffer | undefined> {
+  return new Promise((resolve) => {
+    execFile('security', ['find-generic-password', '-w', '-s', `${oldName} Safe Storage`], { encoding: 'utf8', timeout: 60_000, windowsHide: true }, (err, out) => {
+      const pw = err ? '' : out.trim()
+      resolve(pw ? macKeyFromPassword(pw) : undefined)
+    })
+  })
 }
 
 /** Names the app had before, newest first; their keychain keys may hold old secrets. */
@@ -56,23 +56,24 @@ export const OLD_NAMES = ['Ancora', 'Cove', 'openclaude']
 /**
  * Re-encrypts what the old key can open, and drops what neither key opens.
  * Returns readable names of the secrets the user has to enter again.
+ * A value the user changed while the keychain was being asked is left as they set it.
  */
-export function repairSecrets(
+export async function repairSecrets(
   store: Store,
   codec: Codec,
   label: (backendId: string, key: string) => string,
-  legacyKeys: () => Buffer[]
-): string[] {
+  legacyKeys: () => Buffer[] | Promise<Buffer[]>
+): Promise<string[]> {
   let keys: Buffer[] | null = null
   /** The value to keep, null to drop it; `lost` when the user has to enter it again. */
-  const recover = (v: string): { value: string | null; lost: boolean } => {
+  const recover = async (v: string): Promise<{ value: string | null; lost: boolean }> => {
     try {
       codec.open(v)
       return { value: v, lost: false }
     } catch {
       /* fall through */
     }
-    if (keys === null) keys = legacyKeys()
+    if (keys === null) keys = await legacyKeys()
     if (!keys.length) return { value: v, lost: true }
     for (const key of keys) {
       try {
@@ -88,24 +89,31 @@ export function repairSecrets(
   for (const [id, values] of Object.entries(store.allBackendSettings())) {
     for (const [k, v] of Object.entries(values)) {
       if (!v.startsWith('enc:')) continue
-      const r = recover(v)
-      if (r.value !== v) store.setBackendSetting(id, k, r.value ?? '')
+      const r = await recover(v)
+      if (r.value !== v && store.backendSettings(id)[k] === v) store.setBackendSetting(id, k, r.value ?? '')
       if (r.lost) lost.push(label(id, k))
     }
   }
   for (const c of store.connectors) {
-    let changed = false
-    const secrets = { ...(c.secrets ?? {}) }
-    for (const [k, v] of Object.entries(secrets)) {
+    const changes: [string, string | null][] = []
+    for (const [k, v] of Object.entries(c.secrets ?? {})) {
       if (!v.startsWith('enc:')) continue
-      const r = recover(v)
+      const r = await recover(v)
       if (r.lost) lost.push(t('连接器「{0}」的 {1}', c.name, k))
-      if (r.value === v) continue
-      changed = true
-      if (r.value === null) delete secrets[k]
-      else secrets[k] = r.value
+      if (r.value !== v) changes.push([k, r.value])
     }
-    if (changed) store.putConnector({ ...c, secrets })
+    // The connector as it is now (the user may have edited or removed it meanwhile).
+    const now = store.connectors.find((x) => x.id === c.id)
+    if (!now || !changes.length) continue
+    const secrets = { ...(now.secrets ?? {}) }
+    let changed = false
+    for (const [k, value] of changes) {
+      if (secrets[k] !== c.secrets?.[k]) continue
+      changed = true
+      if (value === null) delete secrets[k]
+      else secrets[k] = value
+    }
+    if (changed) store.putConnector({ ...now, secrets })
   }
   return lost
 }

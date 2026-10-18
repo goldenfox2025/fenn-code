@@ -145,6 +145,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
   // A backend is always named: the default one to start with, else the first that works.
   const shownBackend = backendId || (usableForRoutine.find((b) => b.id === defaultBackend) ?? usableForRoutine[0])?.id || ''
   const [schedule, setSchedule] = useState<Schedule>(existing?.schedule ?? { kind: 'daily', time: '09:00' })
+  const [allowCommands, setAllowCommands] = useState(!!existing?.allowCommands)
 
   const save = async () => {
     if (!name.trim() || !prompt.trim() || saving) return
@@ -160,7 +161,8 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
         target: sameTarget ? existing.target : target ? { projectId: target } : {},
         // Results in a project (or an existing conversation) go to its chat, which has its own backend.
         backendId: target ? existing?.backendId : shownBackend || undefined,
-        enabled: existing?.enabled ?? true
+        enabled: existing?.enabled ?? true,
+        allowCommands
       } as Routine)
       toast(existing ? t('已保存定时任务') : t('已创建定时任务'))
       onDone()
@@ -267,6 +269,15 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
           <Dropdown value={shownBackend} onChange={setBackendId} options={usableForRoutine.map(backendOption)} />
         </div>
       )}
+      <div className="field">
+        <div className="row-between">
+          <div>
+            <label>{t('允许运行命令')}</label>
+            <div className="help">{t('定时任务运行时没有人能确认。打开后，agent 可以直接运行命令；关闭时，要运行命令的步骤会被跳过。')}</div>
+          </div>
+          <button className={'switch' + (allowCommands ? ' on' : '')} onClick={() => setAllowCommands(!allowCommands)} />
+        </div>
+      </div>
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
           {t('取消')}</button>
@@ -402,6 +413,18 @@ function GeneralSettings() {
           <button
             className={'switch' + (settings.notifications !== false ? ' on' : '')}
             onClick={() => api().updateSettings({ notifications: settings.notifications === false })}
+          />
+        </div>
+      </div>
+      <div className="field">
+        <div className="row-between">
+          <div>
+            <label>{t('允许读取工作文件夹以外的文件')}</label>
+            <div className="help">{t('关闭时，agent 在对话的工作文件夹里读写不用您确认；要读文件夹以外的文件，会在对话里请您确认，定时任务里则直接跳过。')}</div>
+          </div>
+          <button
+            className={'switch' + (settings.allowOutsideReads ? ' on' : '')}
+            onClick={() => api().updateSettings({ allowOutsideReads: !settings.allowOutsideReads })}
           />
         </div>
       </div>

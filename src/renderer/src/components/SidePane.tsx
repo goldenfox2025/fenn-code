@@ -38,7 +38,7 @@ export function ChatSidePane({ conversationId }: { conversationId: string }) {
           <X size={16} />
         </button>
       </div>
-      <div className="panel-body">{tab === 'files' ? <FilesPane id={conv.parentId ?? conv.id} /> : <BackgroundList conv={conv} />}</div>
+      <div className="panel-body">{tab === 'files' ? <FilesPane key={conv.parentId ?? conv.id} id={conv.parentId ?? conv.id} /> : <BackgroundList conv={conv} />}</div>
     </aside>
   )
 }

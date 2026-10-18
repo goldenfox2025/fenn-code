@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, FolderKanban, MessageCircle, Clock } from 'lucide-react'
-import { api, refreshAccount, useApp } from '../store'
+import { api, refreshAccount, toastError, useApp } from '../store'
 import { t } from '../i18n'
 import { AccountLine, BackendField, LoginButton, TerminalLoginButton } from './Dialogs'
 import { imeComposing } from '../util'
@@ -22,6 +22,8 @@ export function Onboarding() {
   const [backendId, setBackendId] = useState(() => (settings.defaultBackendId && installed(settings.defaultBackendId) ? settings.defaultBackendId : firstInstalled()))
   const [project, setProject] = useState({ name: '', description: '' })
   const nameRef = useRef<HTMLInputElement>(null)
+  // Finishing saves settings (and may create the project): one at a time, and the buttons wait.
+  const [finishing, setFinishing] = useState(false)
 
   // The app behind the guide can't take focus or clicks while it is open (the home composer
   // would otherwise grab focus and send the user's name as a chat message).
@@ -61,11 +63,19 @@ export function Onboarding() {
   }, [installedKey])
 
   const finish = async (projectToCreate?: { name: string; description: string }) => {
-    const usable = backendId && installed(backendId) ? backendId : undefined
-    await api().updateSettings({ onboarded: true, userName: name.trim(), ...(usable ? { defaultBackendId: usable } : {}) })
-    if (projectToCreate?.name.trim()) {
-      const p = await api().createProject({ ...projectToCreate, name: projectToCreate.name.trim(), backendId: usable })
-      navigate({ view: 'project', projectId: p.id })
+    if (finishing) return
+    setFinishing(true)
+    try {
+      const usable = backendId && installed(backendId) ? backendId : undefined
+      await api().updateSettings({ onboarded: true, userName: name.trim(), ...(usable ? { defaultBackendId: usable } : {}) })
+      if (projectToCreate?.name.trim()) {
+        const p = await api().createProject({ ...projectToCreate, name: projectToCreate.name.trim(), backendId: usable })
+        navigate({ view: 'project', projectId: p.id })
+      }
+    } catch (e) {
+      toastError(e)
+    } finally {
+      setFinishing(false)
     }
   }
 
@@ -102,7 +112,7 @@ export function Onboarding() {
               <input ref={nameRef} className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t('您的名字（可以不填）')} onKeyDown={(e) => e.key === 'Enter' && !imeComposing(e) && setStep(1)} />
             </div>
             <div className="modal-actions">
-              <button className="btn ghost skip" onClick={() => void finish()}>
+              <button className="btn ghost skip" disabled={finishing} onClick={() => void finish()}>
                 {t('跳过引导')}</button>
               <span className="spacer" />
               <button className="btn primary" onClick={() => setStep(1)}>
@@ -130,11 +140,14 @@ export function Onboarding() {
                   </button>
                 ) : (
                   // Not installed: can't be picked yet; 安装 runs the same confirmed install as Settings.
-                  <div key={b.id} className="choice unavailable" aria-disabled="true">
+                  // Only the name is marked unavailable: 安装 stays outside it, a control the keyboard reaches.
+                  <div key={b.id} className="choice unavailable">
                     <span className="radio" />
                     <span style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                      <span className="title">{b.name}</span>
-                      {b.description && <span className="small muted" style={{ display: 'block' }}>{b.description}</span>}
+                      <span role="group" aria-disabled="true" style={{ display: 'block' }}>
+                        <span className="title">{b.name}</span>
+                        {b.description && <span className="small muted" style={{ display: 'block' }}>{b.description}</span>}
+                      </span>
                       <AccountLine backendId={b.id} name={b.name} upgrade={b.upgrade} configKey={JSON.stringify(b.configured)} />
                     </span>
                   </div>
@@ -190,9 +203,9 @@ export function Onboarding() {
               <button className="btn ghost" onClick={() => setStep(1)}>
                 {t('返回')}</button>
               <span className="spacer" />
-              <button className="btn skip" onClick={() => void finish()}>
+              <button className="btn skip" disabled={finishing} onClick={() => void finish()}>
                 {t('以后再说')}</button>
-              <button className="btn primary" disabled={!project.name.trim()} onClick={() => void finish(project)}>
+              <button className="btn primary" disabled={!project.name.trim() || finishing} onClick={() => void finish(project)}>
                 {t('创建项目')}</button>
             </div>
           </>

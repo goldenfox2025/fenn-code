@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import type { CommandSpec } from '../../../shared/contract'
 import { acpPlugin } from '../acp'
 import { findOnPath } from '../install'
+import { HarnessReaper, killWindowsTree, listWindowsProcesses } from '../harnessReaper'
 import { readPyiArchive, topNames, unpackPyi, unpackedEntries } from '../pyiArchive'
 import { stopAgentProcess, whenExited } from '../workspace'
 import { t, tk } from '../../../shared/i18n'
@@ -99,15 +100,54 @@ export async function unpackServer(exe: string, onLine: (line: string) => void, 
     const tenth = Math.floor((done * 10) / total)
     if (tenth > shown) onLine(`${(shown = tenth) * 10}%`)
   })
-  if (existsSync(home)) {
-    const old = `${home}.old`
-    await fs.rm(old, { recursive: true, force: true })
-    await renameRetrying(home, old)
-    await fs.rm(old, { recursive: true, force: true })
-  }
-  await renameRetrying(part, home)
+  await swapIn(part, home)
   stamp()
   onLine(t('已解出 {0} 个文件（{1} MB），以后启动不再解压到临时文件夹。', r.files, Math.round(r.bytes / 1048576)))
+}
+
+/**
+ * Puts the folder `next` where `home` is. The old folder is only moved aside until the new one is
+ * in, and goes back when the new one can't be moved in, so there is always a working server. It is
+ * removed last; when Windows keeps holding its files it is left there (a later 「安装」 tries again).
+ */
+export async function swapIn(
+  next: string,
+  home: string,
+  ops: { exists: (p: string) => boolean; rename: (from: string, to: string) => Promise<void>; remove: (p: string) => Promise<boolean> } = {
+    exists: existsSync,
+    rename: (from, to) => renameRetrying(from, to),
+    remove: (p) => removeRetrying(p)
+  }
+): Promise<void> {
+  if (!ops.exists(home)) return ops.rename(next, home)
+  let old = `${home}.old`
+  // One left by an earlier 「安装」 that still can't go: move this one aside under another name.
+  if (!(await ops.remove(old))) old += `-${Date.now()}`
+  await ops.rename(home, old)
+  try {
+    await ops.rename(next, home)
+  } catch (e) {
+    await ops.rename(old, home).catch(() => undefined)
+    throw e
+  }
+  await ops.remove(old)
+}
+
+/** Removes a folder, trying again briefly when Windows holds its files; false when it is still there. */
+export async function removeRetrying(
+  path: string,
+  rm: (path: string) => Promise<void> = (p) => fs.rm(p, { recursive: true, force: true }),
+  waits: number[] = [100, 300, 700, 1500]
+): Promise<boolean> {
+  for (let i = 0; ; i++) {
+    try {
+      await rm(path)
+      return true
+    } catch {
+      if (i >= waits.length) return false
+      await new Promise((r) => setTimeout(r, waits[i]))
+    }
+  }
 }
 
 /**
@@ -271,6 +311,9 @@ function tidy(exe: string): void {
     .catch(() => undefined)
 }
 
+/** Ends the localharness program each closed session leaves behind (Windows, where the leak was seen). */
+const harnesses = process.platform === 'win32' ? new HarnessReaper(listWindowsProcesses, killWindowsTree) : undefined
+
 const MISSING = tk('找不到 Antigravity 的 ACP 服务（agy_acp_server）。请在 设置 → Agent 后端 → Antigravity 里点「安装」，或填写它的路径，然后重试。')
 
 export default acpPlugin({
@@ -312,6 +355,13 @@ export default acpPlugin({
       } else if (process.platform === 'win32') programs.set(proc, findProgram(proc))
     },
     stop: stopServer,
+    // Each open session keeps a localharness program running; idle chats beyond these are closed and reopened when used.
+    openSessionLimit: 4,
+    sessionTracker: harnesses && {
+      begin: () => harnesses.begin(),
+      closed: (sessionId, proc) => void harnesses.release(sessionId, proc?.pid).catch(() => undefined),
+      exited: () => harnesses.reset()
+    },
     // It advertises `_meta.antigravity.systemPrompt.append` in its capabilities; rules there outlive its compaction.
     systemPromptMeta: 'antigravity.systemPrompt.append',
     // Each new server process asks for sign-in again: with a key, or the Google sign-in it stored.

@@ -22,6 +22,7 @@ let signedIn = process.env.MOCK_AUTH !== "1";
 const FORGETFUL = process.env.MOCK_FORGETFUL === "1";
 
 const sessions = new Map();
+let lostOnce = false;
 let nextReq = 1000;
 const pendingClientReqs = new Map();
 
@@ -145,6 +146,8 @@ const handlers = {
       throw { code: -32602, message: "unknown session id" };
     const s = sessions.get(sessionId);
     if (cwd) s.cwd = cwd;
+    // MOCK_RESUME_LOST=1: resuming a session the agent lost "works" but it stays lost.
+    if (process.env.MOCK_RESUME_LOST !== "1") s.lost = false;
     return { configOptions: configOptions(s.model, s) };
   },
   "session/set_mode": ({ sessionId, modeId }) => {
@@ -162,6 +165,8 @@ const handlers = {
   "session/prompt": async ({ sessionId, prompt }) => {
     const s = sessions.get(sessionId);
     if (!s) throw { code: -32602, message: "unknown session" };
+    // A session whose helper died (Antigravity): every later prompt fails.
+    if (s.lost) throw { code: -32603, message: `Session not found: ${sessionId}` };
     const abort = { aborted: false };
     s.abort = abort;
     s.turns++;
@@ -192,6 +197,18 @@ const handlers = {
     // "规则在哪": says where the app's notes reached it.
     if (raw.includes("规则在哪")) {
       await stream(sessionId, `系统提示：${s.system.includes("<fenn-context") ? "有" : "无"}；本条消息：${raw.includes("<fenn-context") ? "有" : "无"}`, abort);
+      return { stopReason: "end_turn" };
+    }
+    // "#丢会话" (once per process): the agent loses the session and says so as its reply, as Antigravity does.
+    if (raw.includes("#丢会话") && !lostOnce) {
+      lostOnce = true;
+      s.lost = true;
+      await stream(sessionId, "Agent connection was lost and could not be re-established: Failed to rebuild agent: received 1000 (OK); then sent 1000 (OK)", abort);
+      return { stopReason: "end_turn" };
+    }
+    // "#用量上限": answers with a usage-limit notice as an ordinary reply, the way Antigravity does.
+    if (raw.includes("#用量上限")) {
+      await stream(sessionId, "Usage Limit Reached. You have reached your usage limit; it will reset in 56 seconds.", abort);
       return { stopReason: "end_turn" };
     }
     // "指令是什么": repeats the newest user instructions it was given, and where (system prompt or this message).
@@ -875,10 +892,13 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
       toolCall: {
         toolCallId: `w${s.turns}-${i}`,
         title: i ? `写入 notes-${i + 1}.md` : "写入 notes.md",
-        kind: "edit",
+        // MOCK_ASK_KIND=read|execute|…: asks for another kind of tool call than an edit.
+        kind: process.env.MOCK_ASK_KIND || "edit",
         rawInput: { path: i ? `notes-${i + 1}.md` : "notes.md" },
         // MOCK_LOCATED=inside|outside: names the file, in the working folder or elsewhere, as real agents do.
-        ...(process.env.MOCK_LOCATED ? { locations: [{ path: join(process.env.MOCK_LOCATED === "inside" ? s.cwd : "/elsewhere", i ? `notes-${i + 1}.md` : "notes.md") }] } : {}),
+        // MOCK_LOCATED_PATH: names this file exactly.
+        ...(process.env.MOCK_LOCATED_PATH ? { locations: [{ path: process.env.MOCK_LOCATED_PATH }] }
+          : process.env.MOCK_LOCATED ? { locations: [{ path: join(process.env.MOCK_LOCATED === "inside" ? s.cwd : "/elsewhere", i ? `notes-${i + 1}.md` : "notes.md") }] } : {}),
       },
       options: [
         { optionId: "allow", name: "允许", kind: "allow_once" },

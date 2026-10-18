@@ -1127,4 +1127,12 @@ export const en: Record<string, string> = {
   "自定义指令": "Custom instructions",
   "每个对话里的 agent 都会遵守，例如：回答简短一些；代码注释用英文": "Every agent in every conversation follows these, e.g. keep answers short; write code comments in English",
   "所有后端都会收到。改了以后，进行中的对话从下一轮起按新的来；项目里的对话还会收到项目指令。": "Every backend gets them. After a change, ongoing conversations follow the new version from their next turn; conversations in a project also get the project instructions.",
+  "{0} 分钟": "{0} min",
+  "{0} 小时": "{0} h",
+  "{0} 的用量到上限了，{1}后恢复，到时点「重试」。": "{0} reached its usage limit. It resets in {1}; click Retry then.",
+  "{0} 的用量到上限了，恢复后点「重试」。": "{0} reached its usage limit. Click Retry once it resets.",
+  "允许读取工作文件夹以外的文件": "Allow reading files outside the working folder",
+  "关闭时，agent 在对话的工作文件夹里读写不用您确认；要读文件夹以外的文件，会在对话里请您确认，定时任务里则直接跳过。": "When off, agents read and write inside a chat’s working folder without asking; reading files outside it asks you in the chat, and is skipped in scheduled tasks.",
+  "允许运行命令": "Allow running commands",
+  "定时任务运行时没有人能确认。打开后，agent 可以直接运行命令；关闭时，要运行命令的步骤会被跳过。": "Nobody is there to confirm while a scheduled task runs. When on, the agent may run commands directly; when off, steps that need a command are skipped.",
 }

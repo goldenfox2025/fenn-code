@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { windowsSafe } from '../src/main/backends/acp/AcpBackend'
 import { finishNpmInstall } from '../src/main/backends/npmSetup'
-import { endTree, outputDecoder } from '../src/main/backends/workspace'
-import { renameRetrying, unzipStep } from '../src/main/backends/plugins/antigravity'
+import { decodeOutput, endTree, outputDecoder } from '../src/main/backends/workspace'
+import { runAccountCheck } from '../src/main/backends/acp'
+import { removeRetrying, renameRetrying, swapIn, unzipStep } from '../src/main/backends/plugins/antigravity'
 import { moveContents, type MoveOps } from '../src/main/core/autoFolder'
 import { readDeclared } from '../src/main/backends/registry'
 import { Store } from '../src/main/store/Store'
@@ -138,6 +139,23 @@ describe('decoding command output', () => {
   })
 })
 
+describe('decoding an account check', () => {
+  it('reads a whole GBK output on Windows, UTF-8 elsewhere', () => {
+    expect(decodeOutput(Buffer.from([0xc4, 0xe3, 0xba, 0xc3]), 'win32')).toBe('你好')
+    expect(decodeOutput(Buffer.from('你好'), 'linux')).toBe('你好')
+  })
+
+  it('passes both streams to parse as text', async () => {
+    const status = await runAccountCheck({
+      command: process.execPath,
+      args: ['-e', 'console.log("已登录"); console.error("账号 a@b")'],
+      stderr: true,
+      parse: (out) => ({ signedIn: out.includes('已登录'), detail: out.split('\n').filter(Boolean)[1] })
+    })
+    expect(status).toEqual({ signedIn: true, detail: '账号 a@b' })
+  })
+})
+
 describe('ending a command that ran too long', () => {
   const fake = () => ({ pid: 999999, exitCode: null, signalCode: null, kill: vi.fn() }) as unknown as ChildProcess & { kill: ReturnType<typeof vi.fn> }
 
@@ -173,6 +191,57 @@ describe('Antigravity install on Windows and Linux', () => {
     calls = 0
     await expect(renameRetrying('a', 'b', async () => (calls++, Promise.reject(err('ENOENT'))), [0, 0])).rejects.toThrow('ENOENT')
     expect(calls).toBe(1)
+  })
+
+  it('retries removing a folder Windows holds, and reports when it is still there', async () => {
+    let calls = 0
+    expect(await removeRetrying('d', async () => {
+      if (++calls < 3) throw err('EBUSY')
+    }, [0, 0, 0])).toBe(true)
+    expect(calls).toBe(3)
+    calls = 0
+    expect(await removeRetrying('d', async () => (calls++, Promise.reject(err('EPERM'))), [0, 0])).toBe(false)
+    expect(calls).toBe(3)
+  })
+
+  it('removes the old unpacked folder only once the new one is in, and keeps it when it cannot go', async () => {
+    const log: string[] = []
+    const dirs = new Set(['home', 'part'])
+    const ops = {
+      exists: (p: string) => dirs.has(p),
+      rename: async (from: string, to: string) => {
+        log.push(`mv ${from} ${to}`)
+        dirs.delete(from)
+        dirs.add(to)
+      },
+      remove: async (p: string) => (log.push(`rm ${p}`), !dirs.has(p))
+    }
+    // The old folder stays held: the new one is in place anyway, nothing is thrown.
+    await swapIn('part', 'home', ops)
+    expect(log).toEqual(['rm home.old', 'mv home home.old', 'mv part home', 'rm home.old'])
+    expect([...dirs].sort()).toEqual(['home', 'home.old'])
+    // Next time the stale one is still held: this old one goes aside under another name.
+    log.length = 0
+    dirs.add('part')
+    await swapIn('part', 'home', ops)
+    expect(log[1]).toMatch(/^mv home home\.old-\d+$/)
+    expect(dirs.has('home')).toBe(true)
+  })
+
+  it('puts the old unpacked folder back when the new one cannot be moved in', async () => {
+    const dirs = new Set(['home', 'part'])
+    const ops = {
+      exists: (p: string) => dirs.has(p),
+      rename: async (from: string, to: string) => {
+        if (from === 'part') throw err('EPERM')
+        dirs.delete(from)
+        dirs.add(to)
+      },
+      remove: async () => true
+    }
+    await expect(swapIn('part', 'home', ops)).rejects.toThrow('EPERM')
+    expect(dirs.has('home')).toBe(true)
+    expect(dirs.has('home.old')).toBe(false)
   })
 
   it('unpacks the zip with tar on Windows and macOS, unzip (or Python) on Linux', () => {

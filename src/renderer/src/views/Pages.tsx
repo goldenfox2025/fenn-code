@@ -120,8 +120,13 @@ export function ChatsPage() {
   const removeChosen = async () => {
     if (!chosen.length) return
     if (!(await confirmDialog(t('删除选中的 {0} 个对话？此操作无法撤销。', chosen.length)))) return
-    for (const c of chosen) await api().deleteConversation(c.id)
-    stop()
+    try {
+      for (const c of chosen) await api().deleteConversation(c.id)
+      stop()
+    } catch (e) {
+      // Those already deleted leave the list; the rest stay picked to try again.
+      toastError(e)
+    }
   }
   const removeOne = (c: Conversation) => deleteChat(c)
   return (

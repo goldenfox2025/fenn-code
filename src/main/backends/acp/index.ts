@@ -4,7 +4,7 @@ import { findOnPath } from '../install'
 import { t } from '../../../shared/i18n'
 import { readSessionContext, type SessionLogKind } from '../sessionLogs'
 import { AcpBackend, windowsSafe, type AcpLaunchSpec, type AcpQuirks } from './AcpBackend'
-import { endTree } from '../workspace'
+import { decodeOutput, endTree } from '../workspace'
 
 /** A command that reports the sign-in state, and how to read its output. */
 export interface AccountCheck {
@@ -53,10 +53,13 @@ export function runAccountCheck(check: AccountCheck, timeoutMs = 30_000): Promis
   if (!/[\\/]/.test(check.command) && !findOnPath(check.command, env)) return Promise.resolve({ installed: false })
   if (check.requires?.some((p) => !findOnPath(p, env))) return Promise.resolve({ installed: false })
   return new Promise((resolve) => {
-    const child = execFile(command, args, { env, shell, windowsHide: true }, (err, stdout, stderr) => {
+    // As bytes: a console program on Chinese Windows prints GBK, not UTF-8 (see outputDecoder).
+    const child = execFile(command, args, { env, shell, windowsHide: true, encoding: 'buffer' }, (err, outBuf, errBuf) => {
       clearTimeout(timer)
-      if (notFound(err, String(stderr))) return resolve({ installed: false })
-      const out = check.stderr ? `${stdout}\n${stderr}` : String(stdout)
+      const stdout = decodeOutput(outBuf)
+      const stderr = decodeOutput(errBuf)
+      if (notFound(err, stderr)) return resolve({ installed: false })
+      const out = check.stderr ? `${stdout}\n${stderr}` : stdout
       if (err && !out.trim()) return resolve({})
       try {
         resolve(check.parse(out))

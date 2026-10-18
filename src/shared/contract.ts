@@ -245,6 +245,8 @@ export interface AgentBackend {
   defaultModelChanged?(): Promise<boolean>
   /** Opening a session is slow even once the agent runs (Antigravity): the app keeps one open ahead for the next new chat. */
   wantsSpare?(): boolean
+  /** Each open session holds a program of the agent's (Antigravity): the app keeps at most this many open. */
+  openSessionLimit?(): number | undefined
   /** Runs one turn. Events stream through BackendHost.emit until it resolves. */
   prompt(sessionId: string, parts: PromptPart[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>

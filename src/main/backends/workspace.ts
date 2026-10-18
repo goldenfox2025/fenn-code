@@ -115,6 +115,12 @@ export function outputDecoder(platform: NodeJS.Platform = process.platform): { w
   }
 }
 
+/** A program's whole output as text, read the way outputDecoder reads it as it arrives. */
+export function decodeOutput(buf: Buffer, platform: NodeJS.Platform = process.platform): string {
+  const d = outputDecoder(platform)
+  return d.write(buf) + d.end()
+}
+
 /** How many bytes at the end begin a UTF-8 character whose rest hasn't arrived (0 to 3). */
 function incompleteTail(buf: Buffer): number {
   for (let k = 1; k <= Math.min(3, buf.length); k++) {

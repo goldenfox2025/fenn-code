@@ -10,7 +10,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import { basename, join } from 'node:path'
-import { Workspaces, stopAgentProcess } from '../workspace'
+import { Workspaces, outputDecoder, stopAgentProcess } from '../workspace'
 import { t } from '../../../shared/i18n'
 import { classifyError } from '../../../shared/errors'
 import { trustsAgent, visibleSessionOptions } from '../../../shared/sessionOptions'
@@ -89,6 +89,17 @@ export interface AcpQuirks {
   commandAliases?: Record<string, string>
   /** Told once the agent's process has answered `initialize` (e.g. to look up the processes it started). */
   started?(proc: ChildProcess): void
+  /**
+   * Sees when each session opens (session/new, load or resume) and when the
+   * app closes it (Antigravity: ends the helper program a session started and the server keeps).
+   */
+  /** See AgentBackend.openSessionLimit. */
+  openSessionLimit?: number
+  sessionTracker?: {
+    begin(): (sessionId: string) => void
+    closed(sessionId: string, proc: ChildProcess | undefined): void
+    exited(): void
+  }
   /**
    * The launch passes the model for new chats (host.defaultModel) and a session opens on it, while
    * switching later is slow (Antigravity restarts its harness): a changed choice restarts the idle process.
@@ -225,8 +236,11 @@ export class AcpBackend implements AgentBackend {
     // Each process keeps its own stderr, so an error never repeats an earlier process's output.
     const errTail: string[] = []
     let ready = false
-    proc.stderr!.setEncoding('utf8')
-    proc.stderr!.on('data', (chunk: string) => {
+    // A Chinese Windows writes GBK where a program doesn't choose UTF-8.
+    const errText = outputDecoder()
+    proc.stderr!.on('data', (buf: Buffer) => {
+      const chunk = errText.write(buf)
+      if (!chunk) return
       errTail.push(chunk)
       if (errTail.length > 40) errTail.shift()
       this.host.log('debug', `[${this.name} stderr] ${chunk.trimEnd()}`)
@@ -247,6 +261,7 @@ export class AcpBackend implements AgentBackend {
         this.warmed = undefined
         this.starting = undefined
         if (!wasUs) this.open.clear()
+        this.quirks.sessionTracker?.exited()
         // Through a shell (Windows .cmd), a missing program shows up as an exit, not ENOENT.
         const how = signal ?? `code ${code}`
         this.exitReason = /is not recognized as an internal or external command|command not found/i.test(errTail.join(''))
@@ -412,6 +427,10 @@ export class AcpBackend implements AgentBackend {
     return this.warmed
   }
 
+  openSessionLimit(): number | undefined {
+    return this.quirks.openSessionLimit
+  }
+
   wantsSpare(): boolean {
     return !!this.quirks.spareSession
   }
@@ -432,6 +451,7 @@ export class AcpBackend implements AgentBackend {
     if (caps?.close) await this.conn?.closeSession({ sessionId }).catch(() => {})
     // Otherwise it would sit in the agent's own session list (the Codex app shows every one).
     if (opts.discard && caps?.delete) await this.conn?.deleteSession({ sessionId }).catch(() => {})
+    this.quirks.sessionTracker?.closed(sessionId, this.proc)
   }
 
   async resumeSession({ cwd, folder, tools, sessionId, system }: NewSessionOptions & { sessionId: string }): Promise<SessionInfo | null> {
@@ -439,6 +459,7 @@ export class AcpBackend implements AgentBackend {
     this.workspaces.setRoot(sessionId, folder, cwd)
     const mcpServers = this.mcpServers(tools)
     let res: { configOptions?: unknown; models?: unknown; _meta?: Record<string, unknown> | null } | undefined
+    const opened = this.quirks.sessionTracker?.begin()
     try {
       if (this.caps?.sessionCapabilities?.resume) {
         res = await this.conn!.resumeSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system) } as acp.ResumeSessionRequest)
@@ -449,11 +470,16 @@ export class AcpBackend implements AgentBackend {
         } finally {
           this.replaying.delete(sessionId)
         }
-      } else return null
+      } else {
+        opened?.('')
+        return null
+      }
     } catch (err) {
+      opened?.('')
       this.host.log('warn', `${this.name} could not resume ${sessionId}: ${errorText(err)}`)
       return null
     }
+    opened?.(sessionId)
     this.captureModels(sessionId, res?.configOptions, res?._meta?.modelState ?? res?.models)
     this.captureOptions(sessionId, res?.configOptions, (res as { modes?: unknown } | undefined)?.modes)
     this.open.add(sessionId)
@@ -486,6 +512,7 @@ export class AcpBackend implements AgentBackend {
     const mcpServers = this.mcpServers(tools)
     let res: acp.NewSessionResponse
     const open = () => this.conn!.newSession({ cwd, mcpServers, ...this.systemPrompt(system) } as acp.NewSessionRequest)
+    const opened = this.quirks.sessionTracker?.begin()
     try {
       res = await open().catch(async (err) => {
         // Signed in before, in another process: sign in again quietly and try once more.
@@ -495,6 +522,7 @@ export class AcpBackend implements AgentBackend {
         return open()
       })
     } catch (err) {
+      opened?.('')
       const msg = errorText(err)
       if (classifyError(msg) === 'auth' || classifyError(msg) === 'refresh') {
         const login = this.auth.length ? t('可以在 设置 → Agent 后端 里点「登录」。') : ''
@@ -502,6 +530,7 @@ export class AcpBackend implements AgentBackend {
       }
       throw new Error(msg)
     }
+    opened?.(res.sessionId)
     this.workspaces.setRoot(res.sessionId, folder, cwd)
     this.open.add(res.sessionId)
     const meta = (res as { _meta?: Record<string, unknown> })._meta

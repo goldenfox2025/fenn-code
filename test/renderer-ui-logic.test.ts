@@ -65,3 +65,34 @@ describe('the window never goes blank on a render error', () => {
     expect(main).toMatch(/<AppErrorBoundary>\s*<App \/>\s*<\/AppErrorBoundary>/)
   })
 })
+
+describe('small UI fixes', () => {
+  const src = (f: string) => readFileSync(join(RENDERER, f), 'utf8')
+
+  it('gives each chat its own files pane', () => {
+    expect(src('components/SidePane.tsx')).toMatch(/<FilesPane key=\{conv\.parentId \?\? conv\.id\}/)
+  })
+
+  it('finishes the first-run guide once at a time, and says when it fails', () => {
+    const s = src('components/Onboarding.tsx')
+    expect(s).toMatch(/if \(finishing\) return/)
+    expect(s).toMatch(/catch \(e\) \{\s*toastError\(e\)/)
+    expect(s.match(/disabled=\{[^}]*finishing[^}]*\}/g)?.length).toBe(3)
+  })
+
+  it('keeps 安装 outside what the guide marks unavailable', () => {
+    const s = src('components/Onboarding.tsx')
+    // The aria-disabled element closes before the account line (with its 安装) begins.
+    const at = s.indexOf('aria-disabled="true"')
+    expect(at).toBeGreaterThan(-1)
+    expect(s.slice(0, at)).not.toMatch(/<div[^>]*className="choice unavailable"[^>]*aria-disabled/)
+    const group = s.slice(at, s.indexOf('<AccountLine', at))
+    expect(group).toMatch(/<\/span>\s*$/)
+    expect(s.indexOf('aria-disabled', at + 1)).toBe(-1)
+  })
+
+  it('reports a failed delete of chats or project files', () => {
+    expect(src('views/Pages.tsx')).toMatch(/for \(const c of chosen\) await api\(\)\.deleteConversation\(c\.id\)\s*stop\(\)\s*\} catch \(e\) \{[^}]*toastError\(e\)/)
+    expect(src('views/ProjectView.tsx')).toMatch(/deleteProjectFile\(projectId, f\.name\)\.catch\(toastError\)/)
+  })
+})

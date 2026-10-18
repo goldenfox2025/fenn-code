@@ -40,7 +40,7 @@ import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
 import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
-import { classifyError, isFriendly, type ErrorKind } from '@shared/errors'
+import { classifyError, isFriendly, limitResetIn, type ErrorKind } from '@shared/errors'
 
 import { segmentBlocks, type ToolBlock } from '../turn'
 
@@ -906,8 +906,12 @@ function Stopped({ m, last }: { m: Message; last?: boolean }) {
 }
 
 /** Plain-language wording for each recognised failure; the agent's own text stays under 「详情」. */
-function errorSentence(kind: ErrorKind, name: string, how: string): string {
+function errorSentence(kind: ErrorKind, name: string, how: string, raw: string): string {
   switch (kind) {
+    case 'limit': {
+      const wait = limitResetIn(raw)
+      return wait ? t('{0} 的用量到上限了，{1}后恢复，到时点「重试」。', name, wait) : t('{0} 的用量到上限了，恢复后点「重试」。', name)
+    }
     case 'filesystem':
       return t('{0} 无法读写本地文件。请查看详情中的路径，并检查文件权限或系统访问限制。', name)
     case 'refresh':
@@ -940,7 +944,7 @@ export function ErrorBar({ m, last = true, busy }: { m: Message; last?: boolean;
   const canLogin = !!(backend?.signIn || backend?.terminalLogin)
   const how = canLogin ? t('点下方「登录」，完成后点「重试」。') : secret ? t('请在设置里填写「{0}」，然后重试。', secret.label) : t('请按它的说明登录后重试。')
   // Messages the app wrote itself are already in plain Chinese; only the agent's raw text gets reworded.
-  const reworded = kind && raw && !isFriendly(raw) ? errorSentence(kind, name, how) : null
+  const reworded = kind && raw && !isFriendly(raw) ? errorSentence(kind, name, how, raw) : null
   const needsLogin = (kind === 'auth' || kind === 'refresh') && !!backend
   return (
     <div className="msg-error">

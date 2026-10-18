@@ -441,7 +441,7 @@ function FilesPanel({ projectId }: { projectId: string }) {
               data-tip={t('移除')}
               onClick={async () => {
                 if (!(await confirmDialog(t('从项目中移除「{0}」？', f.name), { ok: t('移除') }))) return
-                await api().deleteProjectFile(projectId, f.name)
+                await api().deleteProjectFile(projectId, f.name).catch(toastError)
                 void reload()
               }}
             >

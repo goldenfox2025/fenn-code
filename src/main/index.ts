@@ -703,21 +703,34 @@ app.whenReady().then(async () => {
   await tools.start();
   // Secrets saved under the old name: carry them over once, or say which to enter again.
   // Only while the keychain works: a locked or missing one says nothing about the values.
-  const keychainUsable =
-    safeStorage.isEncryptionAvailable() &&
-    (process.platform !== "linux" || !["basic_text", "unknown"].includes(safeStorage.getSelectedStorageBackend()));
-  if (store.settings.secretsRepairedFor !== app.getName() && keychainUsable) {
-    const lost = repairSecrets(
+  // After the window is up, and without blocking it: macOS may ask the user about each old key.
+  const repairOldSecrets = async () => {
+    if (store.settings.secretsRepairedFor === app.getName()) return;
+    const keychainUsable =
+      safeStorage.isEncryptionAvailable() &&
+      (process.platform !== "linux" || !["basic_text", "unknown"].includes(safeStorage.getSelectedStorageBackend()));
+    if (!keychainUsable) return;
+    const legacyKeys = async () => {
+      if (process.platform !== "darwin") return [];
+      const keys: Buffer[] = [];
+      // One at a time: each may bring up its own keychain prompt.
+      for (const name of OLD_NAMES) {
+        const k = await legacyMacKey(name);
+        if (k) keys.push(k);
+      }
+      return keys;
+    };
+    const lost = await repairSecrets(
       store,
       { open: (v) => safeStorage.decryptString(Buffer.from(v.slice(4), "base64")), seal },
       secretLabel,
-      () => (process.platform === "darwin" ? OLD_NAMES.map(legacyMacKey).filter((k): k is Buffer => !!k) : []),
+      legacyKeys,
     );
     core.updateSettings({
       secretsRepairedFor: app.getName(),
       ...(lost.length ? { secretsToReenter: [...new Set([...(store.settings.secretsToReenter ?? []), ...lost])] } : {}),
     });
-  }
+  };
   // Without GPU compositing, backdrop blur makes scrolling choppy; the glass theme then skips it.
   const compositing = String(app.getGPUFeatureStatus().gpu_compositing ?? "");
   core.info.softwareRendering = !compositing.startsWith("enabled") && !process.env.FENN_FORCE_BLUR;
@@ -725,8 +738,10 @@ app.whenReady().then(async () => {
   createWindow();
   core.scheduler.start();
   core.resumeInterrupted();
-  // Once the window is up: the agents the user wants ready start alongside (no prompt is sent).
-  setTimeout(() => void core.prestartBackends(), 1500);
+  // Once the window is up: the agents the user wants ready start alongside (no prompt is sent),
+  // after old secrets are carried over so they start with keys they can read.
+  const repaired = new Promise<void>((done) => setTimeout(() => void repairOldSecrets().catch((e) => console.warn("secret repair failed:", e)).finally(done), 500));
+  setTimeout(() => void repaired.then(() => core.prestartBackends()), 1500);
   app.on(
     "activate",
     () => BrowserWindow.getAllWindows().length === 0 && createWindow(),

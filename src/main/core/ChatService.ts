@@ -4,9 +4,9 @@
  * AppEvents. It talks to agents only through BackendManager (the contract).
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, rmdirSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, rmdirSync } from 'node:fs'
 import { open } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, StopReason, TurnResult } from '../../shared/contract'
 import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
@@ -15,6 +15,7 @@ import { addTurn, emptyTotals, type MessageUsage, type UsageTotals } from '../..
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import { t, tk } from '../../shared/i18n'
+import { classifyError } from '../../shared/errors'
 import { TurnMeter } from './TurnMeter'
 import { sessionOptionDefaults } from '../../shared/sessionOptions'
 
@@ -28,6 +29,8 @@ export interface SendOptions {
   housekeeping?: boolean
   /** Nobody is watching (e.g. a scheduled task): prompts for the user fail fast. */
   unattended?: boolean
+  /** An unattended turn whose routine allows running commands (Routine.allowCommands). */
+  allowCommands?: boolean
   /** Not shown in the transcript (e.g. a relayed note or system nudge). */
   hidden?: boolean
   /** Sent to the agent exactly as written: nothing goes before it (a slash command must come first). */
@@ -95,12 +98,14 @@ interface Live {
   systemApplied?: boolean
   /** The agent compacted since the last prompt. */
   compacted?: boolean
-  /** The user's instructions as this session last received them. */
-  instructions?: string
+  /** The user's instructions in this session's system prompt (when systemApplied), as of its opening. */
+  systemInstructions?: string
   /** The context the agent last reported, to notice a compaction it didn't announce. */
   contextUsed?: number
   /** The latest compaction in the agent's log (Qoder), to notice the next one. */
   compactionKey?: string
+  /** When a turn last started in this session. */
+  usedAt?: number
 }
 
 interface QueuedTurn {
@@ -114,10 +119,42 @@ interface QueuedTurn {
 
 /** How long 停止 waits for the agent to end its turn before the app ends it (QA: an agent that hangs ignores the cancel). */
 export const STOP_GRACE_MS = 4000
-/** Tool kinds that change nothing (ACP ToolKind): an agent doing these is never held up for an answer. */
-const SAFE_TOOLS = new Set(['read', 'search', 'think', 'fetch'])
+
+/** The agent no longer has the session (Antigravity after its helper program exits), as an error or as its reply text. */
+export function lostSession(result: TurnResult, reply: Message): boolean {
+  if (result.stopReason === 'error') return /\bsession not found\b/i.test(result.error ?? '')
+  if (result.stopReason === 'cancelled' || reply.blocks.some((b) => b.type !== 'text' && b.type !== 'thought')) return false
+  const text = reply.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('').trim()
+  return text.length < 600 && LOST_TEXT.test(text)
+}
+const LOST_TEXT = /^agent connection was lost\b/i
+
+/** A short reply that is only the agent saying its usage limit was reached: that text, else undefined. */
+export function limitReply(reply: Message): string | undefined {
+  if (reply.blocks.some((b) => b.type !== 'text' && b.type !== 'thought')) return undefined
+  const text = reply.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('').trim()
+  return text.length < 600 && classifyError(text) === 'limit' ? text : undefined
+}
 
 /** `path` is `root` or inside it (case-insensitively where the file system is). */
+/** A path with its symlinks resolved; for one that doesn't exist yet (a file about to be written), its nearest existing folder's. */
+function realish(path: string): string {
+  if (!isAbsolute(path)) return path
+  let dir = path
+  const rest: string[] = []
+  for (let i = 0; i < 64 && !existsSync(dir); i++) {
+    const up = dirname(dir)
+    if (up === dir) return path
+    rest.unshift(basename(dir))
+    dir = up
+  }
+  try {
+    return join(realpathSync.native(dir), ...rest)
+  } catch {
+    return path
+  }
+}
+
 function within(root: string, path: string): boolean {
   const fold = process.platform === 'win32' || process.platform === 'darwin'
   const norm = (p: string) => (fold ? p.toLowerCase() : p)
@@ -136,6 +173,8 @@ export class ChatService {
   // Running turns the user stopped, possibly before the agent was even connected: they send nothing.
   private stopped = new Set<string>()
   private unattendedTurns = new Set<string>()
+  /** Unattended turns allowed to run commands. */
+  private commandTurns = new Set<string>()
   /** Called as a queued turn starts, with the tag it was sent with. */
   readonly turnStartListeners = new Set<(conversationId: string, tag?: string) => void>()
   /** Called whenever a conversation is saved (status, resolved, title…). */
@@ -288,6 +327,7 @@ export class ChatService {
     this.running.add(conversationId)
     this.showQueue(conversationId)
     if (next.opts.unattended) this.unattendedTurns.add(conversationId)
+    if (next.opts.unattended && next.opts.allowCommands) this.commandTurns.add(conversationId)
     if (next.opts.tag) this.tags.set(conversationId, next.opts.tag)
     for (const fn of this.turnStartListeners) fn(conversationId, next.opts.tag)
     try {
@@ -298,8 +338,10 @@ export class ChatService {
       this.stopped.delete(conversationId)
       if (this.renewAfterTurn.delete(conversationId)) this.forgetSession(conversationId)
       this.unattendedTurns.delete(conversationId)
+      this.commandTurns.delete(conversationId)
       this.tags.delete(conversationId)
       for (const fn of this.turnEndListeners) fn(conversationId)
+      this.closeIdle(this.live.get(conversationId)?.backendId)
       next.resolve()
       void this.pump(conversationId)
     }
@@ -348,66 +390,86 @@ export class ChatService {
       this.scheduleEmit(reply)
     }
     try {
-      // Stopped while the agent is still starting: the reply ends now; the connection carries on for the next message.
-      const opening = this.ensureSession(conv)
-      opening.catch(() => undefined)
-      const stop = new Promise<never>((_, reject) => this.stopWaiters.set(conversationId, () => reject(STOPPED)))
-      stop.catch(() => undefined)
-      const session = await Promise.race([opening, stop]).finally(() => {
-        this.stopWaiters.delete(conversationId)
-        const i = reply.blocks.findIndex((b) => b.type === 'notice' && b.key === 'starting')
-        if (i >= 0) {
-          reply.blocks.splice(i, 1)
-          this.scheduleEmit(reply)
+      // A session the agent lost (its helper died: "Session not found") is reopened and the message sent again:
+      // first by resuming it, then, if that one is lost too, as a fresh session with the history.
+      for (let attempt = 0; ; attempt++) {
+        // Stopped while the agent is still starting: the reply ends now; the connection carries on for the next message.
+        const opening = this.ensureSession(conv)
+        opening.catch(() => undefined)
+        const stop = new Promise<never>((_, reject) => this.stopWaiters.set(conversationId, () => reject(STOPPED)))
+        stop.catch(() => undefined)
+        const session = await Promise.race([opening, stop]).finally(() => {
+          this.stopWaiters.delete(conversationId)
+          const i = reply.blocks.findIndex((b) => b.type === 'notice' && b.key === 'starting')
+          if (i >= 0) {
+            reply.blocks.splice(i, 1)
+            this.scheduleEmit(reply)
+          }
+        })
+        live = session.live
+        live.unprompted = undefined
+        // The agent's own / command goes to it as typed, with nothing of the app's in front, or it isn't one.
+        if (!opts.raw && !attachments.length && (await this.isAgentCommand(conversationId, text))) opts = { ...opts, raw: true }
+        if (!session.fresh) await this.applyDeferred(conversationId, live)
+        else this.deferred.delete(conversationId)
+        let promptText = text
+        if (opts.raw) {
+          // As written; the app's updates wait for the next turn.
+        } else if (session.fresh) {
+          // Only a conversation the agent already worked in has history to hand over; a new thread's
+          // ack (written by the app) is not a previous session.
+          const resumed = prior.some((m) => m.role === 'user')
+          const pre = live.systemApplied ? '' : (this.hooks.preamble?.(conv, resumed) ?? '')
+          this.patchConversation(conversationId, { instructionsSent: this.hooks.instructions?.(conv) ?? '' })
+          const history = resumed ? (this.hooks.history?.(conv, prior) ?? transcript(prior)) : ''
+          // After the history: a handoff may already carry what the updates would say.
+          const updates = this.hooks.beforePrompt?.(conv) ?? ''
+          promptText = [pre, history, updates, history ? `新消息：\n${text}` : text].filter(Boolean).join('\n\n')
+        } else {
+          const updates = this.hooks.beforePrompt?.(conv) ?? ''
+          const note = this.withdrawn.delete(conversationId) ? WITHDRAWN : ''
+          // The agent compacted its context, and the notes were only in its first message: hand them over again, first.
+          const rules = live.compacted && !live.systemApplied ? this.hooks.preamble?.(conv, true) : ''
+          // What the agent has of the user's instructions: the last ones handed over (kept with the chat, so a
+          // restart or resume still knows), or after a compaction only what its system prompt holds.
+          const sent = live.compacted && live.systemApplied ? live.systemInstructions : this.store.conversation(conversationId)?.instructionsSent
+          live.compacted = false
+          const now = this.hooks.instructions?.(conv) ?? ''
+          const changed = !rules && sent !== undefined && now !== sent
+            ? now
+              ? `（应用）用户更新了指令，从现在起以这一版为准：\n${now}`
+              : '（应用）用户清空了自定义指令和项目指令，之前的那些不再适用。'
+            : ''
+          if (sent !== now) this.patchConversation(conversationId, { instructionsSent: now })
+          promptText = [rules, changed, updates, note, text].filter(Boolean).join('\n\n')
         }
-      })
-      live = session.live
-      live.unprompted = undefined
-      // The agent's own / command goes to it as typed, with nothing of the app's in front, or it isn't one.
-      if (!opts.raw && !attachments.length && (await this.isAgentCommand(conversationId, text))) opts = { ...opts, raw: true }
-      if (!session.fresh) await this.applyDeferred(conversationId, live)
-      else this.deferred.delete(conversationId)
-      let promptText = text
-      if (opts.raw) {
-        // As written; the app's updates wait for the next turn.
-      } else if (session.fresh) {
-        // Only a conversation the agent already worked in has history to hand over; a new thread's
-        // ack (written by the app) is not a previous session.
-        const resumed = prior.some((m) => m.role === 'user')
-        const pre = live.systemApplied ? '' : (this.hooks.preamble?.(conv, resumed) ?? '')
-        live.instructions ??= this.hooks.instructions?.(conv) ?? ''
-        const history = resumed ? (this.hooks.history?.(conv, prior) ?? transcript(prior)) : ''
-        // After the history: a handoff may already carry what the updates would say.
-        const updates = this.hooks.beforePrompt?.(conv) ?? ''
-        promptText = [pre, history, updates, history ? `新消息：\n${text}` : text].filter(Boolean).join('\n\n')
-      } else {
-        const updates = this.hooks.beforePrompt?.(conv) ?? ''
-        const note = this.withdrawn.delete(conversationId) ? WITHDRAWN : ''
-        // The agent compacted its context, and the notes were only in its first message: hand them over again, first.
-        const rules = live.compacted && !live.systemApplied ? this.hooks.preamble?.(conv, true) : ''
-        live.compacted = false
-        // The user changed their instructions since this session got them: hand over the new ones, once.
-        const now = this.hooks.instructions?.(conv) ?? ''
-        const changed = !rules && live.instructions !== undefined && now !== live.instructions
-          ? now
-            ? `（应用）用户更新了指令，从现在起以这一版为准：\n${now}`
-            : '（应用）用户清空了自定义指令和项目指令，之前的那些不再适用。'
-          : ''
-        live.instructions = now
-        promptText = [rules, changed, updates, note, text].filter(Boolean).join('\n\n')
+        this.withdrawn.delete(conversationId)
+        const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
+        live.turns++
+        live.usedAt = Date.now()
+        live.chars += promptText.length
+        costAtStart = live.cost
+        live.reported = false
+        this.meters.set(conversationId, new TurnMeter(performance.now()))
+        // 停止 always ends the turn here: an agent that ignores the cancel is let go after STOP_GRACE_MS (see interruptReply).
+        const given = new Promise<TurnResult>((resolve) => this.giveUp.set(conversationId, () => resolve({ stopReason: 'cancelled' })))
+        result = this.stopped.has(conversationId)
+          ? { stopReason: 'cancelled' }
+          : await Promise.race([this.backends.prompt(live.backendId, live.sessionId, parts), given]).finally(() => {
+              const end = this.giveUp.get(conversationId)
+              if (end) clearTimeout(this.stopTimers.get(end))
+              if (end) this.stopTimers.delete(end)
+              this.giveUp.delete(conversationId)
+            })
+        if (attempt >= 2 || this.stopped.has(conversationId) || !lostSession(result, reply)) break
+        console.warn(`[chat] session ${live.sessionId} was lost by the agent; reopening (${attempt === 0 ? 'resume' : 'new'})`)
+        reply.blocks = reply.blocks.filter((b) => b.type !== 'text' && b.type !== 'thought')
+        this.scheduleEmit(reply)
+        this.forgetSession(conversationId)
+        // The resumed one was lost as well: the next opens a new session.
+        if (attempt === 1) this.patchConversation(conversationId, { sessionRef: undefined })
+        conv = this.store.conversation(conversationId) ?? conv
       }
-      this.withdrawn.delete(conversationId)
-      const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
-      live.turns++
-      live.chars += promptText.length
-      costAtStart = live.cost
-      live.reported = false
-      this.meters.set(conversationId, new TurnMeter(performance.now()))
-      // 停止 always ends the turn here: an agent that ignores the cancel is let go after STOP_GRACE_MS (see interruptReply).
-      const given = new Promise<TurnResult>((resolve) => this.giveUp.set(conversationId, () => resolve({ stopReason: 'cancelled' })))
-      result = this.stopped.has(conversationId)
-        ? { stopReason: 'cancelled' }
-        : await Promise.race([this.backends.prompt(live.backendId, live.sessionId, parts), given]).finally(() => this.giveUp.delete(conversationId))
     } catch (err) {
       result = err === STOPPED ? { stopReason: 'cancelled' } : { stopReason: 'error', error: err instanceof Error ? err.message : String(err) }
     }
@@ -415,6 +477,16 @@ export class ChatService {
     this.flushEmit(reply)
     this.current.delete(conversationId)
     this.rearmSpare(conversationId)
+    // An agent that says, as an ordinary reply, that its usage limit was reached or that it lost the session
+    // (Antigravity): it is a failure to retry, not an answer.
+    const limited = result.stopReason !== 'error' && result.stopReason !== 'cancelled'
+      ? (limitReply(reply) ?? (lostSession(result, reply) ? textOf(reply).trim() : undefined))
+      : undefined
+    if (limited) {
+      result = { stopReason: 'error', error: limited }
+      reply.blocks = reply.blocks.filter((b) => b.type !== 'text' && b.type !== 'thought')
+      this.meters.delete(conversationId)
+    }
     reply.state = result.stopReason === 'error' ? 'error' : result.stopReason === 'cancelled' ? 'cancelled' : 'done'
     if (result.error) reply.error = result.error
     // An agent command it carried out without a word (Grok's /always-approve): say it ran.
@@ -440,7 +512,7 @@ export class ChatService {
       }
       if (logged?.turn && !result.usage) result = { ...result, usage: logged.turn }
     }
-    const usage = turnUsageOf(result, costAtStart, live?.cost)
+    const usage = limited ? undefined : turnUsageOf(result, costAtStart, live?.cost)
     if (usage) reply.usage = usage
     if (usage) reply.model = this.replyModel(conversationId, live?.backendId)
     // An agent's own / command is answered by the program, not the model: it says nothing about speed.
@@ -679,6 +751,11 @@ export class ChatService {
 
     stale()
     const live: Live = { sessionId: info.sessionId, backendId: conv.backendId, turns: 0, chars: 0, unprompted: { fresh }, systemApplied: info.systemApplied }
+    // A system prompt carries the instructions as they are now (a resumed session gets the current one too).
+    if (info.systemApplied) {
+      live.systemInstructions = this.hooks.instructions?.(conv) ?? ''
+      this.patchConversation(conv.id, { instructionsSent: live.systemInstructions })
+    }
     // A new session starts with an empty context; the old session's figures no longer apply.
     if (fresh) {
       const u = this.store.conversation(conv.id)?.usage
@@ -750,6 +827,8 @@ export class ChatService {
 
   /** Ends a turn whose agent ignored 停止 (see interruptReply). */
   private giveUp = new Map<string, () => void>()
+  /** The give-up timer of a stopped turn, by that turn's giveUp. */
+  private stopTimers = new Map<() => void, ReturnType<typeof setTimeout>>()
 
   /** Stops the running reply only; what is queued goes next. */
   private async interruptReply(conversationId: string): Promise<void> {
@@ -760,16 +839,21 @@ export class ChatService {
       if (live) {
         // An agent that doesn't answer the cancel (it hangs) mustn't keep the chat 运行中 with its queue stuck:
         // the turn ends here after a few seconds, and the agent is started again once nothing else runs on it.
-        const timer = setTimeout(() => {
-          const end = this.giveUp.get(conversationId)
-          if (!end) return
-          end()
-          this.forgetSession(conversationId)
-          // Its hung reply still counts as running in the agent; another chat's reply on it would be cut off.
-          const others = [...this.running].some((id) => id !== conversationId && this.live.get(id)?.backendId === live.backendId)
-          if (!others) void this.backends.restart(live.backendId).catch(() => undefined)
-        }, STOP_GRACE_MS)
-        timer.unref?.()
+        // Bound to this turn: one that ends meanwhile clears it, and a next turn is never cut off by it.
+        const end = this.giveUp.get(conversationId)
+        if (end) {
+          const timer = setTimeout(() => {
+            this.stopTimers.delete(end)
+            if (this.giveUp.get(conversationId) !== end) return
+            end()
+            this.forgetSession(conversationId)
+            // Its hung reply still counts as running in the agent; another chat's reply on it would be cut off.
+            const others = [...this.running].some((id) => id !== conversationId && this.live.get(id)?.backendId === live.backendId)
+            if (!others) void this.backends.restart(live.backendId).catch(() => undefined)
+          }, STOP_GRACE_MS)
+          timer.unref?.()
+          this.stopTimers.set(end, timer)
+        }
         await withTimeout(this.backends.cancel(live.backendId, live.sessionId), STOP_GRACE_MS, '').catch(() => undefined)
       }
     }
@@ -963,7 +1047,7 @@ export class ChatService {
     await this.cancel(conversationId).catch(() => {})
     this.forgetSession(conversationId)
     for (const m of [this.meters, this.tags, this.epochs, this.current, this.rearm]) m.delete(conversationId)
-    for (const s of [this.renewAfterTurn, this.unattendedTurns]) s.delete(conversationId)
+    for (const s of [this.renewAfterTurn, this.unattendedTurns, this.commandTurns]) s.delete(conversationId)
     clearTimeout(this.emitTimers.get(conversationId))
     this.emitTimers.delete(conversationId)
     this.store.removeConversation(conversationId)
@@ -994,11 +1078,28 @@ export class ChatService {
     else this.forgetSession(conversationId)
   }
 
+  /**
+   * An agent that holds a program per open session (Antigravity) keeps only its most recently used
+   * idle sessions open; the others are closed and reopened (resumed where it can) on their next message.
+   */
+  private closeIdle(backendId: string | undefined): void {
+    const limit = backendId ? this.backends.openSessionLimit(backendId) : undefined
+    if (!limit) return
+    const busy = (id: string) => this.running.has(id) || this.current.has(id) || this.connecting.has(id) || !!this.queues.get(id)?.length || [...this.shownPermissions.values()].some((p) => p.conversationId === id)
+    const open = [...this.live].filter(([, l]) => l.backendId === backendId)
+    const idle = open.filter(([id]) => !busy(id)).sort((a, b) => (a[1].usedAt ?? 0) - (b[1].usedAt ?? 0))
+    for (let extra = open.length - limit; extra > 0 && idle.length; extra--) this.forgetSession(idle.shift()![0])
+  }
+
   forgetSession(conversationId: string): void {
     this.epochs.set(conversationId, (this.epochs.get(conversationId) ?? 0) + 1)
     this.connecting.delete(conversationId)
     const live = this.live.get(conversationId)
-    if (live) this.bySession.delete(`${live.backendId}:${live.sessionId}`)
+    if (live) {
+      this.bySession.delete(`${live.backendId}:${live.sessionId}`)
+      // Closed in the agent too (it stays in its history, to resume): an open one holds the agent's resources.
+      this.backends.releaseSession(live.backendId, live.sessionId)
+    }
     this.live.delete(conversationId)
     this.deferred.delete(conversationId)
     this.withdrawn.delete(conversationId)
@@ -1031,13 +1132,20 @@ export class ChatService {
     const pick = (...kinds: PermissionRequest['options'][number]['kind'][]) => kinds.map((k) => request.options.find((o) => o.kind === k)).find(Boolean)?.id
     const conv = this.store.conversation(conversationId)
     if (!conv) return undefined
-    if (!request.apps && request.toolKind) {
-      const allow = pick('allow_once', 'allow_always')
-      const roots = [this.folderOf(conv), this.scratchPath(conv.id)].filter((r): r is string => !!r)
-      const mine = !!request.paths?.length && request.paths.every((p) => roots.some((r) => within(r, p)))
-      if (allow && (SAFE_TOOLS.has(request.toolKind) || (request.toolKind === 'edit' && mine))) return { decision: allow }
+    const unattended = this.isUnattended(conversationId)
+    const allow = pick('allow_once', 'allow_always')
+    if (allow && !request.apps && request.toolKind) {
+      const kind = request.toolKind
+      // Inside the chat's own folders, symlinks resolved, so a link can't lead an "inside" path elsewhere.
+      const roots = [this.folderOf(conv), this.scratchPath(conv.id)].filter((r): r is string => !!r).map(realish)
+      const inside = !!request.paths?.length && request.paths.every((p) => roots.some((r) => within(r, realish(p))))
+      // Thinking and fetching a web page touch no files here.
+      if (kind === 'think' || kind === 'fetch') return { decision: allow }
+      if ((kind === 'read' || kind === 'search') && (inside || this.store.settings.allowOutsideReads)) return { decision: allow }
+      if (kind === 'edit' && inside) return { decision: allow }
+      if (kind === 'execute' && unattended && this.commandTurns.has(conversationId)) return { decision: allow }
     }
-    if (!this.isUnattended(conversationId)) return undefined
+    if (!unattended) return undefined
     return { decision: pick('reject_once', 'reject_always') ?? null, note: t('无人值守运行，没有人能确认，已跳过：{0}', request.title) }
   }
 

@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -92,4 +92,64 @@ describe('停止 with an agent that hangs', () => {
       await t.dispose()
     }
   }, 60000)
+
+  it('never cuts off the next turn: a stop the agent honoured at once leaves the message sent right after alone', async () => {
+    const t = await makeCore()
+    try {
+      const conv = await t.core.startChat({ text: '#啰嗦慢 第一件', backendId: 'mock' })
+      await until(() => (t.core.chat as any).giveUp.has(conv.id))
+      await t.core.cancel(conv.id)
+      await until(() => t.store.conversation(conv.id)?.status !== 'working', 3000)
+      // Sent within the stop's grace period; its reply takes longer than that.
+      await t.core.send(conv.id, '#啰嗦慢 第二件')
+      await until(() => t.store.messagesOf(conv.id).filter((m) => m.role === 'assistant').length === 2 && t.store.conversation(conv.id)?.status === 'idle', 30000)
+      const [first, second] = t.store.messagesOf(conv.id).filter((m) => m.role === 'assistant')
+      expect(first.state).toBe('cancelled')
+      expect(second.state).toBe('done')
+    } finally {
+      await t.dispose()
+    }
+  }, 60000)
+})
+
+describe('which tool calls go ahead without asking', () => {
+  const run = async (env: Record<string, string>, opts: { cwd?: string; settings?: object; routine?: object } = {}) => {
+    const t = await makeCore(undefined, env)
+    const asked: string[] = []
+    t.answerWith((r) => (asked.push(r.title), r.options.find((o) => o.kind === 'reject_once')!.id))
+    if (opts.settings) await t.core.updateSettings(opts.settings)
+    let id: string
+    if (opts.routine) {
+      const r = await t.core.saveRoutine({ name: '整理', prompt: '写一份笔记', schedule: { kind: 'interval', minutes: 60 }, target: {}, enabled: true, ...opts.routine })
+      await t.core.scheduler.run(r.id)
+      id = t.store.conversations.find((c) => c.routineId === r.id)!.id
+    } else id = (await t.core.startChat({ text: '写一个文件', backendId: 'mock', cwd: opts.cwd })).id
+    const text = textOf(await replyOf(t.store, id))
+    await t.dispose()
+    return { asked, allowed: text.includes('已获得许可') }
+  }
+  const folder = () => mkdtempSync(join(tmpdir(), 'oc-pol-'))
+
+  it('a read outside the folder asks in the chat, unless Settings allows such reads', async () => {
+    const cwd = folder()
+    expect(await run({ MOCK_ASK_KIND: 'read', MOCK_LOCATED_PATH: '/etc/hosts' }, { cwd })).toEqual({ asked: ['写入 notes.md'], allowed: false })
+    expect(await run({ MOCK_ASK_KIND: 'read', MOCK_LOCATED_PATH: '/etc/hosts' }, { cwd, settings: { allowOutsideReads: true } })).toEqual({ asked: [], allowed: true })
+    expect(await run({ MOCK_ASK_KIND: 'read', MOCK_LOCATED: 'inside' }, { cwd })).toEqual({ asked: [], allowed: true })
+  }, 60000)
+
+  it('a link inside the folder that leads outside counts as outside', async () => {
+    const cwd = folder()
+    const elsewhere = folder()
+    mkdirSync(join(elsewhere, 'secret'))
+    symlinkSync(join(elsewhere, 'secret'), join(cwd, 'link'))
+    expect(await run({ MOCK_LOCATED_PATH: join(cwd, 'link', 'notes.md') }, { cwd })).toEqual({ asked: ['写入 notes.md'], allowed: false })
+    expect(await run({ MOCK_LOCATED_PATH: join(cwd, 'new', 'notes.md') }, { cwd })).toEqual({ asked: [], allowed: true })
+  }, 60000)
+
+  it('a scheduled task runs commands only when its 允许运行命令 is on, and never waits', async () => {
+    expect(await run({ MOCK_ASK_KIND: 'execute' }, { routine: {} })).toEqual({ asked: [], allowed: false })
+    expect(await run({ MOCK_ASK_KIND: 'execute' }, { routine: { allowCommands: true } })).toEqual({ asked: [], allowed: true })
+    // Outside reads are refused there too.
+    expect(await run({ MOCK_ASK_KIND: 'read', MOCK_LOCATED_PATH: '/etc/hosts' }, { routine: {} })).toEqual({ asked: [], allowed: false })
+  }, 90000)
 })

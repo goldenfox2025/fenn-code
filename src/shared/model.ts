@@ -190,6 +190,8 @@ export interface Conversation {
   lastPreview?: string
   /** The backend session this conversation last used, for resuming after a restart. */
   sessionRef?: { backendId: string; sessionId: string }
+  /** The user's instructions (自定义指令 and the project's) as the agent last received them, to hand over a change once. */
+  instructionsSent?: string
   /** Visible messages in the conversation. */
   messageCount?: number
   /** Tokens and cost the backend reported, added up over every turn (hidden ones included). */
@@ -349,6 +351,8 @@ export interface Routine {
   createdBy?: string
   /** Paused because its project was archived; restoring the project turns it back on. */
   pausedByArchive?: boolean
+  /** Its runs may run commands (nobody is there to confirm them). Off by default. */
+  allowCommands?: boolean
   createdAt: number
   lastRunAt?: number
   lastRunConversationId?: string
@@ -448,6 +452,8 @@ export interface AppSettings {
   /** UI language (Settings → 通用); 'system' follows the OS. */
   language?: 'system' | 'zh' | 'en'
   userName: string
+  /** Reads outside a chat's own folders go ahead without asking (Settings → 通用). Off by default. */
+  allowOutsideReads?: boolean
   /** 自定义指令: what every agent in every conversation should follow (Settings → 通用). */
   customInstructions?: string
   notifications?: boolean
