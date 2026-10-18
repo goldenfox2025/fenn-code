@@ -1,17 +1,64 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, FolderPlus, FolderSearch, Plus, RefreshCw, Search } from 'lucide-react'
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  File,
+  FileCode2,
+  FileImage,
+  FilePlus,
+  FileText,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  FolderSearch,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload
+} from 'lucide-react'
 import type { LibraryChange, LibraryEntry } from '@shared/model'
 import { api, toast, useApp, toastError } from '../store'
 import { t } from '../i18n'
 import { relTime } from '../util'
 import { humanSize } from './Outputs'
 import { Markdown } from './Transcript'
+import { useMenu, type MenuItem } from './Menu'
+import { confirmDialog, Overlay } from './Modal'
+
+/** A file being edited: its text now, the text it was opened with, and when it was read (to catch an agent writing it meanwhile). */
+interface Draft {
+  path: string
+  text: string
+  base: string
+  since?: number
+}
+/** A name being typed in place: a new name for a file or folder, or the name of a new one. */
+type Naming = { mode: 'rename'; path: string; where: 'tree' | 'preview' } | { mode: 'new'; parent: string; dir: boolean }
+
+/** Unsaved edits per files panel, kept when the panel closes or switches tab. */
+const drafts = new Map<string, Draft>()
+
+const parentOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
+const baseName = (path: string) => path.split('/').pop() ?? path
+/** `path` with its leading `from` replaced by `to` (a renamed folder moves what is in it). */
+const moved = (path: string, from: string, to: string) => (path === from ? to : path.startsWith(from + '/') ? to + path.slice(from.length) : path)
+const under = (path: string, of: string) => path === of || path.startsWith(of + '/')
 
 /**
  * The files of a working folder, as in Claude Code's file panel: a tree on the
  * left (with a filter), the opened file on the right, and the files the agents
- * changed marked. A chat shows its folder; a project shows its folder as 库.
- * `id` is the project's or the conversation's id.
+ * changed marked. Files and folders can be made, renamed, deleted (to the
+ * Recycle Bin) and text files edited, here or full screen. A chat shows its
+ * folder; a project shows its folder as 库. `id` is the project's or the
+ * conversation's id.
  */
 export function FilesPane({ id }: { id: string }) {
   const [root, setRoot] = useState<string | null | undefined>(undefined)
@@ -20,8 +67,13 @@ export function FilesPane({ id }: { id: string }) {
   const [changes, setChanges] = useState<LibraryChange[]>([])
   const [onlyChanged, setOnlyChanged] = useState(false)
   const [filter, setFilter] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(() => drafts.get(id)?.path ?? null)
+  const [draft, setDraftState] = useState<Draft | null>(() => drafts.get(id) ?? null)
+  const [naming, setNaming] = useState<Naming | null>(null)
+  const [rendered, setRendered] = useState(true)
+  const [full, setFull] = useState(false)
   const [narrow, setNarrow] = useState(false)
+  const [menu, openMenu] = useMenu({ align: 'right' })
   const box = useRef<HTMLDivElement>(null)
   // A reply that just finished may have changed files: list them again.
   const stamp = useApp((s) => {
@@ -30,6 +82,14 @@ export function FilesPane({ id }: { id: string }) {
   })
   const threadsBusy = useApp((s) => s.conversations.filter((c) => c.projectId === id && c.status === 'working').length)
 
+  const setDraft = useCallback(
+    (d: Draft | null) => {
+      if (d) drafts.set(id, d)
+      else drafts.delete(id)
+      setDraftState(d)
+    },
+    [id]
+  )
   const load = useCallback(
     async (rel: string) => {
       const res = await api().listLibrary(id, rel)
@@ -39,16 +99,23 @@ export function FilesPane({ id }: { id: string }) {
     },
     [id]
   )
-  const reload = useCallback(() => {
-    void load('')
-    for (const rel of open) void load(rel)
-    void api().libraryChanges(id).then(setChanges)
-  }, [id, load, open])
+  const reloadWith = useCallback(
+    (folders: Iterable<string>) => {
+      void load('')
+      for (const rel of folders) void load(rel)
+      void api().libraryChanges(id).then(setChanges)
+    },
+    [id, load]
+  )
+  const reload = useCallback(() => reloadWith(open), [reloadWith, open])
 
   useEffect(() => {
     setDirs({})
     setOpen(new Set())
-    setSelected(null)
+    setSelected(drafts.get(id)?.path ?? null)
+    setDraftState(drafts.get(id) ?? null)
+    setNaming(null)
+    setFull(false)
     setRoot(undefined)
   }, [id])
   useEffect(reload, [id, stamp, threadsBusy])
@@ -79,6 +146,19 @@ export function FilesPane({ id }: { id: string }) {
       if (!dirs[rel]) void load(rel)
     }
     setOpen(next)
+  }
+
+  /** Unsaved edits are only dropped once the user says so. */
+  const dropDraft = async (): Promise<boolean> => {
+    if (!draft) return true
+    if (draft.text !== draft.base && !(await confirmDialog(t('放弃对「{0}」没保存的修改？', baseName(draft.path)), { ok: t('放弃') }))) return false
+    setDraft(null)
+    setRendered(true)
+    return true
+  }
+  const select = async (path: string) => {
+    if (draft && draft.path !== path && !(await dropDraft())) return
+    setSelected(path)
   }
 
   const add = async (list: FileList) => {
@@ -112,6 +192,115 @@ export function FilesPane({ id }: { id: string }) {
     }
   }
 
+  // ---- changing files ----
+
+  const startNew = (parent: string, dir: boolean) => {
+    setOnlyChanged(false)
+    setFilter('')
+    if (parent && !open.has(parent)) toggle(parent)
+    setNaming({ mode: 'new', parent, dir })
+  }
+  const edit = async (path: string) => {
+    const f = await api().readLibraryFile(id, path)
+    if (f?.text === undefined) return
+    setDraft({ path, text: f.text, base: f.text, since: f.updatedAt })
+    setRendered(false)
+  }
+  /** Returns false to keep the name field open (the name was refused). */
+  const commitName = async (value: string): Promise<boolean> => {
+    const n = naming
+    if (!n) return true
+    try {
+      if (n.mode === 'rename') {
+        if (value === baseName(n.path)) return (setNaming(null), true)
+        const to = await api().renameLibraryPath(id, n.path, value)
+        setNaming(null)
+        const folders = new Set([...open].map((p) => moved(p, n.path, to)))
+        setOpen(folders)
+        if (selected) setSelected(moved(selected, n.path, to))
+        if (draft) setDraft({ ...draft, path: moved(draft.path, n.path, to) })
+        reloadWith(folders)
+      } else {
+        const path = await api().createLibraryEntry(id, n.parent, value, n.dir)
+        setNaming(null)
+        const folders = new Set(open)
+        if (n.parent) folders.add(n.parent)
+        if (n.dir) folders.add(path)
+        setOpen(folders)
+        reloadWith(folders)
+        if (!n.dir && (await dropDraft())) {
+          setSelected(path)
+          await edit(path)
+        }
+      }
+      return true
+    } catch (e) {
+      toastError(e)
+      return false
+    }
+  }
+  const remove = async (path: string, dir: boolean) => {
+    const name = baseName(path)
+    const ask = dir ? t('删除文件夹「{0}」和里面的所有文件？它们会移到回收站。', name) : t('删除「{0}」？它会移到回收站。', name)
+    if (!(await confirmDialog(ask, { ok: t('删除') }))) return
+    try {
+      await api().deleteLibraryPath(id, path)
+    } catch (e) {
+      return toastError(e)
+    }
+    if (draft && under(draft.path, path)) setDraft(null)
+    if (selected && under(selected, path)) {
+      setSelected(null)
+      setFull(false)
+    }
+    reload()
+  }
+  const save = async (close: boolean, force = false): Promise<void> => {
+    if (!draft) return
+    try {
+      const r = await api().saveLibraryFile(id, draft.path, draft.text, draft.since, force)
+      if (r.conflict) {
+        if (await confirmDialog(t('「{0}」在您编辑时被改过（可能是 agent 改的）。用您的版本覆盖它？', baseName(draft.path)), { ok: t('覆盖') })) return save(close, true)
+        return
+      }
+      if (close) {
+        setDraft(null)
+        setRendered(true)
+      } else setDraft({ ...draft, base: draft.text, since: r.updatedAt })
+      reload()
+    } catch (e) {
+      toastError(e)
+    }
+  }
+
+  const fullPath = (path: string) => (root ? [root.replace(/[\\/]+$/, ''), ...path.split('/')].join(root.includes('\\') ? '\\' : '/') : path)
+  const openWith = (path: string, reveal: boolean) => void api().openLibraryPath(id, path, reveal).then((r) => !r.ok && r.error && toast(r.error, 'error'))
+  /** One list of actions for a file or folder, shown on right-click, on its … button and in the preview. */
+  const actions = (path: string, dir: boolean, where: 'tree' | 'preview'): MenuItem[] => [
+    ...(dir
+      ? [
+          { icon: <FilePlus size={15} />, label: t('新建文件'), onClick: () => startNew(path, false) },
+          { icon: <FolderPlus size={15} />, label: t('新建文件夹'), onClick: () => startNew(path, true) },
+          { separator: true }
+        ]
+      : []),
+    { icon: <Pencil size={15} />, label: t('重命名'), hint: 'F2', onClick: () => setNaming({ mode: 'rename', path, where }) },
+    { icon: <Copy size={15} />, label: t('复制路径'), onClick: () => void navigator.clipboard.writeText(fullPath(path)).then(() => toast(t('已复制路径'))) },
+    ...(dir ? [] : [{ icon: <ExternalLink size={15} />, label: t('用默认应用打开'), onClick: () => openWith(path, false) }]),
+    { icon: <FolderOpen size={15} />, label: t('在文件夹中显示'), onClick: () => openWith(path, true) },
+    { separator: true },
+    { icon: <Trash2 size={15} />, label: t('删除'), danger: true, onClick: () => void remove(path, dir) }
+  ]
+  const rowKeys = (e: React.KeyboardEvent, entry: LibraryEntry) => {
+    if (e.key === 'F2') {
+      e.preventDefault()
+      setNaming({ mode: 'rename', path: entry.path, where: 'tree' })
+    } else if (e.key === 'Delete') {
+      e.preventDefault()
+      void remove(entry.path, entry.dir)
+    }
+  }
+
   if (root === undefined) return <div className="files-pane" ref={box} />
   if (root === null)
     return (
@@ -137,19 +326,55 @@ export function FilesPane({ id }: { id: string }) {
   const q = filter.trim().toLowerCase()
   const matches = (e: LibraryEntry) => !q || e.name.toLowerCase().includes(q)
   const rows: React.ReactNode[] = []
+  const newRow = (parent: string, depth: number) => {
+    if (naming?.mode !== 'new' || naming.parent !== parent) return
+    rows.push(
+      <div key={`new:${parent}`} className="tree-row renaming" style={{ '--depth': depth } as React.CSSProperties}>
+        <span className="tree-caret" />
+        {naming.dir ? <Folder size={15} className="muted" /> : <File size={15} className="muted" />}
+        <NameField value="" placeholder={naming.dir ? t('文件夹名') : t('文件名')} onCommit={commitName} onCancel={() => setNaming(null)} />
+      </div>
+    )
+  }
   const walk = (rel: string, depth: number) => {
+    newRow(rel, depth)
     for (const e of dirs[rel] ?? []) {
+      const renaming = naming?.mode === 'rename' && naming.where === 'tree' && naming.path === e.path
       if (e.dir) {
         const isOpen = open.has(e.path) || (!!q && !!dirs[e.path])
         // While filtering, a folder shows when its name or something already listed inside it matches.
         if (q && !matches(e) && !hasMatch(e.path)) continue
         rows.push(
-          <TreeRow key={e.path} entry={e} depth={depth} open={isOpen} mark={changedDirs.has(e.path)} onClick={() => toggle(e.path)} />
+          <TreeRow
+            key={e.path}
+            entry={e}
+            depth={depth}
+            open={isOpen}
+            mark={changedDirs.has(e.path)}
+            renaming={renaming}
+            onClick={() => toggle(e.path)}
+            onKeyDown={(k) => rowKeys(k, e)}
+            onMenu={(el) => openMenu(el, actions(e.path, true, 'tree'))}
+            onCommit={commitName}
+            onCancel={() => setNaming(null)}
+          />
         )
         if (isOpen) walk(e.path, depth + 1)
       } else if (matches(e)) {
         rows.push(
-          <TreeRow key={e.path} entry={e} depth={depth} mark={changed.has(e.path)} active={selected === e.path} onClick={() => setSelected(e.path)} />
+          <TreeRow
+            key={e.path}
+            entry={e}
+            depth={depth}
+            mark={changed.has(e.path)}
+            active={selected === e.path}
+            renaming={renaming}
+            onClick={() => void select(e.path)}
+            onKeyDown={(k) => rowKeys(k, e)}
+            onMenu={(el) => openMenu(el, actions(e.path, false, 'tree'))}
+            onCommit={commitName}
+            onCancel={() => setNaming(null)}
+          />
         )
       }
     }
@@ -173,7 +398,7 @@ export function FilesPane({ id }: { id: string }) {
         {onlyChanged ? (
           changeRows.length ? (
             changeRows.map((c) => (
-              <button key={c.path} className={'tree-row change' + (selected === c.path ? ' active' : '') + (c.exists === false ? ' gone' : '')} onClick={() => c.exists !== false && setSelected(c.path)}>
+              <button key={c.path} className={'tree-row change' + (selected === c.path ? ' active' : '') + (c.exists === false ? ' gone' : '')} onClick={() => c.exists !== false && void select(c.path)}>
                 <FileIcon name={c.path} />
                 <span className="tree-name">{c.path}</span>
                 <span className="tree-meta">{c.exists === false ? t('已删除') : c.kind === 'move' ? t('已移动') : t('已修改')} · {relTime(c.changedAt)}</span>
@@ -184,30 +409,51 @@ export function FilesPane({ id }: { id: string }) {
           )
         ) : rows.length ? (
           rows
+        ) : q ? (
+          <div className="files-note">{t('没有匹配的文件')}</div>
         ) : (
-          q ? <div className="files-note">{t('没有匹配的文件')}</div> : (
-            <div className="empty">
-              <FolderOpen size={22} />
-              <div>{t('文件夹是空的。')}</div>
-              <div className="small">{t('agent 写的文件和您添加的文件会出现在这里。')}</div>
-            </div>
-          )
+          <div className="empty">
+            <FolderOpen size={22} />
+            <div>{t('文件夹是空的。')}</div>
+            <div className="small">{t('agent 写的文件和您添加的文件会出现在这里。')}</div>
+          </div>
         )}
       </div>
     </div>
   )
 
-  const preview = selected ? (
-    <FilePreview id={id} path={selected} root={root} entry={findEntry(dirs, selected)} change={changed.get(selected)} onBack={narrow ? () => setSelected(null) : undefined} />
-  ) : (
-    <div className="files-preview">
-      <div className="empty">
-        <FolderOpen size={22} />
-        <div>{t('打开的文件显示在这里')}</div>
-        <div className="small">{t('在左边选一个文件。')}</div>
+  const preview = (inFull: boolean) =>
+    selected ? (
+      <FilePreview
+        id={id}
+        path={selected}
+        root={root}
+        entry={findEntry(dirs, selected)}
+        change={changed.get(selected)}
+        onBack={narrow && !inFull ? () => setSelected(null) : undefined}
+        draft={draft?.path === selected ? draft : null}
+        onDraft={(text) => draft && setDraft({ ...draft, text })}
+        onEdit={() => void edit(selected)}
+        onSave={(close) => void save(close)}
+        onCancelEdit={() => void dropDraft()}
+        rendered={rendered}
+        onRendered={setRendered}
+        full={inFull}
+        onFull={setFull}
+        renaming={naming?.mode === 'rename' && naming.where === 'preview' && naming.path === selected}
+        onCommitName={commitName}
+        onCancelName={() => setNaming(null)}
+        onMenu={(el) => openMenu(el, actions(selected, false, 'preview'))}
+      />
+    ) : (
+      <div className="files-preview">
+        <div className="empty">
+          <FolderOpen size={22} />
+          <div>{t('打开的文件显示在这里')}</div>
+          <div className="small">{t('在左边选一个文件。')}</div>
+        </div>
       </div>
-    </div>
-  )
+    )
 
   return (
     <div className={'files-pane' + (narrow ? ' narrow' : '')} ref={box}>
@@ -217,13 +463,25 @@ export function FilesPane({ id }: { id: string }) {
           <span>{root.split(/[\\/]/).filter(Boolean).pop()}</span>
         </span>
         <span className="spacer" />
-        <button className="icon-btn sm" data-tip={t('添加文件')} aria-label={t('添加文件')} onClick={() => picker.current?.click()}>
+        <button
+          className="icon-btn sm"
+          data-tip={t('新建或添加文件')}
+          aria-label={t('新建或添加文件')}
+          onClick={(e) =>
+            openMenu(e.currentTarget, [
+              { icon: <FilePlus size={15} />, label: t('新建文件'), onClick: () => startNew('', false) },
+              { icon: <FolderPlus size={15} />, label: t('新建文件夹'), onClick: () => startNew('', true) },
+              { separator: true },
+              { icon: <Upload size={15} />, label: t('添加文件…'), onClick: () => picker.current?.click() }
+            ])
+          }
+        >
           <Plus size={15} />
         </button>
         <button className="icon-btn sm" data-tip={t('刷新')} aria-label={t('刷新')} onClick={reload}>
           <RefreshCw size={14} />
         </button>
-        <button className="icon-btn sm" data-tip={t('在文件管理器中打开')} aria-label={t('在文件管理器中打开')} onClick={() => void api().openLibraryPath(id, '').then((r) => !r.ok && r.error && toast(r.error, 'error'))}>
+        <button className="icon-btn sm" data-tip={t('在文件管理器中打开')} aria-label={t('在文件管理器中打开')} onClick={() => openWith('', false)}>
           <ExternalLink size={14} />
         </button>
         <input
@@ -238,26 +496,127 @@ export function FilesPane({ id }: { id: string }) {
         />
       </div>
       <div className="files-split">
-        {(!narrow || !selected) && list}
-        {(!narrow || selected) && preview}
+        {(!narrow || !selected || full) && list}
+        {(!narrow || (selected && !full)) && (full ? <div className="files-preview" /> : preview(false))}
       </div>
+      {full && selected && (
+        <Overlay onClose={() => setFull(false)}>
+          <div className="modal file-full">{preview(true)}</div>
+        </Overlay>
+      )}
+      {menu}
     </div>
   )
 }
 
 function findEntry(dirs: Record<string, LibraryEntry[]>, path: string): LibraryEntry | undefined {
-  const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
-  return dirs[parent]?.find((e) => e.path === path)
+  return dirs[parentOf(path)]?.find((e) => e.path === path)
 }
 
-function TreeRow({ entry, depth, open, mark, active, onClick }: { entry: LibraryEntry; depth: number; open?: boolean; mark?: boolean; active?: boolean; onClick: () => void }) {
+/**
+ * A file name typed in place. The name (without its extension) starts
+ * selected; Enter or leaving the field keeps it, Esc puts the old name back.
+ */
+function NameField({ value, placeholder, onCommit, onCancel }: { value: string; placeholder?: string; onCommit: (name: string) => Promise<boolean>; onCancel: () => void }) {
+  const [text, setText] = useState(value)
+  const ref = useRef<HTMLInputElement>(null)
+  const busy = useRef(false)
+  useEffect(() => {
+    const el = ref.current!
+    el.focus()
+    const dot = value.lastIndexOf('.')
+    el.setSelectionRange(0, dot > 0 ? dot : value.length)
+  }, [])
+  const done = async (keep: boolean) => {
+    if (busy.current) return
+    const name = text.trim()
+    if (!keep || !name) {
+      busy.current = true
+      return onCancel()
+    }
+    busy.current = true
+    // Once kept, the field is done: the blur of its removal must not keep it twice.
+    if (await onCommit(name)) return
+    busy.current = false
+    ref.current?.focus()
+  }
   return (
-    <button className={'tree-row' + (active ? ' active' : '')} style={{ '--depth': depth } as React.CSSProperties} onClick={onClick} aria-expanded={entry.dir ? !!open : undefined}>
-      {entry.dir ? open ? <ChevronDown size={14} className="tree-caret" /> : <ChevronRight size={14} className="tree-caret" /> : <span className="tree-caret" />}
-      {entry.dir ? <Folder size={15} className="muted" /> : <FileIcon name={entry.name} />}
-      <span className="tree-name">{entry.name}</span>
-      {mark && <span className="tree-mark" data-tip={t('agent 改过')} />}
-    </button>
+    <input
+      ref={ref}
+      className="tree-input"
+      value={text}
+      placeholder={placeholder}
+      aria-label={placeholder ?? t('重命名')}
+      spellCheck={false}
+      onChange={(e) => setText(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') void done(true)
+        else if (e.key === 'Escape') {
+          e.preventDefault()
+          void done(false)
+        }
+      }}
+      onBlur={() => void done(true)}
+    />
+  )
+}
+
+function TreeRow({
+  entry,
+  depth,
+  open,
+  mark,
+  active,
+  renaming,
+  onClick,
+  onKeyDown,
+  onMenu,
+  onCommit,
+  onCancel
+}: {
+  entry: LibraryEntry
+  depth: number
+  open?: boolean
+  mark?: boolean
+  active?: boolean
+  renaming?: boolean
+  onClick: () => void
+  onKeyDown: (e: React.KeyboardEvent) => void
+  onMenu: (anchor: HTMLElement) => void
+  onCommit: (name: string) => Promise<boolean>
+  onCancel: () => void
+}) {
+  const style = { '--depth': depth } as React.CSSProperties
+  const caret = entry.dir ? open ? <ChevronDown size={14} className="tree-caret" /> : <ChevronRight size={14} className="tree-caret" /> : <span className="tree-caret" />
+  const icon = entry.dir ? <Folder size={15} className="muted" /> : <FileIcon name={entry.name} />
+  if (renaming)
+    return (
+      <div className="tree-row renaming" style={style}>
+        {caret}
+        {icon}
+        <NameField value={entry.name} onCommit={onCommit} onCancel={onCancel} />
+      </div>
+    )
+  return (
+    <div
+      className="tree-item"
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onMenu(e.currentTarget.querySelector<HTMLElement>('.tree-more') ?? e.currentTarget)
+      }}
+    >
+      <button className={'tree-row' + (active ? ' active' : '')} style={style} data-path={entry.path} onClick={onClick} onKeyDown={onKeyDown} aria-expanded={entry.dir ? !!open : undefined}>
+        {caret}
+        {icon}
+        <span className="tree-name">{entry.name}</span>
+        {mark && <span className="tree-mark" data-tip={t('agent 改过')} />}
+      </button>
+      <button className="icon-btn sm tree-more" data-focus-key={'file-menu:' + entry.path} aria-label={t('更多')} data-tip={t('更多')} onClick={(e) => onMenu(e.currentTarget)}>
+        <MoreHorizontal size={14} />
+      </button>
+    </div>
   )
 }
 
@@ -271,16 +630,65 @@ function FileIcon({ name }: { name: string }) {
   return <File size={15} className="muted" />
 }
 
-function FilePreview({ id, path, root, entry, change, onBack }: { id: string; path: string; root: string; entry?: LibraryEntry; change?: LibraryChange; onBack?: () => void }) {
+/** The opened file: shown (Markdown rendered), or edited in place; the same view in the pane and full screen. */
+function FilePreview({
+  id,
+  path,
+  root,
+  entry,
+  change,
+  onBack,
+  draft,
+  onDraft,
+  onEdit,
+  onSave,
+  onCancelEdit,
+  rendered,
+  onRendered,
+  full,
+  onFull,
+  renaming,
+  onCommitName,
+  onCancelName,
+  onMenu
+}: {
+  id: string
+  path: string
+  root: string
+  entry?: LibraryEntry
+  change?: LibraryChange
+  onBack?: () => void
+  draft: Draft | null
+  onDraft: (text: string) => void
+  onEdit: () => void
+  onSave: (close: boolean) => void
+  onCancelEdit: () => void
+  rendered: boolean
+  onRendered: (r: boolean) => void
+  full: boolean
+  onFull: (f: boolean) => void
+  renaming: boolean
+  onCommitName: (name: string) => Promise<boolean>
+  onCancelName: () => void
+  onMenu: (anchor: HTMLElement) => void
+}) {
   const [file, setFile] = useState<Awaited<ReturnType<ReturnType<typeof api>['readLibraryFile']>> | null>(null)
-  const [rendered, setRendered] = useState(true)
   useEffect(() => {
     setFile(null)
     void api().readLibraryFile(id, path).then((f) => setFile(f ?? undefined))
   }, [id, path, change?.changedAt, entry?.updatedAt])
-  const name = path.split('/').pop() ?? path
+  const name = baseName(path)
   const md = /\.(md|markdown)$/i.test(name)
-  const openWith = (reveal: boolean) => void api().openLibraryPath(id, path, reveal).then((r) => !r.ok && r.error && toast(r.error, 'error'))
+  const editing = !!draft
+  const dirty = !!draft && draft.text !== draft.base
+  const meta = editing
+    ? [dirty ? t('未保存') : t('正在编辑')]
+    : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '']
+  const fullBtn = (
+    <button className="icon-btn sm" data-tip={full ? t('退出全屏') : t('全屏')} aria-label={full ? t('退出全屏') : t('全屏')} onClick={() => onFull(!full)}>
+      {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+    </button>
+  )
   return (
     <div className="files-preview">
       <div className="preview-head">
@@ -290,26 +698,75 @@ function FilePreview({ id, path, root, entry, change, onBack }: { id: string; pa
           </button>
         )}
         <div className="preview-title">
-          <span className="preview-name" data-tip={`${root}/${path}`}>{name}</span>
-          <span className="small muted">
-            {[file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : ''].filter(Boolean).join(' · ')}
-          </span>
+          {renaming ? (
+            <NameField value={name} onCommit={onCommitName} onCancel={onCancelName} />
+          ) : (
+            <span className="preview-name" data-tip={`${root}/${path}`}>
+              {name}
+            </span>
+          )}
+          <span className="small muted">{meta.filter(Boolean).join(' · ')}</span>
         </div>
         <span className="spacer" />
-        {md && file?.text !== undefined && (
-          <button className="pill-btn" onClick={() => setRendered(!rendered)}>
+        {md && (editing || file?.text !== undefined) && (
+          <button className="pill-btn" onClick={() => onRendered(!rendered)}>
             {rendered ? t('源码') : t('预览')}
           </button>
         )}
-        <button className="icon-btn sm" data-tip={t('用默认应用打开')} aria-label={t('用默认应用打开')} onClick={() => openWith(false)}>
-          <ExternalLink size={14} />
-        </button>
-        <button className="icon-btn sm" data-tip={t('在文件夹中显示')} aria-label={t('在文件夹中显示')} onClick={() => openWith(true)}>
-          <FolderOpen size={14} />
-        </button>
+        {editing ? (
+          <>
+            <button className="btn sm" onClick={onCancelEdit}>
+              {t('取消')}
+            </button>
+            <button className="btn sm primary" data-tip={t('保存 (Ctrl+S)')} disabled={!dirty} onClick={() => onSave(true)}>
+              {t('保存')}
+            </button>
+            {fullBtn}
+          </>
+        ) : (
+          <>
+            {file?.text !== undefined && (
+              <button className="icon-btn sm" data-tip={t('编辑')} aria-label={t('编辑')} onClick={onEdit}>
+                <Pencil size={14} />
+              </button>
+            )}
+            {fullBtn}
+            <button className="icon-btn sm" data-focus-key={'preview-menu:' + path} data-tip={t('更多')} aria-label={t('更多')} onClick={(e) => onMenu(e.currentTarget)}>
+              <MoreHorizontal size={15} />
+            </button>
+          </>
+        )}
       </div>
       <div className="preview-body">
-        {file === null ? null : file === undefined ? (
+        {draft ? (
+          md && rendered ? (
+            <div className="preview-md">
+              <Markdown text={draft.text} />
+            </div>
+          ) : (
+            <textarea
+              className="preview-editor"
+              value={draft.text}
+              spellCheck={false}
+              autoFocus
+              aria-label={t('编辑 {0}', name)}
+              onChange={(e) => onDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                  e.preventDefault()
+                  onSave(false)
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  onCancelEdit()
+                } else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                  // A tab is text here; insertText keeps the undo history.
+                  e.preventDefault()
+                  document.execCommand('insertText', false, '\t')
+                }
+              }}
+            />
+          )
+        ) : file === null ? null : file === undefined ? (
           <div className="files-note">{t('文件已不在原来的位置。')}</div>
         ) : file.image ? (
           <img className="preview-image" src={file.image} alt={name} />

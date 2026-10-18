@@ -3,7 +3,7 @@
  * be driven from tests; main/index.ts only wires it to IPC.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
@@ -15,7 +15,7 @@ import type { Store } from '../store/Store'
 import type { ToolServer } from '../tools/ToolServer'
 import type { BackendPlugin, BackendSummary, HostToolServer } from '../../shared/contract'
 import { ProjectFiles } from './ProjectFiles'
-import { addFile, changedFiles, inside, listFolder, readPreview } from './Library'
+import { addFile, changedFiles, createEntry, inside, listFolder, readPreview, renameEntry, writeText, type LibraryRefusal } from './Library'
 import { Artifacts } from './Artifacts'
 import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
 import { ChatService, excerpt, textOf } from './ChatService'
@@ -700,6 +700,8 @@ export class AppCore {
 
   /** Set by the Electron shell: open a file with its default app, or show it in its folder. */
   shellOpen?: (path: string, reveal: boolean) => Promise<string | undefined>
+  /** Set by the Electron shell: moves a file or folder to the Recycle Bin / Trash (absent in tests: deleted outright). */
+  shellTrash?: (path: string) => Promise<void>
 
   /** The OS file dialogs, set by the app shell (absent in tests: pickers answer null). */
   dialogs?: {
@@ -1106,6 +1108,48 @@ export class AppCore {
     const { root } = this.libraryOf(id)
     if (!root) throw new Error(t('还没有文件夹。'))
     for (const f of files) if (!addFile(root, rel, f.name, Buffer.from(f.data, 'base64'))) throw new Error(t('无法添加 {0}', f.name))
+  }
+
+  private libraryRoot(id: string): string {
+    const { root } = this.libraryOf(id)
+    if (!root || !existsSync(root)) throw new Error(t('还没有文件夹。'))
+    return root
+  }
+
+  private refused(r: LibraryRefusal, name: string): never {
+    throw new Error(
+      r === 'name' ? t('「{0}」不能用作文件名。', name) : r === 'taken' ? t('这里已经有「{0}」了。', name) : r === 'changed' ? t('文件在您编辑时被改过。') : t('文件已不在原来的位置。')
+    )
+  }
+
+  async renameLibraryPath(id: string, rel: string, name: string) {
+    const r = renameEntry(this.libraryRoot(id), rel, name)
+    return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
+  }
+
+  async createLibraryEntry(id: string, rel: string, name: string, dir: boolean) {
+    const r = createEntry(this.libraryRoot(id), rel, name, dir)
+    return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
+  }
+
+  async saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean) {
+    const r = writeText(this.libraryRoot(id), rel, text, since, force)
+    if ('refused' in r) return r.refused === 'changed' ? { conflict: true } : this.refused(r.refused, rel)
+    return { updatedAt: r.updatedAt }
+  }
+
+  /** Moves a file or folder of it to the Recycle Bin (Trash); never the folder itself. */
+  async deleteLibraryPath(id: string, rel: string) {
+    const root = this.libraryRoot(id)
+    const abs = rel ? inside(root, rel) : undefined
+    if (!abs || !existsSync(abs)) throw new Error(t('文件已不在原来的位置。'))
+    if (this.shellTrash) {
+      try {
+        await this.shellTrash(abs)
+      } catch (e) {
+        throw new Error(t('没能移到回收站：{0}', e instanceof Error ? e.message : String(e)))
+      }
+    } else rmSync(abs, { recursive: true })
   }
 
   // ---- connectors ---------------------------------------------------------

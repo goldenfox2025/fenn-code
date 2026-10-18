@@ -2,7 +2,7 @@
 // Usage: npm run build && xvfb-run -a node scripts/e2e.mjs [screenshotDir]
 // Exits non-zero if any check fails.
 import { _electron as electron } from 'playwright-core'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { declareTestAgent } from './test-agent.mjs'
@@ -511,6 +511,50 @@ await check('a chat shows its folder’s files beside it, with the files the age
   await page.click('.side-pane .files-tools .chip')
   await page.locator('.side-pane .tree-row.change:has-text("计划.md")').waitFor({ timeout: 3000 })
   await page.click('.side-pane .files-tools .chip')
+})
+
+await check('the files panel makes, edits, renames, shows full screen and deletes a file (取消 focused)', async () => {
+  const pane = page.locator('.side-pane .files-pane')
+  const back = async () => { if (await pane.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').count()) await pane.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').click() }
+  const root = await page.evaluate(async () => {
+    const s = await window.fenn.snapshot()
+    const c = s.conversations.find((x) => x.cwd && !x.projectId)
+    return (await window.fenn.listLibrary(c.id)).root
+  })
+  await pane.locator('.files-head .icon-btn[aria-label="新建或添加文件"]').click()
+  await page.click('.menu .menu-item:has-text("新建文件")')
+  await pane.locator('.tree-input').fill('草稿.md')
+  await page.keyboard.press('Enter')
+  const editor = pane.locator('.preview-editor')
+  await editor.waitFor({ timeout: 3000 })
+  await editor.fill('# 标题\n\n正文')
+  await page.keyboard.press('Control+s')
+  await pane.locator('.preview-head .small:has-text("正在编辑")').waitFor({ timeout: 3000 })
+  if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文') throw new Error('not saved to disk')
+  await pane.locator('.preview-head .btn:has-text("取消")').click()
+  await pane.locator('.preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
+  // Full screen shows the same file; Esc comes back.
+  await pane.locator('.preview-head .icon-btn[aria-label="全屏"]').click()
+  await page.locator('.modal.file-full .preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('.modal.file-full', { state: 'detached', timeout: 2000 })
+  await back()
+  // F2 renames in place.
+  await pane.locator('.tree-row:has-text("草稿.md")').focus()
+  await page.keyboard.press('F2')
+  await pane.locator('.tree-input').fill('定稿.md')
+  await page.keyboard.press('Enter')
+  await pane.locator('.tree-row:has-text("定稿.md")').waitFor({ timeout: 3000 })
+  if (!existsSync(join(root, '定稿.md')) || existsSync(join(root, '草稿.md'))) throw new Error('not renamed on disk')
+  // Delete asks first, with 取消 focused.
+  await back()
+  await pane.locator('.tree-item:has-text("定稿.md")').click({ button: 'right' })
+  await page.click('.menu .menu-item:has-text("删除")')
+  await page.waitForSelector('.modal.confirm')
+  if (!(await page.evaluate(() => document.activeElement?.classList.contains('confirm-cancel')))) throw new Error('取消 is not focused')
+  await page.click('.modal.confirm .btn.danger-solid')
+  await pane.locator('.tree-row:has-text("定稿.md")').waitFor({ state: 'detached', timeout: 3000 })
+  if (existsSync(join(root, '定稿.md'))) throw new Error('still on disk')
 })
 
 await check('commands the agent runs through the app show under 后台 and stop from there', async () => {

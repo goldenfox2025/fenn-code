@@ -648,13 +648,21 @@ export interface FennApi {
   /** Files the agents changed in that folder (a project's conversations, or a chat and its sub-conversations), newest first. */
   libraryChanges(id: string): Promise<LibraryChange[]>
   /** A text file of that folder for the preview (undefined: not text, or too big). */
-  readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined>
+  readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined>
   /** Opens a file of that folder with its app (folders and safe files), or shows it in its folder. */
   openLibraryPath(id: string, rel: string, reveal?: boolean): Promise<{ ok: boolean; error?: string }>
   /** Gives a chat or project without a folder one under the default folder (named after it); returns its path. */
   makeDefaultFolder(id: string): Promise<string>
   /** Copies files into a folder of it; names already taken get a number. */
   addToLibrary(id: string, rel: string, files: { name: string; data: string }[]): Promise<void>
+  /** Renames a file or folder of it in place; returns its new path. */
+  renameLibraryPath(id: string, rel: string, name: string): Promise<string>
+  /** Makes an empty file (or folder) named `name` in folder `rel` of it; returns its path. */
+  createLibraryEntry(id: string, rel: string, name: string, dir: boolean): Promise<string>
+  /** Saves an edited text file. `since`: its updatedAt when editing began; if it changed after that, nothing is written (conflict) unless `force`. */
+  saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean): Promise<{ updatedAt?: number; conflict?: boolean }>
+  /** Moves a file or folder of it to the Recycle Bin (Trash). */
+  deleteLibraryPath(id: string, rel: string): Promise<void>
   /** data is base64. */
   addProjectFiles(projectId: string, files: { name: string; data: string }[]): Promise<void>
   deleteProjectFile(projectId: string, name: string): Promise<void>

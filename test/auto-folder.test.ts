@@ -168,6 +168,28 @@ describe('one default folder', () => {
       expect((await core.listLibrary(c.id))?.root).toBe(path)
     } finally { await dispose() }
   }, 30000)
+
+  it('the files panel makes, renames, saves and deletes files of the chat’s folder, and only there', async () => {
+    const { core, store, dispose } = await makeCore()
+    try {
+      const c = await core.startChat({ text: '给我讲讲番茄怎么种', backendId: 'mock' })
+      await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).length >= 2)
+      const root = await core.makeDefaultFolder(c.id)
+      expect(await core.createLibraryEntry(c.id, '', '笔记', true)).toBe('笔记')
+      const file = await core.createLibraryEntry(c.id, '笔记', '种植.md', false)
+      const read = await core.readLibraryFile(c.id, file)
+      expect(await core.saveLibraryFile(c.id, file, '# 番茄\n', read!.updatedAt)).toHaveProperty('updatedAt')
+      expect(await core.renameLibraryPath(c.id, file, '番茄.md')).toBe('笔记/番茄.md')
+      expect(readFileSync(join(root, '笔记', '番茄.md'), 'utf8')).toBe('# 番茄\n')
+      await expect(core.renameLibraryPath(c.id, '笔记/番茄.md', '../外面.md')).rejects.toThrow()
+      await expect(core.createLibraryEntry(c.id, '', '笔记', true)).rejects.toThrow()
+      await expect(core.deleteLibraryPath(c.id, '')).rejects.toThrow()
+      await expect(core.deleteLibraryPath(c.id, '..')).rejects.toThrow()
+      await core.deleteLibraryPath(c.id, '笔记')
+      expect(existsSync(join(root, '笔记'))).toBe(false)
+      expect(existsSync(root)).toBe(true)
+    } finally { await dispose() }
+  }, 30000)
 })
 
 describe('messages sent while a reply runs', () => {

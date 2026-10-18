@@ -52,6 +52,10 @@
 :root:is([data-theme='glass'], [data-theme='glass-light']) .panel.maximized {
   background-color: var(--bg-floating);
 }
+/* A file full screen is read like a page: solid in every glass look, with or without blur. */
+:root:is([data-theme='glass'], [data-theme='glass-light']) .overlay > .modal.file-full {
+  background: var(--bg-floating);
+}
 :root[data-theme='glass'] :is(.composer, .queue-tray) {
   backdrop-filter: var(--frost);
   border-color: rgba(255, 255, 255, 0.12);

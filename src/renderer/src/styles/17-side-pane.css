@@ -147,8 +147,45 @@
   font-size: var(--font-sm);
   text-align: left;
 }
-.tree-row:hover {
+.tree-row:hover,
+.tree-item:hover > .tree-row {
   background: var(--bg-hover);
+}
+/* A row with its … button, shown on hover or focus, as in the sidebar. */
+.tree-item {
+  position: relative;
+}
+.tree-item > .tree-row {
+  padding-right: var(--space-10);
+}
+.tree-more {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  opacity: 0;
+}
+.tree-item:hover > .tree-more,
+.tree-item:focus-within > .tree-more {
+  opacity: 1;
+}
+.tree-row.renaming {
+  background: var(--bg-active);
+}
+.tree-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: var(--space-0) var(--space-2);
+  border: 1px solid var(--focus-border);
+  border-radius: var(--radius-xs);
+  outline: none;
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+}
+.preview-title .tree-input {
+  font-size: var(--font-md);
+  height: 26px;
 }
 .tree-row.active {
   background: var(--bg-active);
@@ -245,6 +282,50 @@
 }
 .preview-md {
   padding: var(--space-6) var(--space-8);
+}
+/* Editing in place: the same type and spacing as the source view, so nothing jumps. */
+.preview-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: var(--space-0);
+  padding: var(--space-6) var(--space-7);
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+.preview-head .btn.sm {
+  height: 26px;
+}
+/* A file full screen: the window less a margin, the text at reading width. */
+.modal.file-full {
+  width: calc(100vw - var(--space-10) * 2);
+  height: calc(100vh - var(--space-10) * 2);
+  max-height: none;
+  padding: var(--space-0);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal.file-full .preview-head {
+  padding: var(--space-5) var(--space-6) var(--space-5) var(--space-8);
+}
+.modal.file-full .preview-md {
+  max-width: 860px;
+  margin: var(--space-0) auto;
+  padding: var(--space-9) var(--space-10);
+}
+.modal.file-full :is(.preview-code, .preview-editor) {
+  padding: var(--space-8) var(--space-10);
+  font-size: var(--font-sm);
 }
 .preview-image {
   display: block;

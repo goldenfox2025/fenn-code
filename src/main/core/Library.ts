@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { LibraryEntry, LibraryChange, Message } from '../../shared/model'
 
 /**
@@ -89,21 +89,81 @@ const TEXT_MAX = 512 * 1024
 const IMAGE_MAX = 8 * 1024 * 1024
 const IMAGES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml' }
 
-export function readPreview(root: string, rel: string): { text?: string; size: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined {
+export function readPreview(root: string, rel: string): { text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean } | undefined {
   const abs = inside(root, rel)
   if (!abs || !existsSync(abs)) return undefined
   const st = statSync(abs)
   if (!st.isFile()) return undefined
+  const base = { size: st.size, updatedAt: st.mtimeMs }
   const mime = IMAGES[extname(abs).toLowerCase()]
   if (mime) {
-    if (st.size > IMAGE_MAX) return { size: st.size, tooBig: true }
-    return { size: st.size, image: `data:${mime};base64,${readFileSync(abs).toString('base64')}` }
+    if (st.size > IMAGE_MAX) return { ...base, tooBig: true }
+    return { ...base, image: `data:${mime};base64,${readFileSync(abs).toString('base64')}` }
   }
-  if (st.size > TEXT_MAX) return { size: st.size, tooBig: true }
+  if (st.size > TEXT_MAX) return { ...base, tooBig: true }
   const buf = readFileSync(abs)
   // A NUL in the first few kilobytes: not text.
-  if (buf.subarray(0, 8192).includes(0)) return { size: st.size, binary: true }
-  return { size: st.size, text: buf.toString('utf8') }
+  if (buf.subarray(0, 8192).includes(0)) return { ...base, binary: true }
+  return { ...base, text: buf.toString('utf8') }
+}
+
+/** Why a change to the folder was refused. */
+export type LibraryRefusal = 'name' | 'taken' | 'gone' | 'changed'
+
+/** A name a file can have on every system: no separators or reserved characters or Windows device names, not . or .., no trailing dot or space. */
+export function fileName(name: string): string | undefined {
+  const n = name.trim()
+  if (!n || n === '.' || n === '..' || /[\\/:*?"<>|\u0000-\u001f]/.test(n) || /[. ]$/.test(n) || /^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(n)) return undefined
+  return n
+}
+
+/** Renames a file or folder in place (the folder itself never); returns its new path, or why not. */
+export function renameEntry(root: string, rel: string, name: string): { path: string } | { refused: LibraryRefusal } {
+  const abs = rel ? inside(root, rel) : undefined
+  if (!abs || !existsSync(abs)) return { refused: 'gone' }
+  const n = fileName(name)
+  if (!n) return { refused: 'name' }
+  const parent = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : ''
+  const path = parent ? `${parent}/${n}` : n
+  if (path === rel) return { path }
+  const target = inside(root, path)
+  if (!target) return { refused: 'name' }
+  // Only a change of case may land on the same file (case-insensitive disks).
+  if (existsSync(target) && realpathSync(target) !== realpathSync(abs)) return { refused: 'taken' }
+  renameSync(abs, target)
+  return { path }
+}
+
+/** Makes an empty file or folder named `name` in folder `rel`; returns its path, or why not. */
+export function createEntry(root: string, rel: string, name: string, dir: boolean): { path: string } | { refused: LibraryRefusal } {
+  const parent = inside(root, rel)
+  if (!parent || !existsSync(parent) || !statSync(parent).isDirectory()) return { refused: 'gone' }
+  const n = fileName(name)
+  if (!n) return { refused: 'name' }
+  const path = rel ? `${rel}/${n}` : n
+  const target = inside(root, path)
+  if (!target) return { refused: 'name' }
+  if (existsSync(target)) return { refused: 'taken' }
+  if (dir) mkdirSync(target)
+  else writeFileSync(target, '', { flag: 'wx' })
+  return { path }
+}
+
+/**
+ * Saves the text of a file. `since` is when it was read for editing: if it
+ * changed on disk after that (an agent wrote it), nothing is written unless
+ * `force`. Returns the new modification time.
+ */
+export function writeText(root: string, rel: string, text: string, since?: number, force = false): { updatedAt: number } | { refused: LibraryRefusal } {
+  const abs = rel ? inside(root, rel) : undefined
+  if (!abs || !existsSync(dirname(abs))) return { refused: 'gone' }
+  if (existsSync(abs)) {
+    const st = statSync(abs)
+    if (!st.isFile()) return { refused: 'gone' }
+    if (!force && since !== undefined && Math.abs(st.mtimeMs - since) > 1) return { refused: 'changed' }
+  } else if (!force) return { refused: 'gone' }
+  writeFileSync(abs, text)
+  return { updatedAt: statSync(abs).mtimeMs }
 }
 
 /** Writes a file into `rel` of the folder under a free name (report.md, report (2).md, …). */

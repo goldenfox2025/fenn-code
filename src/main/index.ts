@@ -396,6 +396,7 @@ core.shellOpen = async (path, reveal) => {
   }
   return (await shell.openPath(path)) || undefined;
 };
+core.shellTrash = (path) => shell.trashItem(path);
 core.backendsConfigError = backendsError;
 core.backendsFile = backendsFile;
 core.dialogs = {

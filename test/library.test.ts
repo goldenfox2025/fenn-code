@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { addFile, changedFiles, inside, listFolder, readPreview } from '../src/main/core/Library'
+import { addFile, changedFiles, createEntry, fileName, inside, listFolder, readPreview, renameEntry, writeText } from '../src/main/core/Library'
 import type { Message } from '../src/shared/model'
 
 function folder() {
@@ -71,5 +71,50 @@ describe('the files panel', () => {
     addFile(root, '', 'README.md', Buffer.from('x'))
     expect(listFolder(root)!.entries.map((e) => e.name)).toContain('README (2).md')
     expect(addFile(root, '..', 'x.md', Buffer.from('x'))).toBeUndefined()
+  })
+
+  it('renames in place, never onto another file or out of the folder', () => {
+    const root = folder()
+    expect(renameEntry(root, 'README.md', 'notes.md')).toEqual({ path: 'notes.md' })
+    expect(existsSync(join(root, 'notes.md'))).toBe(true)
+    expect(renameEntry(root, 'src', 'lib')).toEqual({ path: 'lib' })
+    expect(readFileSync(join(root, 'lib', 'a.ts'), 'utf8')).toContain('a = 1')
+    expect(renameEntry(root, 'lib/a.ts', 'b.ts')).toEqual({ path: 'lib/b.ts' })
+    expect(renameEntry(root, 'notes.md', 'bin.dat')).toEqual({ refused: 'taken' })
+    expect(renameEntry(root, 'notes.md', '../x.md')).toEqual({ refused: 'name' })
+    expect(renameEntry(root, 'notes.md', 'CON')).toEqual({ refused: 'name' })
+    expect(renameEntry(root, 'gone.md', 'x.md')).toEqual({ refused: 'gone' })
+    expect(renameEntry(root, '', 'x')).toEqual({ refused: 'gone' })
+    expect(renameEntry(root, '../x', 'y')).toEqual({ refused: 'gone' })
+  })
+
+  it('makes new files and folders under names not taken', () => {
+    const root = folder()
+    expect(createEntry(root, '', 'docs', true)).toEqual({ path: 'docs' })
+    expect(createEntry(root, 'docs', 'plan.md', false)).toEqual({ path: 'docs/plan.md' })
+    expect(readPreview(root, 'docs/plan.md')).toMatchObject({ text: '', size: 0 })
+    expect(createEntry(root, 'docs', 'plan.md', false)).toEqual({ refused: 'taken' })
+    expect(createEntry(root, '', 'a:b', false)).toEqual({ refused: 'name' })
+    expect(createEntry(root, '..', 'x', false)).toEqual({ refused: 'gone' })
+    expect(fileName('  ok.txt ')).toBe('ok.txt')
+    expect([fileName('x.'), fileName('..'), fileName('a/b'), fileName('nul.txt')]).toEqual([undefined, undefined, undefined, undefined])
+  })
+
+  it('saves edits, but not over a change made since the file was read', () => {
+    const root = folder()
+    const read = readPreview(root, 'README.md')!
+    const saved = writeText(root, 'README.md', '# edited\n', read.updatedAt)
+    expect(saved).toHaveProperty('updatedAt')
+    expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('# edited\n')
+    // An agent writes it meanwhile.
+    utimesSync(join(root, 'README.md'), new Date(), new Date(Date.now() + 5000))
+    expect(writeText(root, 'README.md', 'mine', (saved as { updatedAt: number }).updatedAt)).toEqual({ refused: 'changed' })
+    expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('# edited\n')
+    expect(writeText(root, 'README.md', 'mine', 0, true)).toHaveProperty('updatedAt')
+    expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('mine')
+    expect(writeText(root, 'gone.md', 'x')).toEqual({ refused: 'gone' })
+    expect(writeText(root, '../out.md', 'x')).toEqual({ refused: 'gone' })
+    expect(statSync(join(root, 'src')).isDirectory()).toBe(true)
+    expect(writeText(root, 'src', 'x')).toEqual({ refused: 'gone' })
   })
 })
