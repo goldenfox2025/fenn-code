@@ -17,6 +17,7 @@
   --dur-shimmer: 1.8s; /* words that shimmer while work is under way */
   --dur-flash: 1.6s; /* a search hit lighting up once */
   --stagger: 0.15s; /* between the working dots */
+  --fox-eye: #ff4fa8; /* the fox's eye, the icon's pink, in every look */
   /* Pane widths (the user can drag them; see ResizeHandle). */
   --sidebar-w: 284px;
   --resize-hit: 8px;

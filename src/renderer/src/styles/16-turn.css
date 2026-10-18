@@ -49,31 +49,6 @@
 .turn > .working-mark:first-child {
   margin-top: 0 !important;
 }
-.working-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-.working-dots i {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  animation: working-dot var(--dur-pulse) var(--ease-loop) infinite;
-}
-.working-dots i:nth-child(2) {
-  animation-delay: var(--stagger);
-}
-.working-dots i:nth-child(3) {
-  animation-delay: calc(2 * var(--stagger));
-}
-@keyframes working-dot {
-  0%, 80%, 100% { opacity: 0.35; transform: translateY(0); }
-  40% { opacity: 1; transform: translateY(-2px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .working-dots i { animation: none; opacity: 0.7; }
-}
 /* A turn that ended without its full answer: 已停止, 已中断, a usage limit (TurnNote).
    One muted line in the turn's flow, like 「已放在…」, never an error's red rail. */
 .turn-note {

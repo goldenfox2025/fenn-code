@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, FolderKanban, MessageCircle, Clock } from 'lucide-react'
+import { FoxMark } from './FoxMark'
 import { api, refreshAccount, toastError, useApp } from '../store'
 import { t } from '../i18n'
 import { AccountLine, BackendField, LoginButton, TerminalLoginButton } from './Dialogs'
@@ -91,6 +92,7 @@ export function Onboarding() {
 
         {step === 0 && (
           <>
+            <FoxMark size={48} className="onboarding-mark" />
             <h1>{t('欢迎使用 Fenn Code')}</h1>
             <p className="muted">{t('在桌面上和 AI 一起做事：')}</p>
             <ul className="onboarding-points">

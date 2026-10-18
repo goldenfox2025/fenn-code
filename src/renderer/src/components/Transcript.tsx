@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { MessageUsageLabel } from './Usage'
 import { OutputCard } from './Outputs'
 import { PeerCard } from './PeerCard'
+import { FoxMark } from './FoxMark'
 import {
   AppWindow,
   Check,
@@ -1054,11 +1055,7 @@ function WorkingMark({ since, label }: { since: number; label?: string }) {
   const s = Math.max(0, Math.round((Date.now() - since) / 1000))
   return (
     <div className="working-mark" role="status">
-      <span className="working-dots" aria-hidden>
-        <i />
-        <i />
-        <i />
-      </span>
+      <FoxMark thinking />
       {label && <span>{label}</span>}
       <span className="working-time">{s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}</span>
     </div>

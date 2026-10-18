@@ -19,6 +19,7 @@ import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOpt
 import { backendAvailable } from '@shared/backendAvailability'
 import { EffortPicker } from './EffortPicker'
 import { ContextRing } from './Usage'
+import { FoxMark } from './FoxMark'
 
 interface Props {
   conversation?: Conversation
@@ -861,7 +862,7 @@ function HousekeepingTimer({ conversationId }: { conversationId: string }) {
   const s = Math.max(0, Math.round((Date.now() - since) / 1000))
   return (
     <div className="working-timer">
-      <span className="dot working" />
+      <FoxMark thinking />
       <span className="shimmer">{t('正在整理项目记忆')}</span> {s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}
     </div>
   )

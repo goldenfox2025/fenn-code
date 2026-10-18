@@ -1,0 +1,56 @@
+/* The thinking fox (FoxMark.tsx): the app's mark wherever it appears in the UI.
+   While an agent works the thought builds up dot by dot, then an ear twitches; stepped, like pixel art. */
+.fox-mark {
+  flex: none;
+  color: var(--accent);
+}
+.fox-body {
+  fill: currentColor;
+}
+.fox-cheek {
+  fill: currentColor;
+  opacity: 0.45;
+}
+.fox-eye {
+  fill: var(--fox-eye);
+}
+.fox-mark.thinking path {
+  animation-duration: calc(2 * var(--dur-pulse));
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+}
+.fox-mark.thinking .fox-t1 {
+  animation-name: fox-t1;
+}
+.fox-mark.thinking .fox-t2 {
+  animation-name: fox-t2;
+}
+.fox-mark.thinking .fox-t3 {
+  animation-name: fox-t3;
+}
+.fox-mark.thinking .fox-ear {
+  animation-name: fox-ear;
+}
+@keyframes fox-t1 {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  92%, 100% { opacity: 0; }
+}
+@keyframes fox-t2 {
+  0% { opacity: 0; }
+  33% { opacity: 1; }
+  92%, 100% { opacity: 0; }
+}
+@keyframes fox-t3 {
+  0% { opacity: 0; }
+  58% { opacity: 1; }
+  92%, 100% { opacity: 0; }
+}
+@keyframes fox-ear {
+  0% { opacity: 1; }
+  70% { opacity: 0; }
+  78%, 100% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fox-mark.thinking path { animation: none; }
+}

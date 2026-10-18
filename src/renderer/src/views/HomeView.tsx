@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Bot, Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
+import { FoxMark } from '../components/FoxMark'
 import { Composer } from '../components/Composer'
 import { WidgetBoard } from '../widgets/WidgetBoard'
 import type { Attachment } from '@shared/model'
@@ -49,7 +50,7 @@ export function HomeView({ folder: initialFolder }: { folder?: string }) {
       <div className="scroll home-board">
         <div className="home-board-inner">
           <h1 className="greeting">
-            <Sparkles size={30} className="logo" />
+            <FoxMark size={32} className="logo" />
             {greeting(settings.userName)}
           </h1>
           <WidgetBoard />
