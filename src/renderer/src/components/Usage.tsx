@@ -40,9 +40,15 @@ const NO_SPEED: Record<NonNullable<GenerationTiming['noSpeed']>, string> = {
 /** How fast a reply streamed, as the app saw it (not the provider's own timing), or why that isn't known. */
 function timingLines(timing: GenerationTiming): string[] {
   const speed = tokensPerSecond(timing)
+  const chars = charsPerSecond(timing)
   return [
-    t('首个回复 {0}', seconds(timing.firstResponseMs)),
-    speed !== undefined ? t('输出速度 {0}，平均每个 token {1}', rate(speed), seconds(timing.tpotMs!)) : timing.noSpeed ? t(NO_SPEED[timing.noSpeed]) : ''
+    speed !== undefined
+      ? t('输出速度 {0}，平均每个 token {1}', rate(speed), seconds(timing.tpotMs!))
+      : chars !== undefined
+        ? t('输出速度 {0}（agent 没报告 token 数，按收到的文字实测）', charRate(chars))
+        : timing.noSpeed
+          ? t(NO_SPEED[timing.noSpeed])
+          : ''
   ].filter(Boolean)
 }
 
@@ -55,7 +61,8 @@ export function MessageUsageLabel({ m }: { m: Message }) {
   const credits = useApp(usesCredits(backendId))
   if (credits || !m.usage) return null
   const speed = tokensPerSecond(m.timing)
-  const line = [usageLine(m.usage), speed !== undefined ? rate(speed) : ''].filter(Boolean).join(' · ')
+  const chars = charsPerSecond(m.timing)
+  const line = [usageLine(m.usage), speed !== undefined ? rate(speed) : chars !== undefined ? charRate(chars) : ''].filter(Boolean).join(' · ')
   if (!line) return null
   const title = [...detailLines(m.usage), m.usage.cost && m.usage.cost.amount > 0 ? t('费用 {0}', formatCost(m.usage.cost)) : '', ...(m.timing ? timingLines(m.timing) : [])]
   return (
@@ -100,6 +107,15 @@ const SOURCE: Record<string, string> = {
 /** "58 tok/s": whole numbers from 100 up. */
 const rate = (speed: number) => t('{0} tok/s', speed >= 100 ? Math.round(speed) : speed.toFixed(1))
 
+/** "42 字/秒": characters of text per second, for an agent that reports no token counts. */
+const charRate = (speed: number) => t('{0} 字/秒', speed >= 100 ? Math.round(speed) : speed.toFixed(1))
+
+/** Characters per second over an uninterrupted stream, when the agent reported no output tokens. */
+export function charsPerSecond(timing?: GenerationTiming): number | undefined {
+  if (!timing?.streamMs || timing.streamMs < MIN_STREAM_MS || !timing.outputChars || timing.outputTokens) return undefined
+  return timing.outputChars / (timing.streamMs / 1000)
+}
+
 /** Output tokens per second over the last uninterrupted stream, when the agent reported its output. */
 export function tokensPerSecond(timing?: GenerationTiming): number | undefined {
   if (!timing?.streamMs || timing.streamMs < MIN_STREAM_MS || !timing.outputTokens) return undefined
@@ -135,6 +151,7 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
     )
   const from = [u.contextSource && t(SOURCE[u.contextSource]), u.contextSizeSource === 'table' && t(SOURCE.table)].filter(Boolean).join(' · ')
   const speed = tokensPerSecond(timing)
+  const chars = charsPerSecond(timing)
   return (
     <div className="usage-panel">
       <div className="usage-head">{scope}</div>
@@ -166,10 +183,10 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
       {timing && (
         <div className="usage-section">
           <div className="usage-head">{t('最近一次回复')}</div>
-          <Row label={t('首个回复')} value={seconds(timing.firstResponseMs)} />
           {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Fenn Code 看到的输出时间计算，不含工具运行的时间')} />}
           {speed !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs!)} tip={t('输出时平均每个 token 的间隔（TPOT）')} />}
-          {speed === undefined && timing.noSpeed && <div className="usage-foot">{t(NO_SPEED[timing.noSpeed])}</div>}
+          {speed === undefined && chars !== undefined && <Row label={t('输出速度')} value={charRate(chars)} tip={t('agent 没报告 token 数：按 Fenn Code 收到的文字实测，每秒多少个字符')} />}
+          {speed === undefined && chars === undefined && timing.noSpeed && <div className="usage-foot">{t(NO_SPEED[timing.noSpeed])}</div>}
         </div>
       )}
     </div>

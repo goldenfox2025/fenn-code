@@ -39,7 +39,22 @@ describe('observed streaming timings', () => {
     expect(m.finish({ output: 10 }, 'end_turn', false)?.tpotMs).toBeUndefined()
     // Each says why, for the reply's tooltip.
     expect(m.finish({ output: 10 }, 'cancelled')?.noSpeed).toBe('stopped')
-    expect(m.finish({}, 'end_turn')?.noSpeed).toBe('output')
+    expect(m.finish({}, 'end_turn')?.noSpeed).toBe('short')
+    const silent = meter()
+    silent.chunk(100, '.')
+    silent.chunk(5000, '')
+    expect(silent.m.finish({}, 'end_turn')?.noSpeed).toBe('output')
+  })
+  it('without a token count, measures the text as it streamed in characters per second, never from the send', () => {
+    const { m, chunk } = meter()
+    chunk(11500, '嗨！')
+    chunk(12000, '有什么')
+    chunk(13500, '我可以帮你的吗？')
+    expect(m.finish({}, 'end_turn')).toEqual({ firstResponseMs: 11500, streamMs: 2000, outputChars: 13 })
+    const burst = meter()
+    burst.chunk(11500, '嗨！有什么我可以帮你的吗？')
+    burst.chunk(11520, '\n')
+    expect(burst.m.finish({}, 'end_turn')).toEqual({ firstResponseMs: 11500, noSpeed: 'short' })
   })
   it('leaves out the time tools run, and gives no speed for waits it cannot account for', () => {
     const { m, chunk } = meter()

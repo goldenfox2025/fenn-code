@@ -731,7 +731,6 @@ export const en: Record<string, string> = {
   "账户额度：后端未提供": "Account quota not reported",
   "非官方开源项目（MIT 许可），与 Anthropic 无关。": "An unofficial open-source project (MIT license), not affiliated with Anthropic.",
   "{0} 毫秒": "{0} ms",
-  "首个回复 {0}": "first reply after {0}",
   "上下文 {0} / {1}（{2}）": "Context {0} / {1} ({2})",
   "最近一次回复": "Last reply",
   "{0} 账户额度": "{0} account credits",
@@ -948,7 +947,6 @@ export const en: Record<string, string> = {
   "按标价估算": "at list prices",
   "订阅账号不实际扣费": "Subscription accounts aren’t charged this",
   "输出速度": "Output speed",
-  "首个回复": "First response",
   "{0} tok/s": "{0} tok/s",
   "{0} 轮": "{0} turns",
   "缓存命中 {0}": "Cache hits {0}",
@@ -1056,4 +1054,7 @@ export const en: Record<string, string> = {
   "「{0}」：{1}": "“{0}”: {1}",
   "没能打开「{0}」，可能没有能打开它的应用。": "Couldn’t open “{0}”; there may be no app for it.",
   "没能读取「{0}」。": "Couldn’t read “{0}”.",
+  "{0} 字/秒": "{0} chars/s",
+  "输出速度 {0}（agent 没报告 token 数，按收到的文字实测）": "Output speed {0} (the agent reports no tokens; measured from the text as it arrived)",
+  "agent 没报告 token 数：按 Fenn Code 收到的文字实测，每秒多少个字符": "The agent reports no token counts: characters per second of the text as Fenn Code received it",
 }
