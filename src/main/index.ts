@@ -193,6 +193,7 @@ const backends = new BackendManager({
   // Sessions with no folder of their own (model probes, titles) run in the app's scratch space, never the home folder.
   defaultCwd: (mkdirSync(join(dataDir, "workspaces", "_app"), { recursive: true }), join(dataDir, "workspaces", "_app")),
   canWorkIn: (path) => !!core && !core.unsafeFolder(path),
+  defaultModel: (id) => store.settings.backendModelDefaults?.[id],
   emit: (e) => {
     if (e.type === "permission")
       core.chat.routePermission(e.backendId, e.request);
@@ -507,9 +508,14 @@ function createWindow(): void {
   });
   applyWindowMaterial(store.settings);
   win.once("ready-to-show", () => win?.show());
+  // Only web and mail links leave the app. Anything else (file:, a relative link resolved against the
+  // app itself, a custom scheme) would have the system open or run it, from text an agent wrote.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (/^(https?:|mailto:)/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (e, url) => {
+    if (url.split("#")[0] !== win?.webContents.getURL().split("#")[0]) e.preventDefault();
   });
   if (process.env.ELECTRON_RENDERER_URL)
     void win.loadURL(process.env.ELECTRON_RENDERER_URL);

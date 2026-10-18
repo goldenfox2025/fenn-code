@@ -41,7 +41,8 @@ const models = [
   { value: "mock-fast", name: "Mock Fast", description: "快速回复" },
   { value: "mock-smart", name: "Mock Smart", description: "带思考过程" },
 ];
-const FIRST_MODEL = ALIASES ? "default" : "mock-fast";
+// MOCK_DEFAULT_MODEL: the model a new session opens on (Antigravity's AGY_ACP_DEFAULT_MODEL).
+const FIRST_MODEL = ALIASES ? "default" : process.env.MOCK_DEFAULT_MODEL || "mock-fast";
 
 const handlers = {
   initialize: async () => {

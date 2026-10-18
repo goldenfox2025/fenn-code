@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { routeFor } from '../actions'
 import { StatusChip } from './StatusChip'
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MessageUsageLabel } from './Usage'
 import { OutputCard } from './Outputs'
@@ -440,10 +440,18 @@ function localFile(href?: string): string | undefined {
   return /^([a-zA-Z]:[\\/]|\/(?!\/))/.test(href) ? decodeURIComponent(href) : undefined
 }
 
+/** Links that may leave the app: to the browser or the mail app. Anything else never goes to the system. */
+const WEB_LINK = /^(https?:|mailto:)/i
+
+/** Keeps file: links (react-markdown would blank them) so they can open in the app; the rest as react-markdown cleans them. */
+const keepFileLinks = (url: string) => (/^file:/i.test(url) ? url : defaultUrlTransform(url))
+
 const MD_COMPONENTS = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
     const file = localFile(href)
     // A file on this computer opens in the app, beside the chat; a web link in the browser.
+    // A relative link, or any other scheme, is shown as text: it would resolve against the app itself.
+    if (!file && !(href && WEB_LINK.test(href))) return <span>{children}</span>
     return file ? (
       <a
         href={href}
@@ -466,7 +474,7 @@ const MD_COMPONENTS = {
 /** One piece of a reply; unchanged pieces are not parsed again while the reply streams. */
 const MarkdownPart = memo(function MarkdownPart({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS} urlTransform={keepFileLinks}>
       {text}
     </ReactMarkdown>
   )

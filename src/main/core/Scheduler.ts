@@ -80,6 +80,8 @@ export class Scheduler {
     const stamp = new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     let conversationId: string | undefined
     let lastError: string | undefined
+    // A card's refresh that ends without putting the card (every call refused, say) failed, even with no error.
+    const cardBefore = r.widgetId ? this.store.boardWidgets.find((w) => w.id === r.widgetId)?.updatedAt : undefined
     try {
       const project = this.store.project(r.target.projectId)
       if (project) {
@@ -100,6 +102,7 @@ export class Scheduler {
       }
       const last = this.store.messagesOf(conversationId).filter((m) => m.role === 'assistant').pop()
       if (last?.state === 'error') lastError = last.error ?? t('运行出错')
+      else if (r.widgetId && this.store.boardWidgets.find((w) => w.id === r.widgetId)?.updatedAt === cardBefore) lastError = t('这次运行没有更新卡片')
     } catch (e) {
       lastError = e instanceof Error ? e.message : String(e)
     } finally {

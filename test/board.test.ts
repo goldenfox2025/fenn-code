@@ -29,6 +29,12 @@ it('an agent puts a card on the home board, replaces its data by id, and deletes
     expect(store.settings.homeWidgets).toEqual(['usage-stats'])
     expect(await board.run({ action: 'list' }, { conversationId: conv.id })).toContain('服务器状态')
     await expect(board.run({ action: 'put', id: 'nope-nope', kind: 'markdown', data: { text: 'x' } }, { conversationId: conv.id })).rejects.toThrow('没有这张卡片')
+    // Another chat sees the card but can't change or remove it.
+    const other = core.chat.createConversation({ kind: 'chat', title: '别处', backendId: 'mock' })
+    const card = core.store.boardWidgets[0]
+    expect(await tool(core, other.id).run({ action: 'list' }, { conversationId: other.id })).toContain('别的对话做的')
+    await expect(tool(core, other.id).run({ action: 'put', id: card.id, kind: 'markdown', data: { text: 'x' } }, { conversationId: other.id })).rejects.toThrow('只能在那里修改')
+    await expect(tool(core, other.id).run({ action: 'remove', id: card.id }, { conversationId: other.id })).rejects.toThrow('只能在那里修改')
   } finally {
     await dispose()
   }
@@ -56,6 +62,23 @@ it('a card refreshed by a routine: only that routine’s unattended run may upda
     await expect(tool(core, run.id).run({ action: 'remove', id: w.id }, { conversationId: run.id })).rejects.toThrow('不能删除')
     await core.deleteBoardWidget(w.id)
     expect(store.routines.some((x) => x.id === r.id)).toBe(false)
+  } finally {
+    await dispose()
+  }
+})
+
+it('a refresh that leaves its card as it was is recorded as failed', async () => {
+  const { core, store, dispose } = await makeCore()
+  try {
+    const conv = core.chat.createConversation({ kind: 'chat', title: '天气', backendId: 'mock' })
+    await tool(core, conv.id).run(
+      { action: 'put', title: '天气', kind: 'stat', data: { items: [{ label: '气温', value: '20°' }] }, refresh: { prompt: '查北京天气', schedule: 'interval', minutes: 30 } },
+      { conversationId: conv.id }
+    )
+    const r = store.routines.find((x) => x.id === store.boardWidgets[0].routineId)!
+    // The mock agent only answers in words: the card is not updated.
+    await core.scheduler.run(r.id)
+    expect(store.routines.find((x) => x.id === r.id)?.lastError).toBe('这次运行没有更新卡片')
   } finally {
     await dispose()
   }

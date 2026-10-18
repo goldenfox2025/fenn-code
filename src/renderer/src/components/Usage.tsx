@@ -8,11 +8,15 @@ import { api, useApp } from '../store'
 import { t } from '../i18n'
 import { tk } from '@shared/i18n'
 
-/** "1,234 tokens · $0.003" for one reply. */
+/**
+ * "输入 13.7k · 输出 8 · $0.003" for one reply: input and output apart, so the context the reply
+ * read isn't taken for the size of the reply; a bare total only when the agent gave nothing finer.
+ */
 export function usageLine(u: MessageUsage): string {
   const parts: string[] = []
   const total = headline(u)
-  if (total > 0) parts.push(t('{0} tokens', formatTokens(total)))
+  if (u.input !== undefined && u.output !== undefined) parts.push(t('输入 {0}', formatTokens(u.input)), t('输出 {0}', formatTokens(u.output)))
+  else if (total > 0) parts.push(t('{0} tokens', formatTokens(total)))
   // ACP reports a running cost; a reply that added nothing shows none rather than $0.0000.
   if (u.cost && u.cost.amount > 0) parts.push(formatCost(u.cost))
   return parts.join(' · ')
@@ -32,7 +36,7 @@ const seconds = (ms: number) => (ms < 1000 ? t('{0} 毫秒', Math.round(ms)) : t
 
 const NO_SPEED: Record<NonNullable<GenerationTiming['noSpeed']>, string> = {
   output: tk('没有速度：agent 没报告这条回复的输出 token 数'),
-  short: tk('没有速度：回复不到 1 秒就到齐了'),
+  short: tk('没有速度：回复几乎是一次到齐的，看不到它逐字输出的过程，测不出速度'),
   waited: tk('没有速度：回复中途等过确认或重试'),
   stopped: tk('没有速度：回复没有正常结束')
 }
@@ -186,6 +190,9 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
           {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Fenn Code 看到的输出时间计算，不含工具运行的时间')} />}
           {speed !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs!)} tip={t('输出时平均每个 token 的间隔（TPOT）')} />}
           {speed === undefined && chars !== undefined && <Row label={t('输出速度')} value={charRate(chars)} tip={t('agent 没报告 token 数：按 Fenn Code 收到的文字实测，每秒多少个字符')} />}
+          {speed === undefined && chars === undefined && timing.outputTokens !== undefined && (
+            <Row label={t('输出')} value={t('{0} token', formatTokens(timing.outputTokens))} tip={t('agent 报告的这条回复的输出 token 数')} />
+          )}
           {speed === undefined && chars === undefined && timing.noSpeed && <div className="usage-foot">{t(NO_SPEED[timing.noSpeed])}</div>}
         </div>
       )}

@@ -56,7 +56,6 @@ export default acpPlugin({
       placeholder: 'xai-…',
       help: tk('在 console.x.ai 生成。留空则点上方「登录」，用 grok.com 账号登录。')
     },
-    { key: 'model', label: tk('默认模型'), placeholder: 'grok-4.6' }
   ],
   quirks: {
     inputIncludesCache: true,

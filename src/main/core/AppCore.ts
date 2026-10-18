@@ -499,10 +499,13 @@ export class AppCore {
       return projectChat
     }
     this.refuseFolder(opts.cwd)
+    const backendId = this.resolveBackend(opts.backendId)
+    const id = this.chat.spareId(backendId, opts.cwd)
     const conv = this.chat.createConversation({
+      ...(id ? { id } : {}),
       kind: 'chat',
       title: titleFrom(opts.text || opts.attachments?.[0]?.name || ''),
-      backendId: this.resolveBackend(opts.backendId),
+      backendId,
       cwd: opts.cwd || undefined,
       modelId: opts.modelId,
       optionValues: opts.optionValues && Object.keys(opts.optionValues).length ? { ...opts.optionValues } : undefined
@@ -619,6 +622,18 @@ export class AppCore {
   private rememberModelDefault(backendId: string, modelId: string): void {
     const all = this.store.settings.backendModelDefaults ?? {}
     this.publish({ type: 'settings', settings: this.store.patchSettings({ backendModelDefaults: { ...all, [backendId]: modelId } }) })
+    if (all[backendId] !== modelId) void this.newChatModel(backendId)
+  }
+
+  /**
+   * The model for new chats changed. An agent that takes it only when it starts runs again with it
+   * (when no chat is open on it); the session opened ahead, on the old model, is made again after.
+   */
+  private async newChatModel(backendId: string): Promise<void> {
+    const spare = this.chat.spareOf(backendId)
+    this.chat.dropSpare(backendId)
+    await this.backends.defaultModelChanged(backendId).catch(() => false)
+    if (spare) this.chat.prepareSpare(backendId, spare.folder)
   }
 
   async setOptionDefault(backendId: string, optionId: string, value: string,
@@ -638,9 +653,11 @@ export class AppCore {
   }
 
   /** The new-chat composer shows this agent: start it now, so the first message doesn't wait for it. */
-  async warmBackend(backendId: string): Promise<void> {
+  async warmBackend(backendId: string, folder?: string): Promise<void> {
     if (!this.backends.has(backendId) || this.backends.list().find((b) => b.id === backendId)?.installed === false) return
     await this.backends.warm(backendId)
+    // A new chat's composer: its session too, where opening one is slow.
+    if (folder !== undefined && !this.unsafeFolder(folder)) this.chat.prepareSpare(backendId, folder)
   }
 
   /**
@@ -652,11 +669,12 @@ export class AppCore {
     await Promise.all(
       this.backends
         .list()
-        .filter((b) => b.slowStart && b.installed !== false && prestartOn(settings, b.id))
+        .filter((b) => b.installed !== false && prestartOn(settings, b.id))
         .map(async (b) => {
           const account = await this.backends.account(b.id).catch(() => ({}) as AccountStatus)
           if (account.installed === false || account.signedIn === false) return
           await this.backends.warm(b.id).catch(() => undefined)
+          this.chat.prepareSpare(b.id)
         })
     )
   }
@@ -1160,12 +1178,13 @@ export class AppCore {
   }
 
   /**
-   * Where a file shown in a chat lives: in a chat's or project's folder (opened there, editable),
-   * or elsewhere (shown read only). `near`: the conversation it was shown in, looked at first.
+   * Where a file shown in a chat lives: in that conversation's or its project's folder (opened
+   * there, editable), or elsewhere (shown read only). `near`: the conversation it was shown in.
    */
   async locateFile(path: string, near?: string): Promise<{ libraryId?: string; rel?: string }> {
     const conv = near ? this.store.conversation(near) : undefined
-    const ids = [...(conv ? [conv.id, ...(conv.projectId ? [conv.projectId] : [])] : []), ...this.store.projects.map((p) => p.id), ...this.store.conversations.map((c) => c.id)]
+    // Only the folders of the conversation the link is in (and its project): a file anywhere else opens view-only.
+    const ids = conv ? [conv.id, ...(conv.projectId ? [conv.projectId] : [])] : []
     for (const id of ids) {
       const { root } = this.libraryOf(id)
       if (!root) continue
@@ -1179,7 +1198,7 @@ export class AppCore {
   async readLocalFile(path: string) {
     if (!isAbsolute(path)) return undefined
     const r = this.fileOp(basename(path), () => readPreview(dirname(path), basename(path)), (n) => t('没能读取「{0}」。', n))
-    return r && { ...r, readOnly: r.text !== undefined ? true : r.readOnly }
+    return r && { ...r, readOnly: r.readOnly ?? (r.text !== undefined ? 'outside' : undefined) }
   }
 
   async openLibraryPath(id: string, rel: string, reveal = false) {

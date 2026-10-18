@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { BoardTone, BoardWidget, BoardWidgetBody, Conversation, Routine } from '../../../shared/model'
 import { t } from '../../../shared/i18n'
 import type { Store } from '../../store/Store'
-import type { ToolDef } from '../../tools/ToolServer'
+import { ToolRefusal, type ToolDef } from '../../tools/ToolServer'
 import { parseScheduleArgs, scheduleText } from './routineTools'
 
 export interface BoardToolDeps {
@@ -76,14 +76,20 @@ export function boardBody(kind: unknown, raw: unknown): BoardWidgetBody {
 export function boardTools(deps: BoardToolDeps, conv: Conversation): ToolDef[] {
   const line = (w: BoardWidget) => {
     const r = w.routineId && deps.store.routines.find((x) => x.id === w.routineId)
-    return `${w.id.slice(0, 8)}  「${w.title}」 ${w.body.kind}${r ? `，定时刷新：${scheduleText(r.schedule)}` : ''}`
+    return `${w.id.slice(0, 8)}  「${w.title}」 ${w.body.kind}${r ? `，定时刷新：${scheduleText(r.schedule)}` : ''}${w.createdBy === conv.id ? '' : '（别的对话做的，这里不能改）'}`
   }
   const find = (id: string) => deps.store.boardWidgets.find((w) => w.id === id || (id.length >= 6 && w.id.startsWith(id)))
+  // A card is changed only from the chat that made it (or by its own refresh); the user can still delete any from its 「…」 menu.
+  const mine = (w: BoardWidget) => {
+    if (w.createdBy === conv.id || (!!conv.routineId && w.routineId === conv.routineId)) return
+    const by = deps.store.conversation(w.createdBy)?.title
+    throw new ToolRefusal(`「${w.title}」是${by ? `「${by}」这个对话` : '别的对话'}做的，只能在那里修改。用户可以在首页这张卡片的「…」菜单里删除它。`)
+  }
   return [
     {
       name: 'home_board',
       description:
-        '首页看板的卡片（用户说「放到首页」「改看板」时用）。list 列出；put 新建，给 id 则整张替换；remove 删除。只给数据，应用来画；html 仅在确需自定义界面时用。要定时刷新就给 refresh。',
+        '首页看板的卡片（用户要「放到首页」「改看板」时用）。put 新建，给 id 则整张替换；data 的格式按 kind，给错了会说明。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -92,14 +98,8 @@ export function boardTools(deps: BoardToolDeps, conv: Conversation): ToolDef[] {
           title: { type: 'string' },
           size: { type: 'string', enum: ['wide', 'half'] },
           kind: { type: 'string', enum: ['stat', 'list', 'table', 'chart', 'markdown', 'html'] },
-          data: {
-            type: 'object',
-            description: 'stat {items:[{label,value,note?,tone?}]}；list {items:[{text,done?,note?,tone?}]}；table {columns,rows}；chart {style,labels,series:[{name,values}],unit?}；markdown {text}；html {html,height?}；tone=good|warn|bad'
-          },
-          refresh: {
-            type: 'object',
-            description: '{prompt（每次怎么取数据）, schedule: interval|daily|weekly|cron, minutes?, time?, weekdays?, cron?}；{off:true} 停止'
-          }
+          data: { type: 'object' },
+          refresh: { type: 'object', description: '定时刷新 {prompt, schedule: interval|daily|weekly|cron, minutes?, time?, weekdays?, cron?}；{off:true} 停止' }
         },
         required: ['action']
       },
@@ -110,9 +110,10 @@ export function boardTools(deps: BoardToolDeps, conv: Conversation): ToolDef[] {
         if (a.action === 'list') return deps.store.boardWidgets.map(line).join('\n') || '首页看板上还没有 agent 做的卡片。'
         const id = str(a.id, 64)
         if (a.action === 'remove') {
-          if (unattended) throw new Error('定时任务的无人值守运行不能删除卡片。')
+          if (unattended) throw new ToolRefusal('定时任务的无人值守运行不能删除卡片。')
           const w = id && find(id)
           if (!w) throw new Error('没有这张卡片，用 action=list 看看有哪些')
+          mine(w)
           await deps.remove(w.id)
           deps.notice(conv.id, t('已从首页删除卡片「{0}」', w.title), `board-${w.id}`)
           return `已删除「${w.title}」。`
@@ -120,10 +121,11 @@ export function boardTools(deps: BoardToolDeps, conv: Conversation): ToolDef[] {
         if (a.action !== 'put') throw new Error('action 只能是 list、put 或 remove')
         const prev = id ? find(id) : undefined
         if (id && !prev) throw new Error('没有这张卡片；新建卡片时不要给 id')
+        if (prev) mine(prev)
         // A refresh run only updates the card it refreshes.
-        if (unattended && (!prev || !conv.routineId || prev.routineId !== conv.routineId)) throw new Error('定时任务的无人值守运行只能更新它负责刷新的那张卡片。')
+        if (unattended && (!prev || !conv.routineId || prev.routineId !== conv.routineId)) throw new ToolRefusal('定时任务的无人值守运行只能更新它负责刷新的那张卡片。')
         if (!prev && deps.store.boardWidgets.filter((w) => w.createdBy === conv.id).length >= MAX_CARDS)
-          throw new Error(`这个对话已经做了 ${MAX_CARDS} 张卡片，不能再加。请先删掉不需要的。`)
+          throw new ToolRefusal(`这个对话已经做了 ${MAX_CARDS} 张卡片，不能再加。请先删掉不需要的。`)
         const title = str(a.title, 60) || prev?.title
         if (!title) throw new Error('新卡片需要 title')
         const body = a.kind === undefined && a.data === undefined && prev ? prev.body : boardBody(a.kind ?? prev?.body.kind, a.data)

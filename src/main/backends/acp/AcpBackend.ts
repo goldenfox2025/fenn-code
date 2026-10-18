@@ -89,6 +89,13 @@ export interface AcpQuirks {
   commandAliases?: Record<string, string>
   /** Told once the agent's process has answered `initialize` (e.g. to look up the processes it started). */
   started?(proc: ChildProcess): void
+  /**
+   * The launch passes the model for new chats (host.defaultModel) and a session opens on it, while
+   * switching later is slow (Antigravity restarts its harness): a changed choice restarts the idle process.
+   */
+  modelAtStart?: boolean
+  /** Each session/new takes seconds even in a running process (Antigravity creates its conversation): see AgentBackend.wantsSpare. */
+  spareSession?: boolean
   /** Stops the agent's process its own way (Antigravity: so it can clean up after itself); resolves once it is done. */
   stop?(proc: ChildProcess): Promise<void>
 }
@@ -152,6 +159,8 @@ export class AcpBackend implements AgentBackend {
   private auth: AuthMethod[] = []
   /** Sessions being loaded: history the agent replays must not reach the app. */
   private replaying = new Set<string>()
+  /** Sessions the app has open in this process (not the ones warming up or listing models discards). */
+  private open = new Set<string>()
   /** Files and commands the agent reaches through the app, kept to each session's working folder. */
   private workspaces: Workspaces
 
@@ -235,6 +244,7 @@ export class AcpBackend implements AgentBackend {
         this.conn = undefined
         this.warmed = undefined
         this.starting = undefined
+        if (!wasUs) this.open.clear()
         // Through a shell (Windows .cmd), a missing program shows up as an exit, not ENOENT.
         this.exitReason = /is not recognized as an internal or external command|command not found/i.test(this.stderrTail.join(''))
           ? this.missing(spec.command)
@@ -391,7 +401,18 @@ export class AcpBackend implements AgentBackend {
     return this.warmed
   }
 
+  wantsSpare(): boolean {
+    return !!this.quirks.spareSession
+  }
+
+  async defaultModelChanged(): Promise<boolean> {
+    if (!this.quirks.modelAtStart || !this.proc || this.open.size) return false
+    await this.dispose()
+    return true
+  }
+
   async closeSession(sessionId: string, opts: { discard?: boolean } = {}): Promise<void> {
+    this.open.delete(sessionId)
     this.workspaces.close(sessionId)
     this.modelSelectors.delete(sessionId)
     this.sessionOptions.delete(sessionId)
@@ -424,6 +445,7 @@ export class AcpBackend implements AgentBackend {
     }
     this.captureModels(sessionId, res?.configOptions, res?._meta?.modelState ?? res?.models)
     this.captureOptions(sessionId, res?.configOptions, (res as { modes?: unknown } | undefined)?.modes)
+    this.open.add(sessionId)
     const sel = this.modelSelectors.get(sessionId)
     return { sessionId, models: sel?.models, currentModelId: sel?.current, options: this.optionsOf(sessionId), systemApplied: this.takesSystemPrompt(system) }
   }
@@ -470,6 +492,7 @@ export class AcpBackend implements AgentBackend {
       throw new Error(msg)
     }
     this.workspaces.setRoot(res.sessionId, folder, cwd)
+    this.open.add(res.sessionId)
     const meta = (res as { _meta?: Record<string, unknown> })._meta
     this.captureModels(res.sessionId, res.configOptions, meta?.modelState ?? (res as { models?: unknown }).models)
     this.captureOptions(res.sessionId, res.configOptions, (res as { modes?: unknown }).modes)
@@ -691,6 +714,7 @@ export class AcpBackend implements AgentBackend {
     if (p && reason) this.stopReasons.set(p, reason)
     this.proc = undefined
     this.workspaces.closeAll()
+    this.open.clear()
     this.conn = undefined
     this.warmed = undefined
     this.starting = undefined

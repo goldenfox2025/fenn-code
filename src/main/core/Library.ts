@@ -1,6 +1,6 @@
 import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { LibraryEntry, LibraryChange, Message } from '../../shared/model'
+import type { LibraryEntry, LibraryChange, Message, ReadOnlyReason } from '../../shared/model'
 
 /**
  * The project's library, as in Claude's 库: what is in the project's working
@@ -142,7 +142,7 @@ const TEXT_MAX = 512 * 1024
 const IMAGE_MAX = 8 * 1024 * 1024
 const IMAGES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml' }
 
-export function readPreview(root: string, rel: string): { text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean; readOnly?: boolean } | undefined {
+export function readPreview(root: string, rel: string): { text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean; readOnly?: ReadOnlyReason } | undefined {
   const abs = inside(root, rel)
   if (!abs || !existsSync(abs)) return undefined
   const st = statSync(abs)
@@ -161,7 +161,7 @@ export function readPreview(root: string, rel: string): { text?: string; size: n
   // The byte-order mark is not shown; saving puts it back.
   if (text !== undefined) return { ...base, text: text.replace(/^\uFEFF/, '') }
   // Most likely a Chinese file saved as GBK: shown as such, and read-only.
-  return { ...base, text: new TextDecoder('gb18030').decode(buf), readOnly: true }
+  return { ...base, text: new TextDecoder('gb18030').decode(buf), readOnly: 'encoding' }
 }
 
 /** Why a change to the folder was refused. */

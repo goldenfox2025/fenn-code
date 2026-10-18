@@ -41,7 +41,6 @@ export interface AcpPluginOptions {
   upgrade?: UpgradeSpec
   /** Which CLI session log to read for context figures (see sessionLogs.ts). */
   sessionLog?: SessionLogKind
-  slowStart?: boolean
 }
 
 /** Runs an account check; a missing program or a failure reads as "unknown", never as an error. */
@@ -93,7 +92,6 @@ export function acpPlugin(opts: AcpPluginOptions): BackendPlugin {
     description: opts.description,
     settings: opts.settings,
     signIn: opts.signIn,
-    slowStart: opts.slowStart,
     credits: opts.credits,
     login: opts.login,
     signature: opts.signature,

@@ -388,3 +388,8 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* A card whose last refresh failed: its data is older than it looks. */
+.board-error {
+  color: var(--red);
+}

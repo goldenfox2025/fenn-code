@@ -372,6 +372,9 @@ export type BoardTone = 'good' | 'warn' | 'bad'
 export const boardWidgetKey = (id: string) => `board:${id}`
 
 /** A card on the home board that an agent made (in any chat or project), or a plugin. */
+/** Why a file opens view-only: text that isn't UTF-8 (shown as GBK), or a file outside the working folders. */
+export type ReadOnlyReason = 'encoding' | 'outside'
+
 export interface BoardWidget {
   id: string
   title: string
@@ -616,7 +619,8 @@ export interface FennApi {
   /** Opens the conversation's agent session in the background, before the first message. Sends nothing. */
   prepareConversation(conversationId: string): Promise<void>
   /** Starts an agent before the first message of a new chat. Sends nothing. */
-  warmBackend(backendId: string): Promise<void>
+  /** `folder`: from a new chat's composer ("" for none), which also gets that chat's session opened ahead where that is slow. */
+  warmBackend(backendId: string, folder?: string): Promise<void>
   /** Opens the folder the ACP debug log is written to. */
   openLogFolder(): Promise<void>
   /** Reads the agent's session metadata without sending a prompt or creating a chat. */
@@ -687,8 +691,8 @@ export interface FennApi {
   listLibrary(id: string, rel?: string): Promise<{ root: string; entries: LibraryEntry[]; truncated: boolean } | undefined>
   /** Files the agents changed in that folder (a project's conversations, or a chat and its sub-conversations), newest first. */
   libraryChanges(id: string): Promise<LibraryChange[]>
-  /** A file of that folder for the preview. readOnly: text that is not UTF-8 (shown as GBK), never edited here. */
-  readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean; readOnly?: boolean } | undefined>
+  /** A file of that folder for the preview. readOnly: why it is never edited here. */
+  readLibraryFile(id: string, rel: string): Promise<{ text?: string; size: number; updatedAt: number; image?: string; tooBig?: boolean; binary?: boolean; readOnly?: ReadOnlyReason } | undefined>
   /** Opens a file of that folder with its app (folders and safe files), or shows it in its folder. */
   openLibraryPath(id: string, rel: string, reveal?: boolean): Promise<{ ok: boolean; error?: string }>
   /** Gives a chat or project without a folder one under the default folder (named after it); returns its path. */

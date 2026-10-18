@@ -7,20 +7,21 @@ import { AppCore } from '../src/main/core/AppCore'
 import { Store } from '../src/main/store/Store'
 import { ToolServer } from '../src/main/tools/ToolServer'
 import type { AppEvent } from '../src/shared/model'
-import type { PermissionRequest } from '../src/shared/contract'
+import type { BackendPlugin, PermissionRequest } from '../src/shared/contract'
 
-export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), agentEnv: Record<string, string> = {}, extras: NonNullable<ConstructorParameters<typeof AppCore>[5]> = {}) {
+export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), agentEnv: Record<string, string> = {}, extras: NonNullable<ConstructorParameters<typeof AppCore>[5]> = {}, plugins: BackendPlugin[] = loadPlugins()) {
   const events: AppEvent[] = []
   const store = new Store(dir)
   let core!: AppCore
   let answer = (r: PermissionRequest): string => r.options[0].id
   const backends = new BackendManager({
-    plugins: loadPlugins(),
+    plugins,
     settings: { get: (id) => store.backendSettings(id), set: (id, k, v) => store.setBackendSetting(id, k, v) },
     resourcesDir: join(__dirname, '../resources'),
     nodeCommand: { command: process.execPath, env: agentEnv },
     defaultCwd: process.cwd(),
     canWorkIn: (path) => !!core && !core.unsafeFolder(path),
+    defaultModel: (id) => store.settings.backendModelDefaults?.[id],
     emit: (e) => {
       if (e.type === 'permission') core.chat.routePermission(e.backendId, e.request)
       if (e.type === 'permission-dropped') core.chat.permissionDropped(e.requestId)

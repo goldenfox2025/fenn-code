@@ -26,7 +26,6 @@ export function claudeAccount(): AccountCheck {
 export default acpPlugin({
   id: 'claude-code',
   sessionLog: 'claude',
-  slowStart: true,
   name: 'Claude Code',
   description: tk('Anthropic 的 Claude Code，经 ACP 适配器接入'),
   login: { command: 'claude', args: ['auth', 'login'] },

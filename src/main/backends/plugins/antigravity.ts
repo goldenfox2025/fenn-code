@@ -146,29 +146,35 @@ export function reapOrphans(exe: string | undefined): Promise<void> {
 /** How long a temp folder must have sat unchanged before it may be one a crash left (not one being unpacked now). */
 const STALE_MS = 5 * 60_000
 
+/** Temp folders this cleanup renamed but couldn't finish deleting (a file still held): the only renamed ones it takes up again. */
+const STALE_LIST = join(AGY_HOME, 'stale-temp.json')
+
 /**
  * Deletes temp folders earlier runs of the server left (a forced stop keeps it from deleting its own).
  * One is the server's only when everything in it is a name the server unpacks, and at least half of
  * them are there; one in use (Windows won't rename a folder whose files a running program holds) is
  * left. Other programs' PyInstaller folders don't match and are never touched. Returns how many went.
  */
-export async function cleanStaleTemp(exe: string, tmp = tmpdir(), now = Date.now()): Promise<number> {
+export async function cleanStaleTemp(exe: string, tmp = tmpdir(), now = Date.now(), list = STALE_LIST): Promise<number> {
   const a = await readPyiArchive(exe).catch(() => undefined)
   const names = a ? topNames(a) : new Set<string>()
   if (names.size < 3) return 0
+  const unfinished = new Set<string>(await fs.readFile(list, 'utf8').then((s) => JSON.parse(s) as string[], () => []))
+  const left: string[] = []
   let removed = 0
   for (const d of await fs.readdir(tmp, { withFileTypes: true }).catch(() => [])) {
     const m = /^_MEI[0-9A-Za-z]+(-fenn-stale)?$/.exec(d.name)
-    if (!m || !d.isDirectory()) continue
+    if (!m || !d.isDirectory() || (m[1] && !unfinished.has(d.name))) continue
     const dir = join(tmp, d.name)
+    let gone = dir
     try {
       const st = await fs.lstat(dir)
-      if (!st.isDirectory() || now - st.mtimeMs < STALE_MS) continue
+      // One this cleanup renamed is known to be a leftover; any other must have sat a while.
+      if (!st.isDirectory() || (!m[1] && now - st.mtimeMs < STALE_MS)) continue
       const entries = (await fs.readdir(dir)).map((e) => e.toLowerCase())
       if (!entries.every((e) => names.has(e))) continue
       // One this cleanup renamed but couldn't finish deleting: what's left of it may be any part.
       if (!m[1] && entries.length < Math.max(3, Math.ceil(names.size / 2))) continue
-      let gone = dir
       if (!m[1]) {
         gone = `${dir}-fenn-stale`
         await fs.rename(dir, gone)
@@ -177,8 +183,10 @@ export async function cleanStaleTemp(exe: string, tmp = tmpdir(), now = Date.now
       removed++
     } catch {
       // In use, or partly deleted: left for next time.
+      if (gone !== dir || m[1]) left.push(`${d.name}${m[1] ? '' : '-fenn-stale'}`)
     }
   }
+  if (left.length || unfinished.size) await fs.writeFile(list, JSON.stringify(left)).catch(() => undefined)
   return removed
 }
 
@@ -227,7 +235,6 @@ export default acpPlugin({
   name: 'Antigravity',
   description: tk('Google Antigravity（agy）官方 ACP 服务'),
   signIn: true,
-  slowStart: true,
   sessionLog: 'antigravity',
   settings: [
     {
@@ -235,23 +242,26 @@ export default acpPlugin({
       label: 'Gemini API Key',
       secret: true,
       placeholder: 'AI…',
-      help: tk('在 aistudio.google.com 生成。留空则点上方「登录」，用 Google 账号登录。')
+      help: tk('填了就用这个 Key，按 Gemini API 计费，不用 Antigravity 套餐的额度（在 aistudio.google.com 生成）。留空则点上方「登录」，用 Google 账号登录。')
     },
-    { key: 'model', label: tk('默认模型'), placeholder: 'gemini-3.8-flash' },
     { key: 'AGY_ACP_BIN', label: tk('服务程序路径'), placeholder: EXE, help: tk('留空自动查找；也可填写 agy_acp_server 的绝对路径。') }
   ],
   isInstalled: (config) => !!findAgy(config),
   // Signed in when it has a key, or the Google sign-in it stores after 「登录」.
   accountState: (config) => {
     if (!findAgy(config)) return { installed: false }
-    const setupPending = needsUnpack(findAgy(config)) || undefined
-    if (config.GEMINI_API_KEY || process.env.GEMINI_API_KEY) return { installed: true, signedIn: true, detail: 'Gemini API Key', setupPending }
-    return existsSync(AGY_TOKEN) ? { installed: true, signedIn: true, detail: tk('Google 账号'), setupPending } : { installed: true, signedIn: false, setupPending }
+    const exe = findAgy(config)
+    const setup = { setupPending: needsUnpack(exe) || undefined, setupDone: (process.platform === 'win32' && !!unpackedFor(exe)) || undefined }
+    if (config.GEMINI_API_KEY || process.env.GEMINI_API_KEY) return { installed: true, signedIn: true, detail: 'Gemini API Key', ...setup }
+    return existsSync(AGY_TOKEN) ? { installed: true, signedIn: true, detail: tk('Google 账号'), ...setup } : { installed: true, signedIn: false, ...setup }
   },
   quirks: {
     missingHint: MISSING,
     // A new process signs in again (an OAuth refresh of several seconds) on its first session: warming up does that early.
     warmSession: true,
+    modelAtStart: true,
+    // Every session/new still creates its conversation on Google's side (some 2 s).
+    spareSession: true,
     started: (proc) => {
       if (unpackedPending) {
         unpackedPending = false
@@ -286,7 +296,7 @@ export default acpPlugin({
         after: { label: tk('解压 Antigravity 服务'), command: 'tar', args: ['-xf', join(AGY_HOME, 'agy-acp-server.zip'), '-C', AGY_HOME] }
       }
     : undefined,
-  launch: async ({ config }) => {
+  launch: async ({ config, defaultModel }) => {
     const exe = findAgy(config)
     // Leftovers can only come from an earlier run of the app, so one look per app start is enough; it runs alongside.
     if (exe) tidy(exe)
@@ -301,8 +311,9 @@ export default acpPlugin({
       env: {
         ...(exe && home ? unpackedEnv(exe, home) : {}),
         GEMINI_API_KEY: config.GEMINI_API_KEY || undefined,
-        // A new session always opens on the default model: make that the chosen one (saves a model switch).
-        AGY_ACP_DEFAULT_MODEL: config.model || undefined
+        // A new session always opens on the server's default model, and a switch restarts its harness
+        // (seconds): start it on the one chosen for new chats (see quirks.modelAtStart).
+        AGY_ACP_DEFAULT_MODEL: config.model || defaultModel?.() || undefined
       }
     }
   }

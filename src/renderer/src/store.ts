@@ -256,8 +256,15 @@ export function toast(text: string, level: 'info' | 'error' = 'info'): void {
 
 /** Shows what went wrong, as the core said it. Fits straight into `.catch(toastError)`. */
 /** Opens a file in the app, beside the chat: editable in a working folder, read only elsewhere. */
+/**
+ * Opens a file in the panel beside the conversation. It is editable only inside the folders of the
+ * conversation it was shown in (by default, the one on screen) and its project.
+ */
 export function openFileInApp(path: string, conversationId?: string): void {
-  useApp.setState({ fileView: { path, conversationId }, page: null })
+  const { route, projects } = useApp.getState()
+  const shown =
+    route.view === 'chat' ? route.conversationId : route.view === 'project' ? (route.threadId ?? projects.find((p) => p.id === route.projectId)?.conversationId) : undefined
+  useApp.setState({ fileView: { path, conversationId: conversationId ?? shown }, page: null })
 }
 
 export function toastError(e: unknown): void {

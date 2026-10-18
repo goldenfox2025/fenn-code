@@ -4,7 +4,7 @@
  * AppEvents. It talks to agents only through BackendManager (the contract).
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmdirSync } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, StopReason, TurnResult } from '../../shared/contract'
@@ -59,6 +59,20 @@ export interface TurnHooks {
   afterTurn?(conv: Conversation, reply: Message, result: TurnResult): void
   /** The user made a folder the working folder from a permission prompt. */
   adoptFolder?(conversationId: string, folder: string): void
+}
+
+/** A session opened ahead for the next new chat (ChatService.spares). */
+interface Spare {
+  backendId: string
+  /** The id the new chat takes. */
+  id: string
+  folder?: string
+  system?: string
+  info: Promise<SessionInfo | undefined>
+  sessionId?: string
+  /** What the agent sent for the session before a chat took it. */
+  events: AgentEvent[]
+  claimed?: SessionInfo
 }
 
 interface Live {
@@ -126,6 +140,7 @@ export class ChatService {
     backends.onAgentEvent((backendId, sessionId, event) => this.onAgentEvent(backendId, sessionId, event))
     backends.onSessionsLost((backendId) => {
       for (const [convId, live] of this.live) if (live.backendId === backendId) this.forgetSession(convId)
+      this.dropSpare(backendId, false)
     })
   }
 
@@ -464,6 +479,80 @@ export class ChatService {
     this.patchConversation(conversationId, { sessionRef: undefined })
   }
 
+  /**
+   * Per agent, a session opened ahead for the next new chat, where opening one takes seconds even
+   * in a running agent (AgentBackend.wantsSpare). It is made for the chat's id-to-be, so its scratch
+   * folder and the app's tools are already that chat's; what the agent says meanwhile is kept for it.
+   */
+  private spares = new Map<string, Spare>()
+
+  /** Opens the next new chat's session ahead (see spares); `folder` is the one the new chat will have. */
+  prepareSpare(backendId: string, folder?: string): void {
+    folder ||= undefined
+    const have = this.spares.get(backendId)
+    if ((have && have.folder === folder) || !this.backends.wantsSpare(backendId)) return
+    if (have) this.dropSpare(backendId)
+    const now = Date.now()
+    const conv: Conversation = { id: randomUUID(), kind: 'chat', title: '', backendId, cwd: folder, createdAt: now, updatedAt: now, status: 'idle' }
+    const system = this.hooks.preamble?.(conv, false) || undefined
+    const spare: Spare = { backendId, id: conv.id, folder, system, events: [], info: Promise.resolve(undefined) }
+    spare.info = this.backends
+      .newSession(backendId, { cwd: folder ?? this.scratchDir(conv.id), folder, tools: this.hooks.tools?.(conv), system })
+      .then((info) => {
+        if (this.spares.get(backendId) !== spare) return void this.backends.discardSession(backendId, info.sessionId)
+        spare.sessionId = info.sessionId
+        return info
+      })
+      .catch(() => {
+        if (this.spares.get(backendId) === spare) this.dropSpare(backendId, false)
+        return undefined
+      })
+    this.spares.set(backendId, spare)
+  }
+
+  /** The session opened ahead for this agent's next new chat, if any. */
+  spareOf(backendId: string): { folder?: string } | undefined {
+    const spare = this.spares.get(backendId)
+    return spare && { folder: spare.folder }
+  }
+
+  /** The id a new chat with this agent in `folder` takes, so it gets the session opened ahead for it. */
+  spareId(backendId: string, folder?: string): string | undefined {
+    const spare = this.spares.get(backendId)
+    return spare && spare.folder === (folder || undefined) ? spare.id : undefined
+  }
+
+  /** Forgets the session opened ahead (closing it in the agent, unless the agent's process is gone). */
+  dropSpare(backendId: string, close = true): void {
+    const spare = this.spares.get(backendId)
+    if (!spare) return
+    this.spares.delete(backendId)
+    // One still opening is closed once it has (see prepareSpare).
+    if (close && spare.sessionId) this.backends.discardSession(backendId, spare.sessionId)
+    if (!spare.folder)
+      try {
+        rmdirSync(this.scratchPath(spare.id))
+      } catch {
+        // Not empty, or already gone.
+      }
+  }
+
+  /** The session opened ahead for this very chat, when it was opened the way the chat would open one now. */
+  private async claimSpare(conv: Conversation, folder: string | undefined, system: string | undefined): Promise<Spare | undefined> {
+    const spare = this.spares.get(conv.backendId)
+    if (!spare || spare.id !== conv.id) return undefined
+    this.spares.delete(conv.backendId)
+    const info = await withTimeout(spare.info, CONNECT_TIMEOUT, '').catch(() => undefined)
+    if (!info || spare.folder !== folder || spare.system !== system) {
+      if (info) this.backends.discardSession(conv.backendId, info.sessionId)
+      return undefined
+    }
+    spare.claimed = info
+    // The next new chat gets one too.
+    this.prepareSpare(conv.backendId, folder)
+    return spare
+  }
+
   /** Sessions being opened, so a message sent meanwhile waits for the same one. */
   private connecting = new Map<string, Promise<{ live: Live; fresh: boolean }>>()
   // Bumped whenever a conversation's session is dropped: a session still opening for the old backend is then discarded.
@@ -533,6 +622,8 @@ export class ChatService {
       fresh = !info
     }
     const name = this.backends.list().find((b) => b.id === conv.backendId)?.name ?? conv.backendId
+    const spare = info || standIn ? undefined : await this.claimSpare(conv, folder, opts.system)
+    if (spare?.claimed) info = spare.claimed
     info ??= await withTimeout(this.backends.newSession(conv.backendId, opts), CONNECT_TIMEOUT,
       t('{0} 在 {1} 秒内没有连上。请确认它在终端里能正常运行，然后点重试。', name, CONNECT_TIMEOUT / 1000))
 
@@ -550,6 +641,8 @@ export class ChatService {
     this.bySession.set(`${conv.backendId}:${info.sessionId}`, conv.id)
     // A new session's offered options replace the previous session's capabilities.
     if (!standIn) this.patchConversation(conv.id, { sessionOptions: info.options ?? [] })
+    // What the agent said while the session waited for this chat (its / commands, its options).
+    for (const e of spare?.events ?? []) this.onAgentEvent(conv.backendId, info.sessionId, e)
     // What the user picked while the session was opening counts, not what it was when opening began.
     const latest = this.store.conversation(conv.id)
     const wantModel = standIn ? undefined : (latest?.modelId ?? conv.modelId)
@@ -919,7 +1012,11 @@ export class ChatService {
 
   private onAgentEvent(backendId: string, sessionId: string, event: AgentEvent): void {
     const conversationId = this.bySession.get(`${backendId}:${sessionId}`)
-    if (!conversationId) return
+    if (!conversationId) {
+      const spare = this.spares.get(backendId)
+      if (spare?.sessionId === sessionId && spare.events.length < 50) spare.events.push(event)
+      return
+    }
     // The agent changed its own options (e.g. left plan mode): show what is in effect now.
     if (event.kind === 'options') {
       const conv = this.store.conversation(conversationId)

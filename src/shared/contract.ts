@@ -159,6 +159,8 @@ export interface AccountStatus {
   version?: string
   /** Installed, but the setup step after installing (UpgradeSpec.setup) hasn't run for this copy yet. */
   setupPending?: boolean
+  /** That setup step has run for this copy (shown on the backend's card). */
+  setupDone?: boolean
 }
 
 /** A command a plugin declares (run with the user's environment, proxy settings included). */
@@ -233,6 +235,13 @@ export interface AgentBackend {
   closeSession?(sessionId: string, opts?: { discard?: boolean }): Promise<void>
   /** Starts the agent before it is needed (and, where its first session is slow to open, opens and discards one). Sends nothing. */
   warm?(cwd: string): Promise<void>
+  /**
+   * The model for new chats changed. An agent that takes it only when its process starts
+   * (Antigravity) restarts, when no session is open on it; true when it did.
+   */
+  defaultModelChanged?(): Promise<boolean>
+  /** Opening a session is slow even once the agent runs (Antigravity): the app keeps one open ahead for the next new chat. */
+  wantsSpare?(): boolean
   /** Runs one turn. Events stream through BackendHost.emit until it resolves. */
   prompt(sessionId: string, parts: PromptPart[]): Promise<TurnResult>
   cancel(sessionId: string): Promise<void>
@@ -277,6 +286,8 @@ export interface BackendHost {
   nodeCommand: { command: string; env: Record<string, string> }
   /** Whether the user may make this folder a conversation's working folder. */
   canWorkIn?(path: string): boolean
+  /** The model the user picked for new chats with this agent, if any. */
+  defaultModel?(): string | undefined
 }
 
 /** A setting a plugin needs from the user, e.g. an API key. */
@@ -296,8 +307,6 @@ export interface BackendPlugin {
   settings?: PluginSetting[]
   /** The agent can sign in from the app (ACP authenticate), so settings show a 「登录」 button. */
   signIn?: boolean
-  /** Starting it takes long enough to be worth doing when the app opens (settings offer 「打开 Fenn Code 时预先启动」). */
-  slowStart?: boolean
   /** A command that signs in from a terminal (e.g. `qodercli login`); settings show a 「登录」 button that opens it. */
   login?: { command: string; args?: string[] } | ((config: Record<string, string>) => { command: string; args?: string[] })
   /**
@@ -350,8 +359,6 @@ export interface BackendSummary {
   upgradeNote?: string
   /** The app's own step after installing (UpgradeSpec.setup), described in words. */
   upgradeSetup?: string
-  /** See BackendPlugin.slowStart. */
-  slowStart?: boolean
   /** Accepts images (needed for computer control); undefined until the backend has started. */
   images?: boolean
 }

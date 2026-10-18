@@ -99,6 +99,9 @@
   border-radius: var(--radius-md);
   color: var(--text-2);
   font-size: 13.5px;
+  /* A narrow header squeezes the title, never the button's label. */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .pill-btn:hover {
   background: var(--bg-hover);

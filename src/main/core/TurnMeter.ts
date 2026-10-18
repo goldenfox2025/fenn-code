@@ -1,5 +1,5 @@
 import type { AgentEvent, StopReason, TurnUsage } from '../../shared/contract'
-import { MIN_STREAM_MS, type GenerationTiming } from '../../shared/usage'
+import { MIN_CHUNKS, MIN_STREAM_MS, type GenerationTiming } from '../../shared/usage'
 
 /**
  * Client-observed generation time. Chunks are not individual token timestamps.
@@ -49,25 +49,22 @@ export class TurnMeter {
     if (this.first === undefined) return undefined
     const timing: GenerationTiming = { firstResponseMs: Math.max(0, this.first - this.started) }
     const output = usage?.output
-    const span = this.last! - this.first - this.toolMs
-    // Output that arrives in one burst (an agent that buffers it) says nothing about speed on its own:
-    // with a token count it is timed from the send instead, which counts the model's thinking before the burst.
-    const genMs = span < MIN_STREAM_MS ? this.last! - this.started - this.toolMs : span
     const tokens = reliableTokens && output !== undefined && Number.isSafeInteger(output) && output > 1
+    // Speed is the stream itself, first chunk to last, without the tools' time. The wait before the first
+    // chunk is not output: a reply that arrives in a few chunks or all at once (an agent that buffers it)
+    // can't be timed, and gets no speed rather than one that is mostly waiting.
+    const span = this.last! - this.first - this.toolMs
+    const measurable = this.chunks >= MIN_CHUNKS && span >= MIN_STREAM_MS
+    if (tokens) timing.outputTokens = output
     if (stop !== 'end_turn') timing.noSpeed = 'stopped'
     else if (this.interrupted || this.open.size) timing.noSpeed = 'waited'
+    else if (!tokens && this.chars <= 1) timing.noSpeed = 'output'
+    else if (!measurable) timing.noSpeed = 'short'
     else if (tokens) {
-      if (genMs < MIN_STREAM_MS) timing.noSpeed = 'short'
-      else {
-        timing.streamMs = genMs
-        timing.outputTokens = output
-        timing.tpotMs = genMs / (output - 1)
-      }
-    } else if (this.chars <= 1) timing.noSpeed = 'output'
-    // No token count: the speed is the text itself as it streamed (characters, never turned into tokens),
-    // so only a real stream counts; the wait before it is not output.
-    else if (span < MIN_STREAM_MS) timing.noSpeed = 'short'
-    else {
+      timing.streamMs = span
+      timing.tpotMs = span / (output - 1)
+    } else {
+      // No token count: the text as it streamed, in characters (never turned into tokens).
       timing.streamMs = span
       timing.outputChars = this.chars
     }

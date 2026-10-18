@@ -537,6 +537,14 @@ details.advanced > summary {
 .text-link:hover {
   text-decoration: underline;
 }
+.text-link.danger {
+  color: var(--red);
+}
+/* A backend's raw settings, folded away once it is signed in. */
+details.backend-advanced {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+}
 .error-card details summary {
   cursor: pointer;
   margin-bottom: var(--space-1);

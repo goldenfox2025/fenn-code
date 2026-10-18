@@ -146,7 +146,7 @@ describe('the files panel', () => {
     // 「中文」 in GBK.
     writeFileSync(join(root, 'gbk.txt'), Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x0d, 0x0a]))
     const r = readPreview(root, 'gbk.txt')!
-    expect(r).toMatchObject({ text: '中文\r\n', readOnly: true })
+    expect(r).toMatchObject({ text: '中文\r\n', readOnly: 'encoding' })
     expect(writeText(root, 'gbk.txt', '中文\r\n', r.updatedAt, true)).toEqual({ refused: 'encoding' })
     expect(readFileSync(join(root, 'gbk.txt'))).toEqual(Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x0d, 0x0a]))
     writeFileSync(join(root, 'bom.txt'), '\uFEFFhello\r\n')
@@ -181,5 +181,21 @@ describe('the files panel on any disk', () => {
     writeFileSync(join(root, 'Thumbs.db'), '')
     expect(listFolder(root)!.entries.map((e) => e.name)).not.toContain('desktop.ini')
     expect(listFolder(root)!.entries.map((e) => e.name)).not.toContain('Thumbs.db')
+  })
+})
+
+describe('files outside the working folders', () => {
+  it('open view-only, saying why (not as an encoding problem)', async () => {
+    const { makeCore } = await import('./helpers')
+    const c = await makeCore()
+    try {
+      const d = mkdtempSync(join(tmpdir(), 'outside-'))
+      writeFileSync(join(d, 'card.md'), '# 正常的 UTF-8\n')
+      expect(await c.core.readLocalFile(join(d, 'card.md'))).toMatchObject({ text: '# 正常的 UTF-8\n', readOnly: 'outside' })
+      writeFileSync(join(d, 'gbk.txt'), Buffer.from([0xd6, 0xd0, 0xce, 0xc4]))
+      expect(await c.core.readLocalFile(join(d, 'gbk.txt'))).toMatchObject({ readOnly: 'encoding' })
+    } finally {
+      await c.dispose()
+    }
   })
 })

@@ -172,6 +172,11 @@ function BoardCard({ id }: { id: string }) {
           </span>
         )}
         <span>{t('{0}更新', relTime(w.updatedAt))}</span>
+        {routine?.lastError && (
+          <span className="board-error" data-tip={routine.lastError}>
+            {t('上次刷新没成功')}
+          </span>
+        )}
         {source && (
           <button className="board-source" onClick={() => navigate(routeFor(source))}>
             {t('来自「{0}」', source.title)}

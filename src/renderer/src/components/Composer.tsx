@@ -254,9 +254,10 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
 
   // A chat with this agent is open: start it now, so the first message doesn't wait for it to start.
   const warmable = !!currentBackend && !accountHint(bid)
+  const newChatFolder = conversation ? undefined : (folder ?? '')
   useEffect(() => {
-    if (warmable) void api().warmBackend(bid).catch(() => undefined)
-  }, [bid, warmable])
+    if (warmable) void api().warmBackend(bid, newChatFolder).catch(() => undefined)
+  }, [bid, warmable, newChatFolder])
 
   // The models a backend offers, read from a fresh session before the first message (no prompt is sent).
   const [catalog, setCatalog] = useState<{ for: string; loading: boolean; error?: string; needsLogin?: boolean; stillStarting?: boolean }>({ for: '', loading: false })

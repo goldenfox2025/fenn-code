@@ -861,7 +861,7 @@ export function FilePreview({
   const meta =
     draft && saveState !== 'clean' && !held(saveState)
       ? [saveState === 'error' ? t('没能保存') : saveState === 'saved' ? t('已保存') : t('正在保存…')]
-      : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '', file?.readOnly ? t('不是 UTF-8 编码，只能查看') : '']
+      : [file?.size !== undefined ? humanSize(file.size) : '', entry ? relTime(entry.updatedAt) : '', change ? t('agent 改过') : '', file?.readOnly === 'outside' ? t('不在工作文件夹里，只能查看') : file?.readOnly ? t('不是 UTF-8 编码，只能查看') : '']
   /** Ctrl+S saves at once (it saves by itself anyway). */
   const editKeys = (e: React.KeyboardEvent) => {
     if (!draft || e.defaultPrevented) return

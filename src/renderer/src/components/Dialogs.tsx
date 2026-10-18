@@ -596,10 +596,19 @@ function BackendSettings() {
                 {t('设为默认')}</button>
             ) : null}
           </div>
-          {b.slowStart && installed && <PrestartSwitch backendId={b.id} name={b.name} />}
-          {b.settings.map((s) => (
-            <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />
-          ))}
+          {installed && <PrestartSwitch backendId={b.id} name={b.name} />}
+          {b.settings.length > 0 &&
+            // Signed in and working: its raw settings fold away. Otherwise they are what it takes to get there.
+            (installed && account?.signedIn === true ? (
+              <details className="advanced backend-advanced">
+                <summary>{t('高级设置')}</summary>
+                {b.settings.map((s) => (
+                  <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />
+                ))}
+              </details>
+            ) : (
+              b.settings.map((s) => <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />)
+            ))}
         </div>
         )
       })}
@@ -646,7 +655,7 @@ function PrestartSwitch({ backendId, name }: { backendId: string; name: string }
   const settings = useApp((s) => s.settings)
   const on = prestartOn(settings, backendId)
   return (
-    <div className="field">
+    <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
       <div className="row-between">
         <div>
           <label>{t('打开 Fenn Code 时预先启动')}</label>
@@ -725,6 +734,8 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
   const [log, setLog] = useState<string[] | null>(null)
   const [running, setRunning] = useState<'install' | 'upgrade' | null>(null)
   const [failed, setFailed] = useState<'failed' | 'notFound' | null>(null)
+  // What the setup step reported last (e.g. how many files it unpacked), kept on the card after it ends.
+  const [setupNote, setSetupNote] = useState('')
   const busy = useApp((s) => s.conversations.some((c) => c.backendId === backendId && c.status === 'working'))
   const summary = useApp((s) => s.backends.find((b) => b.id === backendId))
   const commands = summary?.upgradeCommands ?? []
@@ -795,6 +806,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
       const r = await api().upgradeBackend(backendId)
       useApp.setState((s) => ({ accounts: { ...s.accounts, [backendId]: { ...r.account, at: Date.now() } } }))
       if (r.ok) {
+        if (setupOnly || summary?.upgradeSetup) setSetupNote(r.output.trim().split('\n').pop() ?? '')
         toast(
           setupOnly
             ? t('{0} 已准备好，以后启动更快', name)
@@ -838,6 +850,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
             )
           )}
           {state?.detail && <span className="muted account-detail" data-tip={state.detail}>{state.detail}</span>}
+          {state?.setupDone && !missing && <span className="muted">{t('已加快启动')}</span>}
           {upgrade && !missing && !setupOnly && latest === undefined && (
             <button className="text-link" disabled={checking} onClick={() => void checkLatest()}>
               {checking ? <span className="shimmer">{t('正在检查…')}</span> : t('检查更新')}
@@ -862,6 +875,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
           )}
         </div>
       )}
+      {setupNote && !running && <div className="help small muted">{setupNote}</div>}
       {log && running && (
         <pre
           className="upgrade-log"
@@ -927,13 +941,17 @@ export function TerminalLoginButton({ backendId }: { backendId: string }) {
   )
 }
 
+/** One backend setting. It saves when you leave the field or press Enter (Esc puts it back); no button of its own. */
 export function BackendField({ backendId, setting, configured }: { backendId: string; setting: { key: string; label: string; secret?: boolean; placeholder?: string; help?: string }; configured: boolean }) {
   const [value, setValue] = useState('')
   const [editing, setEditing] = useState(!configured)
+  useEffect(() => setEditing(!configured), [configured])
   const save = async () => {
-    await api().setBackendSetting(backendId, setting.key, value.trim())
-    setEditing(!value.trim())
+    const v = value.trim()
+    if (!v) return setEditing(!configured)
     setValue('')
+    await api().setBackendSetting(backendId, setting.key, v)
+    setEditing(false)
     toast(t('已保存，下次对话生效'))
   }
   // A value typed but not yet saved is kept when Settings closes.
@@ -942,28 +960,29 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
     <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
       <label>{setting.label}</label>
       {editing ? (
-        <div className="field-row">
-          <input
-            className="input"
-            type={setting.secret ? 'password' : 'text'}
-            value={value}
-            placeholder={setting.placeholder}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && value.trim() && void save()}
-          />
-          <button
-            className="btn primary"
-            disabled={!value.trim()}
-            onClick={() => void save()}
-          >
-            {t('保存')}</button>
-        </div>
+        <input
+          className="input"
+          type={setting.secret ? 'password' : 'text'}
+          value={value}
+          placeholder={setting.placeholder}
+          autoFocus={configured}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => void save()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void save()
+            else if (e.key === 'Escape' && configured) {
+              e.stopPropagation()
+              setValue('')
+              setEditing(false)
+            }
+          }}
+        />
       ) : (
         <div className="field-row">
           <span className="small muted" style={{ flex: 1 }}>{setting.secret ? t('已设置（••••••）') : t('已设置')}</span>
-          <button className="btn" onClick={() => setEditing(true)}>
+          <button className="text-link" onClick={() => setEditing(true)}>
             {t('修改')}</button>
-          <button className="btn danger" onClick={() => api().setBackendSetting(backendId, setting.key, '')}>
+          <button className="text-link danger" onClick={() => api().setBackendSetting(backendId, setting.key, '')}>
             {t('清除')}</button>
         </div>
       )}

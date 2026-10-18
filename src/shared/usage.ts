@@ -22,6 +22,8 @@ export interface GenerationTiming {
  * hands over hundreds of tokens in a few milliseconds, which would read as thousands per second.
  */
 export const MIN_STREAM_MS = 1000
+/** Fewer chunks than this say nothing about how fast the model writes. */
+export const MIN_CHUNKS = 3
 
 /** One reply's usage: the tokens the backend reported, and what the turn cost if it said. */
 export interface MessageUsage extends TurnUsage {

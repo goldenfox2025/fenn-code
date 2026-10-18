@@ -41,6 +41,8 @@ export interface ManagerOptions {
   emit(e: HostEvent): void
   /** Whether the user may make this folder a conversation's working folder. */
   canWorkIn?(path: string): boolean
+  /** The model the user picked for new chats with this backend. */
+  defaultModel?(backendId: string): string | undefined
 }
 
 export class BackendManager {
@@ -77,7 +79,6 @@ export class BackendManager {
         upgradeInstallOnly: p.upgrade?.installOnly,
         upgradeCommands: p.upgrade && [p.upgrade.run, ...(p.upgrade.after ? [p.upgrade.after] : [])].map(commandLine),
         upgradeNote: p.upgrade?.after && t(p.upgrade.after.label, ...(p.upgrade.after.labelArgs ?? [])),
-        slowStart: p.slowStart,
         upgradeSetup: p.upgrade?.setup && t(p.upgrade.setup.label, ...(p.upgrade.setup.labelArgs ?? [])),
         images: this.instances.get(p.id)?.acceptsImages?.()
       }
@@ -169,6 +170,7 @@ export class BackendManager {
       resourcesDir: this.opts.resourcesDir,
       nodeCommand: this.opts.nodeCommand,
       canWorkIn: (path) => !!this.opts.canWorkIn?.(path),
+      defaultModel: () => this.opts.defaultModel?.(backendId),
       emit: (sessionId, event) => {
         for (const fn of this.agentListeners) fn(backendId, sessionId, event)
         this.opts.emit({ type: 'agent', backendId, sessionId, event })
@@ -214,6 +216,23 @@ export class BackendManager {
   /** Starts the agent ahead of the first message; sends nothing. */
   warm(backendId: string): Promise<void> {
     return this.get(backendId).warm?.(this.opts.defaultCwd) ?? Promise.resolve()
+  }
+
+  /** The model for new chats changed: an agent that takes it only at start restarts, ready again. */
+  async defaultModelChanged(backendId: string): Promise<boolean> {
+    if (!(await this.instances.get(backendId)?.defaultModelChanged?.())) return false
+    await this.warm(backendId)
+    return true
+  }
+
+  /** Drops a session the app opened and no longer needs (also from the agent's own history). */
+  discardSession(backendId: string, sessionId: string): void {
+    void this.instances.get(backendId)?.closeSession?.(sessionId, { discard: true }).catch(() => {})
+  }
+
+  /** See AgentBackend.wantsSpare. */
+  wantsSpare(backendId: string): boolean {
+    return this.has(backendId) && !!this.get(backendId).wantsSpare?.()
   }
 
   /** No prompt or app tools: discover the models a new session actually offers. */
