@@ -456,6 +456,8 @@ export interface AppSettings {
   allowOutsideReads?: boolean
   /** 自定义指令: what every agent in every conversation should follow (Settings → 通用). */
   customInstructions?: string
+  /** Sessions of deleted or replaced chats to hide in the agent's own app (Codex Desktop) that failed once: the next sweep tries once more. */
+  agentAppPending?: { backendId: string; sessionId: string }[]
   notifications?: boolean
   /** Keep running in the tray after the window closes (Windows/Linux). */
   runInBackground?: boolean

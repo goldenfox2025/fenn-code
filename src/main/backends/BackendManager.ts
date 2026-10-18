@@ -259,14 +259,19 @@ export class BackendManager {
     return !listing || listing.shown(this.opts.settings.get(backendId))
   }
 
-  /** Shows or hides a session the app has no open session for in the agent's own app. Never throws. */
-  async setShownInApp(backendId: string, sessionId: string, shown: boolean): Promise<void> {
+  /** Shows or hides a session the app has no open session for in the agent's own app. Never throws; false when it failed. */
+  async setShownInApp(backendId: string, sessionId: string, shown: boolean): Promise<boolean> {
     const listing = this.opts.plugins.find((p) => p.id === backendId)?.appListing
-    await listing?.setShown(this.opts.settings.get(backendId), sessionId, shown).catch((err) => {
+    if (!listing) return true
+    try {
+      await listing.setShown(this.opts.settings.get(backendId), sessionId, shown)
+      return true
+    } catch (err) {
       const message = `${backendId}: could not ${shown ? 'unarchive' : 'archive'} ${sessionId}: ${errorText(err)}`
       console.warn(message)
       this.opts.emit({ type: 'backend-log', backendId, level: 'warn', message })
-    })
+      return false
+    }
   }
 
   /** See AgentBackend.openSessionLimit. */

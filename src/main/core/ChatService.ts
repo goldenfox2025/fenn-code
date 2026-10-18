@@ -1074,6 +1074,9 @@ export class ChatService {
   async removeConversation(conversationId: string): Promise<void> {
     await this.cancel(conversationId).catch(() => {})
     this.forgetSession(conversationId)
+    // Its agent session is left behind for good: hidden in the agent's own app too, when the user keeps them out.
+    const ref = this.store.conversation(conversationId)?.sessionRef
+    if (ref) this.leftBehind(ref)
     for (const m of [this.meters, this.tags, this.epochs, this.current, this.rearm]) m.delete(conversationId)
     for (const s of [this.renewAfterTurn, this.unattendedTurns, this.commandTurns]) s.delete(conversationId)
     clearTimeout(this.emitTimers.get(conversationId))
@@ -1128,6 +1131,13 @@ export class ChatService {
    * crashed with them open, or the setting just changed). Open sessions follow when they are released.
    */
   async syncAgentApp(backendId?: string): Promise<void> {
+    // Sessions of chats since deleted or replaced whose hiding failed: once more, then they are dropped.
+    const pending = this.store.settings.agentAppPending ?? []
+    const retry = pending.filter((r) => !backendId || r.backendId === backendId)
+    if (retry.length) {
+      this.store.patchSettings({ agentAppPending: pending.filter((r) => !retry.includes(r)) })
+      for (const r of retry) if (!this.backends.shownInApp(r.backendId)) await this.backends.setShownInApp(r.backendId, r.sessionId, false)
+    }
     for (const conv of this.store.conversations) {
       const ref = conv.sessionRef
       if (!ref || (backendId && ref.backendId !== backendId) || !this.backends.hasAppListing(ref.backendId)) continue
@@ -1140,7 +1150,15 @@ export class ChatService {
   private leftBehind(ref: { backendId: string; sessionId: string }): void {
     const key = `${ref.backendId}:${ref.sessionId}`
     if (this.hiddenOnRelease.delete(key) || this.bySession.has(key)) return
-    if (this.backends.hasAppListing(ref.backendId) && !this.backends.shownInApp(ref.backendId)) void this.backends.setShownInApp(ref.backendId, ref.sessionId, false)
+    if (this.backends.hasAppListing(ref.backendId) && !this.backends.shownInApp(ref.backendId)) void this.hideForGood(ref)
+  }
+
+  /** Hides a session no conversation will use again; one that fails is kept for the next sweep (see syncAgentApp). */
+  private async hideForGood(ref: { backendId: string; sessionId: string }): Promise<void> {
+    if (await this.backends.setShownInApp(ref.backendId, ref.sessionId, false)) return
+    const pending = this.store.settings.agentAppPending ?? []
+    if (!pending.some((r) => r.backendId === ref.backendId && r.sessionId === ref.sessionId))
+      this.store.patchSettings({ agentAppPending: [...pending, ref].slice(-200) })
   }
 
   forgetSession(conversationId: string): void {

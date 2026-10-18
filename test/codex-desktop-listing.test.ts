@@ -79,12 +79,15 @@ describe('Codex rollouts, archived or not', () => {
 })
 
 /** The demo agent standing in for Codex: its session/delete is logged, and the listing records what it is asked. */
-function listedMock(log: string) {
+function listedMock(log: string, failing = new Set<string>()) {
   const calls: string[] = []
   const listing: AppListing = {
     app: 'Desktop',
     shown: (config) => config.SHOW === '1',
-    setShown: async (_config, sessionId, shown) => void calls.push(`${shown ? 'show' : 'hide'} ${sessionId}`)
+    setShown: async (_config, sessionId, shown) => {
+      calls.push(`${shown ? 'show' : 'hide'} ${sessionId}`)
+      if (failing.has(sessionId)) throw new Error('codex not found')
+    }
   }
   const plugin = acpPlugin({
     id: 'mock',
@@ -94,7 +97,7 @@ function listedMock(log: string) {
     appListing: listing,
     launch: ({ nodeCommand, resourcesDir }) => ({ command: nodeCommand.command, args: [join(resourcesDir, 'mock-agent.mjs')], env: { ...nodeCommand.env, MOCK_SESSION_LOG: log } })
   })
-  return { plugin, calls }
+  return { plugin, calls, failing }
 }
 
 const deletes = (log: string) => {
@@ -176,6 +179,40 @@ describe('conversations kept out of the agent\'s own app (Codex Desktop)', () =>
       t.core.chat.forgetSession(conv.id)
       await new Promise((r) => setTimeout(r, 500))
       expect(deletes(log)).not.toContain(`delete ${sid}`)
+    } finally {
+      await t.dispose()
+    }
+  }, 40000)
+
+  it('hides the session of a deleted chat, and tries once more at the next sweep when that fails', async () => {
+    const log = join(mkdtempSync(join(tmpdir(), 'oc-listing-')), 'sessions.log')
+    const { plugin, calls, failing } = listedMock(log)
+    const t = await makeCore(undefined, {}, {}, [plugin])
+    try {
+      const a = await t.core.startChat({ text: '你好', backendId: 'mock' })
+      const b = await t.core.startChat({ text: '你好', backendId: 'mock' })
+      await until(() => t.store.conversation(a.id)?.status === 'idle' && t.store.conversation(b.id)?.status === 'idle')
+      const sa = t.store.conversation(a.id)!.sessionRef!.sessionId
+      const sb = t.store.conversation(b.id)!.sessionRef!.sessionId
+      // Open when deleted: closed and archived in the agent, nothing more to do.
+      await t.core.deleteConversation(a.id)
+      await until(() => deletes(log).includes(`delete ${sa}`))
+      // Released earlier (as after a restart), then deleted while hiding fails.
+      t.core.chat.forgetSession(b.id)
+      await until(() => deletes(log).includes(`delete ${sb}`))
+      t.core.chat.patchConversation(b.id, { sessionRef: { backendId: 'mock', sessionId: 'from-earlier' } })
+      failing.add('from-earlier')
+      calls.length = 0
+      await t.core.deleteConversation(b.id)
+      await until(() => !!t.store.settings.agentAppPending?.length)
+      expect(calls).toEqual(['hide from-earlier'])
+      expect(t.store.settings.agentAppPending).toEqual([{ backendId: 'mock', sessionId: 'from-earlier' }])
+      // The next sweep tries once more, and drops it whatever happens.
+      await t.core.chat.syncAgentApp()
+      expect(calls).toEqual(['hide from-earlier', 'hide from-earlier'])
+      expect(t.store.settings.agentAppPending).toEqual([])
+      await t.core.chat.syncAgentApp()
+      expect(calls).toHaveLength(2)
     } finally {
       await t.dispose()
     }
