@@ -42,11 +42,18 @@ export function PermissionPrompts({ conversationId }: { conversationId: string }
     setHold({ height: height.current })
     height.current = 0
     const close = setTimeout(() => setHold({ height: 0, closing: true }), HOLD_MS)
-    const end = setTimeout(() => setHold(null), HOLD_MS + 300)
-    return () => (clearTimeout(close), clearTimeout(end))
+    return () => clearTimeout(close)
   }, [shown])
 
-  if (!current) return hold ? <div className={'perm-hold' + (hold.closing ? ' closing' : '')} style={{ height: hold.height }} /> : null
+  // The held place closes with its CSS transition (--dur-2) and goes once that has run.
+  if (!current)
+    return hold ? (
+      <div
+        className={'perm-hold' + (hold.closing ? ' closing' : '')}
+        style={{ height: hold.height }}
+        onTransitionEnd={() => hold.closing && setHold(null)}
+      />
+    ) : null
   return (
     <div className="perm-slot" ref={box}>
       <Prompt key={current.request.requestId} r={current.request} />

@@ -77,6 +77,6 @@
 }
 /* In the sent bubble the command is just accented text: a chip inside a bubble reads as a box in a box. */
 .cmd-token {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 500;
 }

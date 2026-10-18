@@ -45,6 +45,14 @@ a,
 .side-pane {
   animation: slide-in var(--dur-3) var(--ease);
 }
+/* A fold opening (thinking, a tool's input and output, an error's details) fades its content in;
+   a note that ends a turn (已停止, 已中断) takes the working mark's place the same way. */
+.steps-body,
+.tool-detail,
+.msg-error-detail[open] > :not(summary),
+.turn-note {
+  animation: fade-in var(--dur-2) var(--ease);
+}
 /* Work under way (a reply's steps, loading models, compacting): the words shimmer, as Claude's do. */
 .shimmer,
 .steps-toggle.live span {
@@ -53,7 +61,7 @@ a,
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: shimmer 1.8s linear infinite;
+  animation: shimmer var(--dur-shimmer) linear infinite;
 }
 @keyframes shimmer {
   from {

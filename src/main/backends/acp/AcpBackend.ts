@@ -96,7 +96,7 @@ export interface AcpQuirks {
   /** See AgentBackend.openSessionLimit. */
   openSessionLimit?: number
   sessionTracker?: {
-    begin(): (sessionId: string) => void
+    begin(sessionId?: string): (sessionId: string) => void
     closed(sessionId: string, proc: ChildProcess | undefined): void
     exited(): void
   }
@@ -459,7 +459,7 @@ export class AcpBackend implements AgentBackend {
     this.workspaces.setRoot(sessionId, folder, cwd)
     const mcpServers = this.mcpServers(tools)
     let res: { configOptions?: unknown; models?: unknown; _meta?: Record<string, unknown> | null } | undefined
-    const opened = this.quirks.sessionTracker?.begin()
+    const opened = this.quirks.sessionTracker?.begin(sessionId)
     try {
       if (this.caps?.sessionCapabilities?.resume) {
         res = await this.conn!.resumeSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system) } as acp.ResumeSessionRequest)
@@ -475,7 +475,9 @@ export class AcpBackend implements AgentBackend {
         return null
       }
     } catch (err) {
-      opened?.('')
+      // A failed resume may still have started the agent's helper for it (Antigravity): let that go too.
+      opened?.(sessionId)
+      this.quirks.sessionTracker?.closed(sessionId, this.proc)
       this.host.log('warn', `${this.name} could not resume ${sessionId}: ${errorText(err)}`)
       return null
     }
@@ -522,7 +524,11 @@ export class AcpBackend implements AgentBackend {
         return open()
       })
     } catch (err) {
-      opened?.('')
+      if (opened) {
+        const failed = `failed:${Date.now()}:${Math.random()}`
+        opened(failed)
+        this.quirks.sessionTracker?.closed(failed, this.proc)
+      }
       const msg = errorText(err)
       if (classifyError(msg) === 'auth' || classifyError(msg) === 'refresh') {
         const login = this.auth.length ? t('可以在 设置 → Agent 后端 里点「登录」。') : ''

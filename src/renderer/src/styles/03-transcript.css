@@ -141,7 +141,7 @@
 }
 .spark {
   color: var(--accent);
-  animation: spin 2.4s linear infinite;
+  animation: spin var(--dur-spin) linear infinite;
 }
 @keyframes spin {
   to {
@@ -518,7 +518,7 @@ button.reaction:hover {
   white-space: nowrap;
 }
 .status-chip.working {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 .status-chip.waiting {

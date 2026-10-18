@@ -220,7 +220,7 @@
   box-shadow: var(--hairline-top);
 }
 :root[data-theme='glass-light'] :focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.75);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 :root[data-theme='glass-light'] :is(input, textarea, [contenteditable]):focus-visible,
@@ -238,7 +238,6 @@
   color: var(--accent);
 }
 :root[data-theme='glass-light'] .send-btn:not(:disabled) {
-  color: var(--accent-fg);
   box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.3);
 }
 :root[data-theme='glass-light'] .effort-track { background: rgba(22, 26, 44, 0.1); }

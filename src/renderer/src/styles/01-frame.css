@@ -289,7 +289,7 @@ body.resizing .sidebar {
 }
 .dot.working {
   background: var(--accent);
-  animation: pulse 1.4s ease-in-out infinite;
+  animation: pulse var(--dur-pulse) var(--ease-loop) infinite;
 }
 .dot.waiting {
   background: var(--amber);

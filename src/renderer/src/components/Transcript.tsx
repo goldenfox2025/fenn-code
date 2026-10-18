@@ -40,9 +40,10 @@ import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
 import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
-import { classifyError, isFriendly, limitResetIn, type ErrorKind } from '@shared/errors'
+import { classifyError, isFriendly, type ErrorKind } from '@shared/errors'
 
 import { segmentBlocks, type ToolBlock } from '../turn'
+import { limitSentence, turnNote, type TurnNoteView } from '../turnNote'
 
 export function Transcript({ conversation, compact, header }: { conversation: Conversation; compact?: boolean; header?: React.ReactNode }) {
   const messages = useApp((s) => s.messages[conversation.id])
@@ -94,7 +95,9 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     stick.current = false
     el.scrollIntoView({ block: 'center' })
     el.classList.add('flash')
-    setTimeout(() => el.classList.remove('flash'), 1600)
+    // Off again when its animation (timed in CSS, --dur-flash) has played.
+    const done = (e: AnimationEvent) => e.animationName === 'flash' && (el.classList.remove('flash'), el.removeEventListener('animationend', done))
+    el.addEventListener('animationend', done)
     useApp.getState().set({ focusMessage: null })
   })
 
@@ -370,9 +373,8 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           {t('已编辑')}
         </div>
       )}
-      {m.state === 'error' && <ErrorBar m={m} last={last} busy={busy} />}
+      {(m.state === 'error' || m.state === 'cancelled') && <TurnEnd m={m} last={last} busy={busy} />}
       {!streaming && m.state === 'done' && <ThreadSuggestion m={m} last={last} busy={busy} />}
-      {m.state === 'cancelled' && <Stopped m={m} last={last} />}
       {!!m.reactions?.length && (
         <div className="reactions">
           {m.reactions.map((r) => (
@@ -884,34 +886,49 @@ export function Checklist({ text }: { text: string }) {
   )
 }
 
-/** Why a reply ended early: the user stopped it, or the app quit mid-reply. */
-function Stopped({ m, last }: { m: Message; last?: boolean }) {
+/**
+ * How a reply that ended early or failed ends: a quiet note (已停止, 已中断, a usage limit
+ * that lifts by itself; see turnNote) or, for a failure the user can fix, the error bar.
+ */
+function TurnEnd({ m, last, busy }: { m: Message; last?: boolean; busy?: boolean }) {
   const resumes = useApp((s) => {
     const c = s.conversations.find((x) => x.id === m.conversationId)
     return c?.kind === 'thread' && !c.resolved
   })
-  if (m.switchedTo) return <div className="small muted">{t('已中断：换成了 {0}', m.switchedTo)}</div>
-  if (!m.interrupted) return <div className="small muted">{t('已停止')}</div>
+  const agent = useBackendName(m.conversationId)
+  const note = turnNote(m, { agent, last, busy, resumes })
+  if (note) return <TurnNote note={note} onRetry={() => void api().regenerate(m.conversationId)} />
+  return m.state === 'error' ? <ErrorBar m={m} last={last} busy={busy} /> : null
+}
+
+/** One muted line under the turn, with 重试 beside it where that applies. */
+function TurnNote({ note, onRetry }: { note: TurnNoteView; onRetry: () => void }) {
   return (
-    <div className="msg-error interrupted">
-      <div>{resumes ? t('因应用重启中断，已自动继续') : t('因应用重启中断')}</div>
-      {last && !resumes && (
-        <div className="msg-error-actions">
-          <button className="btn" onClick={() => void api().regenerate(m.conversationId)}>
-            {t('重试')}</button>
-        </div>
+    <div className={'turn-note ' + note.kind} role="status">
+      <span data-tip={note.tip}>{note.text}</span>
+      {note.retry && (
+        <button className="link" onClick={onRetry}>
+          {t('重试')}
+        </button>
       )}
     </div>
   )
 }
 
+/** The name of the agent a conversation talks to, for sentences about it. */
+function useBackendName(conversationId: string): string {
+  return useApp((s) => {
+    const backendId = s.conversations.find((c) => c.id === conversationId)?.backendId
+    return s.backends.find((b) => b.id === backendId)?.name ?? 'Agent'
+  })
+}
+
 /** Plain-language wording for each recognised failure; the agent's own text stays under 「详情」. */
 function errorSentence(kind: ErrorKind, name: string, how: string, raw: string): string {
   switch (kind) {
-    case 'limit': {
-      const wait = limitResetIn(raw)
-      return wait ? t('{0} 的用量到上限了，{1}后恢复，到时点「重试」。', name, wait) : t('{0} 的用量到上限了，恢复后点「重试」。', name)
-    }
+    case 'limit':
+      // Usually shown as a TurnNote instead; kept for a limit message the app reworded.
+      return limitSentence(name, raw)
     case 'filesystem':
       return t('{0} 无法读写本地文件。请查看详情中的路径，并检查文件权限或系统访问限制。', name)
     case 'refresh':

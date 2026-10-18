@@ -114,7 +114,8 @@
   font-size: var(--font-sm);
   color: var(--text-3);
 }
-.placed-line .link {
+.placed-line .link,
+.turn-note .link {
   background: none;
   border: 0;
   padding: 0;
@@ -125,7 +126,8 @@
   text-underline-offset: 3px;
   text-decoration-color: var(--border-strong);
 }
-.placed-line .link:hover {
+.placed-line .link:hover,
+.turn-note .link:hover {
   color: var(--text);
 }
 

@@ -358,7 +358,7 @@ export default acpPlugin({
     // Each open session keeps a localharness program running; idle chats beyond these are closed and reopened when used.
     openSessionLimit: 4,
     sessionTracker: harnesses && {
-      begin: () => harnesses.begin(),
+      begin: (sessionId) => harnesses.begin(sessionId),
       closed: (sessionId, proc) => void harnesses.release(sessionId, proc?.pid).catch(() => undefined),
       exited: () => harnesses.reset()
     },

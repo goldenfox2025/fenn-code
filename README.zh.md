@@ -63,7 +63,7 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 
 ## 快速开始
 
-1. 从 [Releases](../../releases) 下载 Windows 安装包 `Fenn-Code-Setup-<版本号>.exe`，或免安装的 `Fenn-Code-<版本号>-win.zip`（解压到任意位置，运行 `FennCode.exe`）。目前只提供 Windows x64 版本；macOS 和 Linux 请[从源码编译](#从源码编译)。程序没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
+1. 从 [Releases](../../releases) 下载 Windows 安装包 `Fenn-Code-Setup-<版本号>.exe`，或免安装的 `Fenn-Code-<版本号>-win.zip`（解压到任意位置，运行 `FennCode.exe`）。Releases 里是 Windows x64 版本。macOS 版：每次 CI 运行都会生成未签名的 zip（Apple 芯片和 Intel 各一个，`Fenn-Code-<版本号>-mac-arm64.zip` / `-mac-x64.zip`，在那次运行的 Artifacts 里），打开方法见[在 macOS 上打开未签名的程序](#在-macos-上打开未签名的程序)。Linux 请[从源码编译](#从源码编译)。程序没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
 2. 至少安装并登录一个 agent，在终端里做，或者在 设置 → Agent 后端 里点「安装」和「登录」：
 
    | Agent | 安装 | 登录 | 状态 |

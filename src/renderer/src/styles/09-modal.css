@@ -167,13 +167,15 @@
   left: 2px;
   border-radius: 50%;
   background: white;
-  transition: transform var(--dur-2) var(--ease);
+  transition: transform var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease);
 }
 .switch.on {
   background: var(--accent);
 }
 .switch.on::after {
   transform: translateX(16px);
+  /* On the bright cyan of the dark looks a white knob all but vanishes (1.7:1). */
+  background: var(--accent-fg);
 }
 
 /* permission prompt: one at a time, in a slot that holds its place between requests */

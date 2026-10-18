@@ -133,11 +133,7 @@
   filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), 0.45));
 }
 :root[data-theme='glass'] .send-btn:not(:disabled) {
-  color: #0a0c18;
   box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.35);
-}
-:root[data-theme='glass'] .btn.accent {
-  color: #0a0c18;
 }
 :root[data-theme='glass'] .switch.on {
   box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.35);
@@ -180,9 +176,6 @@
   font-family: var(--font-mono);
   white-space: pre-wrap;
   word-break: break-word;
-}
-.msg-error.interrupted {
-  color: var(--text-3);
 }
 
 /* Switching looks cross-fades the whole window (App.tsx useTheme). */

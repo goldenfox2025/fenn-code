@@ -18,6 +18,14 @@ done
 
 step() { printf '\n==> %s\n' "$1"; }
 fail() { printf '\nBuild failed: %s\n' "$1" >&2; exit 1; }
+# Downloads (npm packages, Electron) sometimes break off on a slow line: try again a couple of times.
+retry() {
+  for wait in 0 5 15; do
+    [ "$wait" = 0 ] || { echo "Trying again in ${wait}s..."; sleep "$wait"; }
+    "$@" && return 0
+  done
+  return 1
+}
 
 step "Checking Node.js"
 command -v node >/dev/null || fail "Node.js is not installed. Get version 22 or newer from https://nodejs.org"
@@ -32,16 +40,16 @@ if [ -n "${HTTPS_PROXY:-}${https_proxy:-}${HTTP_PROXY:-}${http_proxy:-}" ]; then
 fi
 
 step "Installing dependencies"
-npm install --no-audit --no-fund || fail "npm install did not finish. If you are behind a proxy, set HTTPS_PROXY first."
+retry npm install --no-audit --no-fund || fail "npm install did not finish. If you are behind a proxy, set HTTPS_PROXY first."
 
 step "Building"
 npx electron-vite build || fail "the build step failed (see above)."
 
 step "Packaging"
 if [ "$installer" = 1 ]; then
-  npx electron-builder --publish never || fail "packaging failed (see above)."
+  retry npx electron-builder --publish never || fail "packaging failed (see above)."
 else
-  npx electron-builder --dir --publish never || fail "packaging failed (see above)."
+  retry npx electron-builder --dir --publish never || fail "packaging failed (see above)."
 fi
 
 case "$(uname -s)" in

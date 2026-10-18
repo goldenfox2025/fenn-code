@@ -64,6 +64,31 @@ describe('ending the localharness program a closed Antigravity session left', ()
     expect(killed).toEqual([])
   })
 
+  it('a resume that never answered still owns the harness it started, so deleting its chat ends it', async () => {
+    const { procs, killed, reaper, tick, at } = setup()
+    reaper.begin('session-r')
+    tick(800)
+    procs.push(proc(205, 101, 'localharness_external.exe', at()))
+    tick(60_000)
+    expect(await reaper.release('session-r', SERVER)).toEqual([205])
+    expect(killed).toEqual([205])
+  })
+
+  it('waits a moment after the call before looking, for a harness that starts just after it', async () => {
+    let clock = 1_000_000
+    const procs: ProcInfo[] = [proc(SERVER, 1, 'agy_acp_server.exe', 0)]
+    const killed: number[] = []
+    const reaper = new HarnessReaper(async () => procs, (pid) => killed.push(pid), undefined, () => clock, async (ms) => {
+      clock += ms
+      procs.push(proc(206, SERVER, 'localharness_external.exe', clock - ms + 1000))
+    })
+    const end = reaper.begin('session-f')
+    clock += 300
+    end('session-f')
+    expect(await reaper.release('session-f', SERVER)).toEqual([206])
+    expect(killed).toEqual([206])
+  })
+
   it('finds the whole tree under the server and reads PowerShell’s list', () => {
     const all = [proc(100, 1, 'a', 0), proc(101, 100, 'b', 0), proc(102, 101, 'c', 0), proc(103, 1, 'd', 0)]
     expect(descendants(all, 100).map((p) => p.pid)).toEqual([101, 102])

@@ -567,13 +567,14 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       <Plus size={18} />
     </button>
   )
+  // Two buttons, not one that changes: each keeps its own name for screen readers.
   const sendButton =
     busy && !canSend ? (
-      <button className="send-btn stop" data-tip={t('停止')} onClick={stop}>
+      <button key="stop" className="send-btn stop" aria-label={t('停止')} data-tip={t('停止')} onClick={stop}>
         <Square size={12} fill="currentColor" />
       </button>
     ) : (
-      <button className="send-btn" disabled={!canSend} onClick={submit} data-tip={t('发送 (Enter)')}>
+      <button key="send" className="send-btn" aria-label={t('发送')} disabled={!canSend} onClick={submit} data-tip={t('发送 (Enter)')}>
         <ArrowUp size={18} />
       </button>
     )

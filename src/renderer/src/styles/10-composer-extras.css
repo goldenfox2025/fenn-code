@@ -31,7 +31,7 @@
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: var(--font-sm);
   white-space: nowrap;
   overflow: hidden;
@@ -279,7 +279,7 @@
 .choice .rec {
   font-size: 11px;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--accent-text);
   background: rgba(var(--accent-rgb), 0.12);
   border-radius: var(--radius-sm);
   padding: 1px var(--space-3);
@@ -370,7 +370,7 @@
 /* A message reached from search flashes briefly. */
 [data-mid].flash > .msg-user .bubble,
 [data-mid].flash > .msg:not(.msg-user) {
-  animation: flash 1.6s ease-out;
+  animation: flash var(--dur-flash) var(--ease);
   border-radius: var(--radius-lg);
 }
 @keyframes flash {
@@ -531,7 +531,7 @@ details.advanced > summary {
   background: none;
   padding: 0;
   font: inherit;
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
 }
 .text-link:hover {

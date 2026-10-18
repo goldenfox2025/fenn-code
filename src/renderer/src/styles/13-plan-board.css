@@ -97,7 +97,7 @@
   color: var(--accent);
 }
 .step-icon.doing.live {
-  animation: spin 1.2s linear infinite;
+  animation: spin var(--dur-spin) linear infinite;
 }
 .step-icon.waiting {
   color: var(--amber);
@@ -164,7 +164,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--accent-fg);
 }
 .check-box.on {
   background: var(--accent);

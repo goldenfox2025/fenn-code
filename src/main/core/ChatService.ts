@@ -120,6 +120,19 @@ interface QueuedTurn {
 /** How long 停止 waits for the agent to end its turn before the app ends it (QA: an agent that hangs ignores the cancel). */
 export const STOP_GRACE_MS = 4000
 
+/** An agent's note about the cancel at the end of a stopped reply (sent before the user's stop reached the app). */
+const CANCEL_NOTE = /\s*(?:the )?request (?:was|has been) cancell?ed(?: by (?:the )?(?:client|user))?\.?\s*$|\s*\b(?:cancell?ed|aborted) by (?:the )?(?:client|user)\.?\s*$|\s*\b(?:operation |request )?aborted\.?\s*$/i
+
+/** Takes the agent's cancel note off the end of a stopped reply's last text; a block left empty goes. */
+export function stripCancelNote(reply: Message): void {
+  const i = reply.blocks.map((b) => b.type).lastIndexOf('text')
+  const b = reply.blocks[i]
+  if (!b || b.type !== 'text' || !CANCEL_NOTE.test(b.text)) return
+  const text = b.text.replace(CANCEL_NOTE, '')
+  if (text.trim()) reply.blocks[i] = { ...b, text }
+  else reply.blocks.splice(i, 1)
+}
+
 /** The agent no longer has the session (Antigravity after its helper program exits), as an error or as its reply text. */
 export function lostSession(result: TurnResult, reply: Message): boolean {
   if (result.stopReason === 'error') return /\bsession not found\b/i.test(result.error ?? '')
@@ -389,6 +402,13 @@ export class ChatService {
       applyEvent(reply.blocks, { kind: 'notice', level: 'info', key: 'starting', text: t('正在连接 {0}…', name) })
       this.scheduleEmit(reply)
     }
+    // Instructions in a session's system prompt can't be taken back by a message (a model keeps following
+    // them): after a change, this turn goes to a new session, with the conversation so far.
+    const bound = this.live.get(conversationId)
+    if (!opts.raw && bound?.systemApplied && bound.backendId === conv.backendId && bound.systemInstructions !== (this.hooks.instructions?.(conv) ?? '')) {
+      this.forgetSession(conversationId)
+      conv = this.patchConversation(conversationId, { sessionRef: undefined }) ?? conv
+    }
     try {
       // A session the agent lost (its helper died: "Session not found") is reopened and the message sent again:
       // first by resuming it, then, if that one is lost too, as a fresh session with the history.
@@ -438,7 +458,7 @@ export class ChatService {
           const changed = !rules && sent !== undefined && now !== sent
             ? now
               ? `（应用）用户更新了指令，从现在起以这一版为准：\n${now}`
-              : '（应用）用户清空了自定义指令和项目指令，之前的那些不再适用。'
+              : '（应用）用户清空了之前给你的指令，那些指令不再适用。'
             : ''
           if (sent !== now) this.patchConversation(conversationId, { instructionsSent: now })
           promptText = [rules, changed, updates, note, text].filter(Boolean).join('\n\n')
@@ -477,6 +497,9 @@ export class ChatService {
     this.flushEmit(reply)
     this.current.delete(conversationId)
     this.rearmSpare(conversationId)
+    // The user stopped this turn: however the agent ended it (cancelled, an error such as -32800, or end_turn), it stopped.
+    if (this.stopped.has(conversationId)) result = { stopReason: 'cancelled' }
+    if (result.stopReason === 'cancelled') stripCancelNote(reply)
     // An agent that says, as an ordinary reply, that its usage limit was reached or that it lost the session
     // (Antigravity): it is a failure to retry, not an answer.
     const limited = result.stopReason !== 'error' && result.stopReason !== 'cancelled'
@@ -689,6 +712,8 @@ export class ChatService {
     const conv = this.store.conversation(conversationId)
     if (!conv || conv.status === 'working' || conv.status === 'waiting' || !this.backends.has(conv.backendId)) return
     if (this.live.get(conv.id)?.backendId === conv.backendId || this.connecting.has(conv.id)) return
+    // An agent that holds a program per open session (Antigravity) reopens one only when a message goes to it.
+    if (this.backends.openSessionLimit(conv.backendId)) return
     this.ensureSession(conv).catch(() => undefined)
   }
 
@@ -1308,6 +1333,8 @@ export class ChatService {
     }
     const reply = this.current.get(conversationId)
     if (!reply) return
+    // After 停止 the agent's own words about the cancel ("The request was cancelled by the client.") are not the reply.
+    if (this.stopped.has(conversationId) && (event.kind === 'message.delta' || event.kind === 'thought.delta')) return
     this.meters.get(conversationId)?.observe(event)
     // The agent's own task plan (ACP `plan`) is the conversation's live plan too; an empty one withdraws it.
     if (event.kind === 'plan') {

@@ -206,6 +206,22 @@ const handlers = {
       await stream(sessionId, "Agent connection was lost and could not be re-established: Failed to rebuild agent: received 1000 (OK); then sent 1000 (OK)", abort);
       return { stopReason: "end_turn" };
     }
+    // "#慢取消": streams until stopped, then ends the way MOCK_CANCEL_MODE says real agents do:
+    // chunk (a cancel note, then cancelled), err (-32800), late (cancelled, then the note), end (the note, then end_turn).
+    if (raw.includes("#慢取消")) {
+      await stream(sessionId, "它不以摧", abort);
+      while (!abort.aborted) await sleep(30);
+      const note = () => notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "The request was cancelled by the client." } });
+      const mode = process.env.MOCK_CANCEL_MODE;
+      if (mode === "err") throw { code: -32800, message: "The request was cancelled by the client." };
+      if (mode === "late") {
+        setTimeout(note, 20);
+        return { stopReason: "cancelled" };
+      }
+      note();
+      await sleep(20);
+      return { stopReason: mode === "end" ? "end_turn" : "cancelled" };
+    }
     // "#用量上限": answers with a usage-limit notice as an ordinary reply, the way Antigravity does.
     if (raw.includes("#用量上限")) {
       await stream(sessionId, "Usage Limit Reached. You have reached your usage limit; it will reset in 56 seconds.", abort);
@@ -215,7 +231,7 @@ const handlers = {
     if (raw.includes("指令是什么")) {
       s.said = (s.said ?? []).concat(raw);
       const pick = (text) => [...text.matchAll(/(?:自定义指令|项目指令)（必须遵守）：\n([^\n<]*)/g)].map((m) => m[1]);
-      const inMsg = pick(raw), inSys = pick(s.system), cleared = raw.includes("用户清空了自定义指令");
+      const inMsg = pick(raw), inSys = pick(s.system), cleared = raw.includes("用户清空了之前给你的指令");
       await stream(sessionId, `系统：${inSys.join("|") || "无"}；本条：${cleared ? "已清空" : inMsg.join("|") || "无"}`, abort);
       return { stopReason: "end_turn" };
     }

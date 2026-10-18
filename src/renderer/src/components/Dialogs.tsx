@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { errorText } from '@shared/errors'
 import { Bot, Check, FolderGit2, FolderKanban, FolderOpen, Info, Palette, Plug, Plus, User, X } from 'lucide-react'
 import type { AppInfo, ConnectorView, FolderCandidate, Project, Routine, Schedule, UpdateCheck } from '@shared/model'
 import { Dropdown, useMenu } from './Menu'
 import { confirmDialog, Overlay, useLayer } from './Modal'
-import { api, refreshAccount, toast, useApp, useUsableBackends, toastError } from '../store'
+import { Switch } from './Switch'
+import { api, errorMessage, refreshAccount, toast, useApp, useUsableBackends, toastError } from '../store'
 import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
 import type { BackendSummary } from '@shared/contract'
@@ -275,7 +275,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
             <label>{t('允许运行命令')}</label>
             <div className="help">{t('定时任务运行时没有人能确认。打开后，agent 可以直接运行命令；关闭时，要运行命令的步骤会被跳过。')}</div>
           </div>
-          <button className={'switch' + (allowCommands ? ' on' : '')} onClick={() => setAllowCommands(!allowCommands)} />
+          <Switch on={allowCommands} label={t('允许运行命令')} onChange={setAllowCommands} />
         </div>
       </div>
       <div className="modal-actions">
@@ -410,10 +410,7 @@ function GeneralSettings() {
             <label>{t('桌面通知')}</label>
             <div className="help">{t('不在应用里时，讨论串有结果、需要您确认，或对话回复完成，会发系统通知。')}</div>
           </div>
-          <button
-            className={'switch' + (settings.notifications !== false ? ' on' : '')}
-            onClick={() => api().updateSettings({ notifications: settings.notifications === false })}
-          />
+          <Switch on={settings.notifications !== false} label={t('桌面通知')} onChange={(on) => api().updateSettings({ notifications: on })} />
         </div>
       </div>
       <div className="field">
@@ -422,9 +419,10 @@ function GeneralSettings() {
             <label>{t('允许读取工作文件夹以外的文件')}</label>
             <div className="help">{t('关闭时，agent 在对话的工作文件夹里读写不用您确认；要读文件夹以外的文件，会在对话里请您确认，定时任务里则直接跳过。')}</div>
           </div>
-          <button
-            className={'switch' + (settings.allowOutsideReads ? ' on' : '')}
-            onClick={() => api().updateSettings({ allowOutsideReads: !settings.allowOutsideReads })}
+          <Switch
+            on={!!settings.allowOutsideReads}
+            label={t('允许读取工作文件夹以外的文件')}
+            onChange={(on) => api().updateSettings({ allowOutsideReads: on })}
           />
         </div>
       </div>
@@ -435,9 +433,10 @@ function GeneralSettings() {
               <label>{t('关闭窗口后在后台运行')}</label>
               <div className="help">{t('应用留在系统托盘里，定时任务和进行中的讨论串照常运行。从托盘菜单退出。')}</div>
             </div>
-            <button
-              className={'switch' + (settings.runInBackground !== false ? ' on' : '')}
-              onClick={() => api().updateSettings({ runInBackground: settings.runInBackground === false })}
+            <Switch
+              on={settings.runInBackground !== false}
+              label={t('关闭窗口后在后台运行')}
+              onChange={(on) => api().updateSettings({ runInBackground: on })}
             />
           </div>
         </div>
@@ -449,10 +448,7 @@ function GeneralSettings() {
             <div className="help">
               {t('打开后，agent 能看到屏幕截图，并在您允许的程序里移动鼠标、点击和输入。它每次都要先列出要用的程序，由您逐个选择「完全控制」「仅点击」或「仅查看」。操控时 Fenn Code 会最小化，屏幕上方有「停止」按钮。macOS 需要在系统设置里授予「辅助功能」和「录屏」权限；Linux 需要 X11 和 xdotool。')}</div>
           </div>
-          <button
-            className={'switch' + (settings.computerUse ? ' on' : '')}
-            onClick={() => api().updateSettings({ computerUse: !settings.computerUse })}
-          />
+          <Switch on={!!settings.computerUse} label={t('允许操控电脑')} onChange={(on) => api().updateSettings({ computerUse: on })} />
         </div>
       </div>
     </>
@@ -525,7 +521,7 @@ function AboutSettings() {
               disabled={check === 'checking'}
               onClick={async () => {
                 setCheck('checking')
-                setCheck(await api().checkForUpdates().catch((e: unknown) => ({ status: 'error' as const, message: errorText(e) })))
+                setCheck(await api().checkForUpdates().catch((e: unknown) => ({ status: 'error' as const, message: errorMessage(e) })))
               }}
             >
               {t('检查更新')}</button>
@@ -550,7 +546,7 @@ function Diagnostics() {
             <label>{t('记录 agent 通信')}</label>
             <div className="help">{t('把与 agent 往来的每条 ACP 消息写进数据文件夹的 logs 里，用来排查用量或连接问题。日志含对话内容，只留在本机；默认关闭。')}</div>
           </div>
-          <button className={'switch' + (on ? ' on' : '')} role="switch" aria-checked={on} aria-label={t('记录 agent 通信')} onClick={() => api().updateSettings({ acpDebugLog: !on })} />
+          <Switch on={on} label={t('记录 agent 通信')} onChange={(next) => api().updateSettings({ acpDebugLog: next })} />
         </div>
         {on && (
           <button className="btn" style={{ marginTop: 10 }} onClick={() => api().openLogFolder()}>
@@ -584,7 +580,7 @@ function AppearanceSettings() {
             <label>{t('玻璃效果')}</label>
             <div className="help">{t('半透明的磨砂玻璃界面，浅色和深色都可以用。')}</div>
           </div>
-          <button className={'switch' + (glass ? ' on' : '')} role="switch" aria-checked={glass} aria-label={t('玻璃效果')} onClick={() => api().updateSettings({ glass: !glass })} />
+          <Switch on={glass} label={t('玻璃效果')} onChange={(next) => api().updateSettings({ glass: next })} />
         </div>
       </div>
       <div className="field">
@@ -720,12 +716,10 @@ function PrestartSwitch({ backendId, name }: { backendId: string; name: string }
           <label>{t('打开 Fenn Code 时预先启动')}</label>
           <div className="help">{t('只启动 {0} 并连上，不发消息，不用额度。第一条消息就不用等它启动。', name)}</div>
         </div>
-        <button
-          className={'switch' + (on ? ' on' : '')}
-          role="switch"
-          aria-checked={on}
-          aria-label={t('打开 Fenn Code 时预先启动')}
-          onClick={() => api().updateSettings({ prestartBackends: { ...settings.prestartBackends, [backendId]: !on } })}
+        <Switch
+          on={on}
+          label={t('打开 Fenn Code 时预先启动')}
+          onChange={(next) => api().updateSettings({ prestartBackends: { ...settings.prestartBackends, [backendId]: next } })}
         />
       </div>
     </div>
@@ -744,7 +738,7 @@ export function LoginButton({ backendId, label, onDone }: { backendId: string; l
       toast(status.signedIn === true ? t('登录成功') : t('登录流程已结束，请确认账号状态后重试'))
       if (status.signedIn === true) onDone?.()
     } catch (e) {
-      toast(t('登录失败：{0}', errorText(e)), 'error')
+      toast(t('登录失败：{0}', errorMessage(e)), 'error')
     } finally {
       setBusy(false)
     }
@@ -762,7 +756,7 @@ export function LoginButton({ backendId, label, onDone }: { backendId: string; l
           try {
             methods = await api().backendAuthMethods(backendId)
           } catch (err) {
-            toast(t('无法启动后端：{0}', errorText(err)), 'error')
+            toast(t('无法启动后端：{0}', errorMessage(err)), 'error')
           }
           setBusy(false)
           if (!methods.length) return toast(t('这个后端不需要在应用里登录'))
@@ -1124,11 +1118,12 @@ function ConnectorSettings({ onFormChange }: { onFormChange: (open: boolean) => 
               }
             >
               {t('编辑')}</button>
-            <button
-              className={'switch' + (c.enabled ? ' on' : '')}
-              data-tip={c.enabled ? t('已启用') : t('已停用')}
-              onClick={async () => {
-                await api().saveConnector({ ...c, enabled: !c.enabled }).catch(toastError)
+            <Switch
+              on={c.enabled}
+              label={c.name}
+              tip={c.enabled ? t('已启用') : t('已停用')}
+              onChange={async (enabled) => {
+                await api().saveConnector({ ...c, enabled }).catch(toastError)
                 void reload()
               }}
             />
@@ -1177,7 +1172,7 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
       })
       onDone()
     } catch (e) {
-      setError(errorText(e))
+      setError(errorMessage(e))
       setSaving(false)
     }
   }
@@ -1238,7 +1233,7 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
                   await api().deleteConnector(d.id!)
                   onDone()
                 } catch (e) {
-                  setError(errorText(e))
+                  setError(errorMessage(e))
                 }
               }}
             >

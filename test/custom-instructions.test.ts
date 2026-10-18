@@ -38,7 +38,7 @@ describe('自定义指令 and 项目指令', () => {
   }, 40000)
 
   it('changed mid-session, reach the agent on its next turn once, and cleared, say so', async () => {
-    const t = await makeCore(undefined, { MOCK_SYSTEM_PROMPT: '1' })
+    const t = await makeCore()
     try {
       await t.core.updateSettings({ customInstructions: '旧的' })
       const conv = await t.core.startChat({ text: '你好', backendId: 'mock' })
@@ -46,14 +46,35 @@ describe('自定义指令 and 项目指令', () => {
       await t.core.updateSettings({ customInstructions: '新的' })
       await t.core.send(conv.id, '指令是什么')
       await done(t.store, conv.id, 2)
-      expect(last(t.store, conv.id)).toBe('系统：旧的；本条：新的')
+      expect(last(t.store, conv.id)).toBe('系统：无；本条：新的')
       await t.core.send(conv.id, '指令是什么')
       await done(t.store, conv.id, 3)
-      expect(last(t.store, conv.id)).toBe('系统：旧的；本条：无')
+      expect(last(t.store, conv.id)).toBe('系统：无；本条：无')
       await t.core.updateSettings({ customInstructions: '' })
       await t.core.send(conv.id, '指令是什么')
       await done(t.store, conv.id, 4)
-      expect(last(t.store, conv.id)).toBe('系统：旧的；本条：已清空')
+      expect(last(t.store, conv.id)).toBe('系统：无；本条：已清空')
+    } finally {
+      await t.dispose()
+    }
+  }, 60000)
+
+  it('in a system prompt, changed or cleared, move the chat to a new session (a message can’t take them back)', async () => {
+    const t = await makeCore(undefined, { MOCK_SYSTEM_PROMPT: '1' })
+    try {
+      await t.core.updateSettings({ customInstructions: '旧的' })
+      const conv = await t.core.startChat({ text: '你好', backendId: 'mock' })
+      await done(t.store, conv.id, 1)
+      const first = t.store.conversation(conv.id)!.sessionRef!.sessionId
+      await t.core.updateSettings({ customInstructions: '新的' })
+      await t.core.send(conv.id, '指令是什么')
+      await done(t.store, conv.id, 2)
+      expect(last(t.store, conv.id)).toBe('系统：新的；本条：无')
+      expect(t.store.conversation(conv.id)!.sessionRef!.sessionId).not.toBe(first)
+      await t.core.updateSettings({ customInstructions: '' })
+      await t.core.send(conv.id, '指令是什么')
+      await done(t.store, conv.id, 3)
+      expect(last(t.store, conv.id)).toBe('系统：无；本条：无')
     } finally {
       await t.dispose()
     }
@@ -90,24 +111,4 @@ describe('自定义指令 and 项目指令', () => {
       await t.dispose()
     }
   }, 40000)
-
-  it('in a system prompt, come back after a compaction when they changed since the session opened', async () => {
-    const t = await makeCore(undefined, { MOCK_SYSTEM_PROMPT: '1' })
-    try {
-      await t.core.updateSettings({ customInstructions: '旧的' })
-      const conv = await t.core.startChat({ text: '你好', backendId: 'mock' })
-      await done(t.store, conv.id, 1)
-      await t.core.updateSettings({ customInstructions: '新的' })
-      await t.core.send(conv.id, '指令是什么')
-      await done(t.store, conv.id, 2)
-      expect(last(t.store, conv.id)).toBe('系统：旧的；本条：新的')
-      await t.core.send(conv.id, '#压缩 继续')
-      await done(t.store, conv.id, 3)
-      await t.core.send(conv.id, '指令是什么')
-      await done(t.store, conv.id, 4)
-      expect(last(t.store, conv.id)).toBe('系统：旧的；本条：新的')
-    } finally {
-      await t.dispose()
-    }
-  }, 60000)
 })

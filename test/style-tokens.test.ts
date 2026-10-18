@@ -9,7 +9,7 @@ const css = join(__dirname, '../src/renderer/src/styles.css')
  * Raw spacing, radius and color values still left in styles.css from before
  * the tokens. The number only ever goes down: new CSS uses tokens.css.
  */
-const LEGACY = 214
+const LEGACY = 202
 
 /** Rules that make up a turn of the conversation; these must use tokens only. */
 const TURN = /\.(turn|working-|steps|step-|placed-line|thread-card|tooltip|transcript|msg-actions|md)\b/
@@ -28,13 +28,12 @@ describe('styles use the design tokens', () => {
   it('times every transition and one-shot animation with the motion tokens', () => {
     const raw: string[] = []
     postcss.parse(readStyles(css)).walkDecls(/^(transition|animation)(-duration|-delay)?$/, (d) => {
-      // Loops (spinners, the working dots and their stagger) keep their own rhythm; a search hit's flash lingers on purpose.
-      if (d.prop === 'animation-delay' || (d.prop.startsWith('animation') && /\binfinite\b|^flash\b/.test(d.value))) return
+      // Loops (spinners, the working dots, shimmer) take theirs from tokens too: --dur-spin, --dur-pulse, --dur-shimmer, --stagger.
       // Reduced motion stops everything at once.
       const media = d.parent?.parent
       if (media?.type === 'atrule' && /reduced-motion/.test((media as postcss.AtRule).params)) return
       if (/(^|[\s,(])\d*\.?\d+m?s\b/.test(d.value.replace(/var\([^)]*\)/g, ''))) raw.push(`${d.prop}: ${d.value}`)
     })
-    expect(raw, 'use --dur-1/2/3 and --ease from tokens.css').toEqual([])
+    expect(raw, 'use the --dur-* and --ease tokens from tokens.css').toEqual([])
   })
 })

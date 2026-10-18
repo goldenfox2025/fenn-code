@@ -1135,4 +1135,5 @@ export const en: Record<string, string> = {
   "关闭时，agent 在对话的工作文件夹里读写不用您确认；要读文件夹以外的文件，会在对话里请您确认，定时任务里则直接跳过。": "When off, agents read and write inside a chat’s working folder without asking; reading files outside it asks you in the chat, and is skipped in scheduled tasks.",
   "允许运行命令": "Allow running commands",
   "定时任务运行时没有人能确认。打开后，agent 可以直接运行命令；关闭时，要运行命令的步骤会被跳过。": "Nobody is there to confirm while a scheduled task runs. When on, the agent may run commands directly; when off, steps that need a command are skipped.",
+  "发送": "Send",
 }

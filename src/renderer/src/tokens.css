@@ -10,6 +10,13 @@
   --dur-1: 120ms; /* hover, press, fades */
   --dur-2: 180ms; /* menus, chevrons, small moves */
   --dur-3: 260ms; /* panes, dialogs, the look changing */
+  /* Loops: things that keep moving while work goes on. One spinner speed everywhere. */
+  --ease-loop: ease-in-out;
+  --dur-spin: 1.2s; /* spinners */
+  --dur-pulse: 1.4s; /* a breathing dot; the working dots */
+  --dur-shimmer: 1.8s; /* words that shimmer while work is under way */
+  --dur-flash: 1.6s; /* a search hit lighting up once */
+  --stagger: 0.15s; /* between the working dots */
   /* Pane widths (the user can drag them; see ResizeHandle). */
   --sidebar-w: 284px;
   --resize-hit: 8px;
@@ -36,6 +43,9 @@
   --accent-fg: #ffffff;
   --accent-hover: #06627f;
   --accent-soft: rgba(var(--accent-rgb), 0.12);
+  /* The accent as words (a link, a chip's label, a count on --accent-soft): dark enough to read
+     at small sizes (4.5:1) on the light looks. Icons and fills keep --accent. */
+  --accent-text: #06627f;
   --link: #2c6bd6;
   --green: #3f8a4f;
   --amber: #b7791f;
@@ -45,7 +55,8 @@
   --shadow-pop: 0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
   --radius: 10px;
   --focus-border: rgba(31, 30, 29, 0.32);
-  --focus-ring: rgba(var(--accent-rgb), 0.5);
+  /* 3:1 against the page, as a focus indicator needs (WCAG 1.4.11). */
+  --focus-ring: rgba(var(--accent-rgb), 0.8);
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC', system-ui, sans-serif;
   --font-serif: 'Tiempos Text', Georgia, 'Songti SC', 'Noto Serif CJK SC', serif;
@@ -75,6 +86,7 @@
   --accent-fg: #062630;
   --accent-hover: #6fe2f8;
   --accent-soft: rgba(var(--accent-rgb), 0.16);
+  --accent-text: var(--accent);
   --link: #7fa8ef;
   --green: #6cbf7d;
   --amber: #e0a84a;
@@ -110,6 +122,7 @@
   --accent-fg: #062630;
   --accent-hover: #6fe2f8;
   --accent-soft: rgba(var(--accent-rgb), 0.16);
+  --accent-text: var(--accent);
   --link: #9fb3ff;
   --green: #6fd3a0;
   --amber: #f0c06b;
@@ -156,7 +169,7 @@
   --hairline-top: inset 0 1px 0 rgba(255, 255, 255, 0.85);
   --frost: blur(22px) saturate(170%);
   --focus-border: rgba(var(--accent-rgb), 0.5);
-  --focus-ring: rgba(var(--accent-rgb), 0.6);
+  --focus-ring: rgba(var(--accent-rgb), 0.85);
   --shadow: var(--hairline-top), 0 1px 2px rgba(22, 26, 44, 0.05), 0 8px 28px rgba(22, 26, 44, 0.07);
   --shadow-pop: var(--hairline-top), 0 14px 44px rgba(22, 26, 44, 0.16), 0 0 0 1px rgba(22, 26, 44, 0.07);
   color-scheme: light;

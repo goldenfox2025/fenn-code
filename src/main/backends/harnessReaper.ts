@@ -52,12 +52,16 @@ export class HarnessReaper {
     private readonly list: () => Promise<ProcInfo[]>,
     private readonly kill: (pid: number) => void,
     private readonly isHarness: (name: string) => boolean = (n) => /^localharness/i.test(n),
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))
   ) {}
 
-  /** Call as a session/new, resume or load starts; the result is called once it ends. */
-  begin(): (session: string) => void {
-    const w: Window = { start: this.now() }
+  /**
+   * Call as a session/new, resume or load starts; the result is called once it ends. A resume or load
+   * names its session at once, so what it starts is that session's even if the call never returns.
+   */
+  begin(session?: string): (session: string) => void {
+    const w: Window = { start: this.now(), session }
     this.windows.add(w)
     return (session) => {
       w.end = this.now()
@@ -83,6 +87,10 @@ export class HarnessReaper {
   /** The session is closed: end the harnesses it started that still run under the server. */
   async release(session: string, root: number | undefined): Promise<number[]> {
     if (!root) return []
+    // Its helper may show up a moment after the call returned: look once that moment has passed.
+    const last = Math.max(0, ...[...this.windows].filter((w) => w.session === session && w.end !== undefined).map((w) => w.end!))
+    const wait = last + GRACE_MS - this.now()
+    if (wait > 0) await this.sleep(wait)
     const all = await this.list().catch(() => [] as ProcInfo[])
     this.attribute(all, root)
     const mine = this.owned.get(session)

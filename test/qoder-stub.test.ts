@@ -38,7 +38,9 @@ describe.each(['1.1.72', '1.1.73'])('Qoder %s, signed in (replayed)', (version) 
       const catalog = await core.backendModels('qoder')
       expect(catalog.models.map((m) => m.id)).toEqual(['auto', 'performance', 'lite'])
       expect(c.sessionOptions?.map((o) => o.category)).toEqual(expect.arrayContaining(['mode', 'thought_level']))
-      expect(c.agentCommands?.map((x) => x.name)).toEqual(['rewind', 'rename', 'goal'])
+      // Its / commands come in their own update, which may land after the turn ends.
+      await until(() => store.conversation(conv.id)?.agentCommands?.length)
+      expect(store.conversation(conv.id)!.agentCommands?.map((x) => x.name)).toEqual(['rewind', 'rename', 'goal'])
       expect(c.compactCommand).toBeUndefined() // Qoder's /compact can't run over ACP, so no compress button
 
       // TodoWrite's plan becomes the plan card.

@@ -63,7 +63,7 @@ Also included: attachments, editing and regenerating with version history, token
 
 ## Quick start
 
-1. From [Releases](../../releases), download the Windows installer (`Fenn-Code-Setup-<version>.exe`) or the portable `Fenn-Code-<version>-win.zip` (unzip it anywhere and run `FennCode.exe`). Releases are Windows x64 only for now; on macOS and Linux, [build from source](#build-from-source). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
+1. From [Releases](../../releases), download the Windows installer (`Fenn-Code-Setup-<version>.exe`) or the portable `Fenn-Code-<version>-win.zip` (unzip it anywhere and run `FennCode.exe`). Releases carry Windows x64 builds. For macOS, each CI run also produces unsigned zips for Apple Silicon and Intel (`Fenn-Code-<version>-mac-arm64.zip` / `-mac-x64.zip`, under the run's artifacts); see [opening an unsigned build on macOS](#opening-an-unsigned-build-on-macos). On Linux, [build from source](#build-from-source). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
 2. Install and sign in to at least one agent, in a terminal or with the **Install** and **Sign in** buttons in Settings → Agent backends:
 
    | Agent | Install | Sign in | Status |

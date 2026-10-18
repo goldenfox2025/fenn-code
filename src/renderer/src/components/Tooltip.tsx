@@ -20,6 +20,29 @@ interface Tip {
   el: Element
 }
 
+/** Marks an aria-label this layer gave from the tip, so it follows the tip (and goes with it). */
+const NAMED = 'data-tip-named'
+
+/**
+ * Names icon-only controls after their tip. A name set in code is left alone; one given
+ * here keeps following the tip as it changes (React reuses an element whose tip changes,
+ * e.g. a button that turns from 停止 into 发送), and is taken back when the tip goes.
+ */
+export function nameByTip(els: Iterable<Element>): void {
+  for (const el of els) {
+    const ours = el.hasAttribute(NAMED)
+    if (!ours && el.hasAttribute('aria-label')) continue
+    const tip = el.getAttribute('data-tip')
+    if (tip && !el.textContent?.trim()) {
+      if (el.getAttribute('aria-label') !== tip) el.setAttribute('aria-label', tip)
+      if (!ours) el.setAttribute(NAMED, '')
+    } else if (ours) {
+      el.removeAttribute('aria-label')
+      el.removeAttribute(NAMED)
+    }
+  }
+}
+
 export function TooltipLayer() {
   const [tip, setTip] = useState<Tip | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number; below: boolean } | null>(null)
@@ -89,8 +112,7 @@ export function TooltipLayer() {
     let frame = 0
     const name = () => {
       frame = 0
-      for (const el of document.querySelectorAll('[data-tip]:not([aria-label])'))
-        if (!el.textContent?.trim()) el.setAttribute('aria-label', el.getAttribute('data-tip') ?? '')
+      nameByTip(document.querySelectorAll(`[data-tip], [${NAMED}]`))
     }
     const watch = new MutationObserver(() => (frame ||= requestAnimationFrame(name)))
     watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-tip'] })
