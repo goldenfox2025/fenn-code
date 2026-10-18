@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { folderOfTurn, parseAnswer } from '../src/main/core/AutoAssigner'
+import { folderOfTurn } from '../src/main/core/AutoAssigner'
+import { localTitle } from '../src/main/core/titles'
 
 const reply = (...inputs: string[]) =>
   ({ blocks: inputs.map((input, i) => ({ type: 'tool', toolId: String(i), title: 'Read', status: 'completed', input })) }) as any
 
 describe('tidying a new chat', () => {
-  it('reads the title from the answer, among other text', () => {
-    expect(parseAnswer('好的 {"title":"番茄种植"}。理由：{涉及种植}').title).toBe('番茄种植')
-    expect(parseAnswer('随便聊聊').title).toBeUndefined()
+  it('makes the title from what the user wrote, without asking any agent', () => {
+    expect(localTitle('帮我规划去京都的三天行程。')).toBe('规划去京都的三天行程')
+    expect(localTitle('请帮我写一份周报的提纲')).toBe('写一份周报的提纲')
+    expect(localTitle('can you explain quantum computing?')).toBe('Explain quantum computing')
+    expect(localTitle('\n\n  第一行\n第二行')).toBe('第一行')
+    expect(localTitle('帮我')).toBe('帮我')
+    expect(localTitle('周末去哪里爬山比较好？我在杭州')).toBe('周末去哪里爬山比较好')
+    expect(localTitle('Fix the login bug. It crashes on start')).toBe('Fix the login bug')
+    expect(localTitle('好的？')).toBe('好的')
+    expect(localTitle('一'.repeat(30))).toBe('一'.repeat(20) + '…')
   })
 
   it('attaches a folder only when every path the first turn touched is inside one known folder', () => {

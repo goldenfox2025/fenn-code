@@ -11,7 +11,8 @@
   margin: 0 auto;
   /* Anchored from the top, not centred: a taller draft in the composer below must
      never move the greeting or the widgets. */
-  padding: max(var(--space-11), calc(22vh - 2 * var(--space-11))) var(--turn-gutter) var(--space-9);
+  /* At the bottom, room for the fade above the chips (see .home-board). */
+  padding: max(var(--space-11), calc(22vh - 2 * var(--space-11))) var(--turn-gutter) var(--space-11);
   container-type: inline-size;
 }
 .greeting {
@@ -392,4 +393,45 @@
 /* A card whose last refresh failed: its data is older than it looks. */
 .board-error {
   color: var(--red);
+}
+
+/* The board scrolls under the suggestion chips: it fades out above them instead of
+   being cut off behind them (a short or narrow window). */
+.home-board {
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--space-11)), transparent);
+}
+
+/* No agent installed: where the composer would be, a card that leads to installing one. */
+.no-agent-card {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-8);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-input);
+  box-shadow: var(--shadow);
+}
+.no-agent-icon {
+  flex: none;
+  color: var(--accent);
+}
+.no-agent-text {
+  flex: 1;
+  min-width: 0;
+}
+.no-agent-text .title {
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: var(--space-1);
+}
+.no-agent-card .btn {
+  flex: none;
+}
+@container (width < 520px) {
+  .no-agent-card {
+    flex-wrap: wrap;
+  }
 }

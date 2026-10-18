@@ -82,9 +82,11 @@ describe('backends that are gone', () => {
     store.putProject({ ...store.project(p.id)!, backendId: 'removed-demo' })
     store.patchSettings({ defaultBackendId: 'removed-demo' })
     core.repairBackends()
-    // The first installed agent, or Codex when none is (this depends on the machine running the test).
-    const next = core.backends.list().find((b) => b.installed === true)?.id ?? 'codex'
-    expect(store.settings.defaultBackendId).toBe(next)
+    // The first installed agent; with none installed the default stays empty (never an uninstalled agent),
+    // and the chats show their history under Codex. This depends on the machine running the test.
+    const installed = core.backends.list().find((b) => b.installed === true)?.id
+    const next = installed ?? 'codex'
+    expect(store.settings.defaultBackendId).toBe(installed ?? '')
     expect(store.conversation(c.id)!.backendId).toBe(next)
     expect(store.conversation(c.id)!.sessionRef).toBeUndefined()
     expect(store.project(p.id)!.backendId).toBe(next)

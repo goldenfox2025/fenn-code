@@ -26,7 +26,7 @@ if ($env:HTTPS_PROXY -or $env:HTTP_PROXY -or $env:https_proxy -or $env:http_prox
 }
 
 Step 'Installing dependencies'
-Run-Native 'npm.cmd' @('install', '--no-audit', '--no-fund') 'npm install did not finish. If you are behind a proxy, set $env:HTTPS_PROXY first (for example http://127.0.0.1:3128).'
+Run-Native 'npm.cmd' @('install', '--no-audit', '--no-fund') 'npm install did not finish. If you are behind a proxy, set $env:HTTPS_PROXY first (for example http://127.0.0.1:<port>).'
 
 Step 'Building'
 Run-Native 'npx.cmd' @('electron-vite', 'build') 'the build step failed (see above).'

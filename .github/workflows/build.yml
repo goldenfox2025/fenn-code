@@ -8,7 +8,14 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    # macOS is not yet verified on real machines: its results are reported but don't fail the run
+    # (stage-release.yml only accepts a run that succeeded, and releases carry Windows builds).
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,15 +25,36 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Install Linux display dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64
+      # Builds the app and drives it with Playwright against the built-in demo agent.
+      - name: End-to-end UI checks
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e -- release/e2e-shots
+      - uses: actions/upload-artifact@v4
+        if: failure() && runner.os == 'Linux'
+        with:
+          name: e2e-shots
+          path: release/e2e-shots/*.png
+          if-no-files-found: ignore
 
   package:
     needs: test
     strategy:
       fail-fast: false
       matrix:
-        # Releases are Windows only; macOS (no signing identity) and Linux build from source.
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            dist: --linux
+          - os: windows-latest
+            dist: --win
+          # No Apple Developer ID: an ad-hoc signed zip per architecture (see electron-builder.yml).
+          - os: macos-latest
+            dist: --mac zip --arm64 --x64
     runs-on: ${{ matrix.os }}
+    # Releases are Windows only; a macOS packaging problem must not block them (see the test job).
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,9 +62,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Test Qoder runtime selection on this platform
-        run: npx vitest run test/qoder-paths.test.ts
-      - run: npm run dist -- --publish never
+      - run: npm run dist -- ${{ matrix.dist }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - name: Install Linux display dependencies
@@ -45,8 +71,8 @@ jobs:
       - name: Test the packaged Linux app
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run test:package
-      - name: Test the packaged Windows app
-        if: runner.os == 'Windows'
+      - name: Test the packaged app
+        if: runner.os != 'Linux'
         run: npm run test:package
       - uses: actions/upload-artifact@v4
         if: always()
@@ -62,4 +88,5 @@ jobs:
             release/*.deb
             release/*.exe
             release/*.zip
+            release/*.dmg
           if-no-files-found: ignore

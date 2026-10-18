@@ -13,7 +13,8 @@ export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), ag
   const events: AppEvent[] = []
   const store = new Store(dir)
   let core!: AppCore
-  let answer = (r: PermissionRequest): string => r.options[0].id
+  // A test that answers undefined leaves the prompt waiting.
+  let answer = (r: PermissionRequest): string | undefined => r.options[0].id
   const backends = new BackendManager({
     plugins,
     settings: { get: (id) => store.backendSettings(id), set: (id, k, v) => store.setBackendSetting(id, k, v) },
@@ -31,7 +32,10 @@ export async function makeCore(dir = mkdtempSync(join(tmpdir(), 'oc-test-')), ag
   await tools.start()
   core = new AppCore(store, backends, (e) => {
     events.push(e)
-    if (e.type === 'permission') void core.respondPermission(e.request.requestId, answer(e.request))
+    if (e.type === 'permission') {
+      const a = answer(e.request)
+      if (a !== undefined) void core.respondPermission(e.request.requestId, a)
+    }
   }, 'linux', tools, extras)
   core.documentsDir = join(dir, 'Documents')
   const dispose = async () => {

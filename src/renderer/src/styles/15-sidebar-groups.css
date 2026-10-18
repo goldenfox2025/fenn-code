@@ -164,3 +164,12 @@
 @media (prefers-reduced-motion: reduce) {
   .tooltip { transition: none; transform: none; }
 }
+
+/* A thread found by search: its project, faint, after the title. */
+.thread-hit-project {
+  flex: none;
+  max-width: 40%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

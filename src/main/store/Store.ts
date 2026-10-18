@@ -41,6 +41,8 @@ export class Store {
   private dirtyMessages = new Set<string>()
   private dirtyVariants = new Set<string>()
   private timer?: NodeJS.Timeout
+  /** How a file is saved (tests stand in for a disk that refuses). */
+  writeFile: (file: string, data: unknown, durable?: boolean) => void = writeAtomic
   /** Conversations whose turn was cut off by the last shutdown or crash. */
   readonly interrupted: string[] = []
 
@@ -141,10 +143,12 @@ export class Store {
         this.dirtyMessages.add(conversationId)
         this.schedule()
       }
-      // A reply cut off by a quit: drop it if nothing was said yet (unless a thread card hangs on it).
+      // A reply cut off by a quit: drop it if nothing was said yet (unless a thread card hangs on it,
+      // or it is the chat's last message, where it shows 已中断 with 重试).
       if (list.some((m) => m.state === 'streaming' && !m.blocks.length)) {
         const anchors = new Set(this.conversations.map((c) => c.anchorMessageId).filter(Boolean))
-        list = list.filter((m) => !(m.state === 'streaming' && !m.blocks.length && !anchors.has(m.id)))
+        const last = list[list.length - 1]
+        list = list.filter((m) => !(m.state === 'streaming' && !m.blocks.length && !anchors.has(m.id) && m !== last))
       }
       for (const m of list)
         if (m.state === 'streaming') {
@@ -328,23 +332,50 @@ export class Store {
     this.schedule()
   }
   private schedule(): void {
+    if (this.frozen) return
     this.timer ??= setTimeout(() => this.flush(), 400)
   }
+  private frozen = false
+  /**
+   * Saves now and keeps what is on disk from then on. Quitting stops the agents after this, and the
+   * turns they were running must stay saved as cut off (so the next launch says 已中断), not as errors.
+   */
+  freeze(): void {
+    this.flush()
+    this.frozen = true
+  }
+  /**
+   * Saves what changed. Never throws: a file that can't be written (e.g. Windows keeps refusing
+   * with EPERM while another program holds it) is logged, stays in memory and marked unsaved,
+   * and goes with the next save, or a retry a few seconds on.
+   */
   flush(): void {
+    if (this.frozen) return
     clearTimeout(this.timer)
     this.timer = undefined
-    if (this.dirtyState) {
-      writeAtomic(join(this.dir, 'state.json'), this.state)
-      this.dirtyState = false
+    let failed = false
+    const save = (file: string, data: unknown, durable?: boolean): boolean => {
+      try {
+        this.writeFile(file, data, durable)
+        return true
+      } catch (e) {
+        failed = true
+        console.error(`[store] could not save ${file}:`, e instanceof Error ? e.message : e)
+        return false
+      }
     }
-    for (const id of this.dirtyMessages) {
+    if (this.dirtyState && save(join(this.dir, 'state.json'), this.state)) this.dirtyState = false
+    for (const id of [...this.dirtyMessages]) {
       const list = this.messages.get(id)
       // While a reply streams the file is rewritten every 400 ms: still atomic, but forced to disk only once it settles.
-      if (list) writeAtomic(join(this.dir, 'messages', `${id}.json`), list, !list.some((m) => m.state === 'streaming'))
+      if (!list || save(join(this.dir, 'messages', `${id}.json`), list, !list.some((m) => m.state === 'streaming'))) this.dirtyMessages.delete(id)
     }
-    this.dirtyMessages.clear()
-    for (const id of this.dirtyVariants) if (this.variants.has(id)) writeAtomic(this.variantsFile(id), this.variants.get(id))
-    this.dirtyVariants.clear()
+    for (const id of [...this.dirtyVariants])
+      if (!this.variants.has(id) || save(this.variantsFile(id), this.variants.get(id))) this.dirtyVariants.delete(id)
+    if (failed) {
+      this.timer = setTimeout(() => this.flush(), 5000)
+      this.timer.unref?.()
+    }
   }
 }
 

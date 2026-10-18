@@ -1,5 +1,5 @@
 import "./env";
-import { release } from "node:os";
+import { homedir, release } from "node:os";
 import {
   app,
   BrowserWindow,
@@ -17,12 +17,14 @@ import {
   screen,
   session,
   shell,
+  systemPreferences,
   Tray,
 } from "electron";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { existsSync, mkdirSync, watch } from "node:fs";
 import { moveAppData } from "./store/migrateFolder";
+import { mergePath, usualBinDirs } from "./loginPath";
 import { API_METHODS, type ApiMethod, type CoreApi } from "../shared/ipc";
 
 // Filled in at build time (electron.vite.config.ts).
@@ -45,24 +47,26 @@ import { ToolServer } from "./tools/ToolServer";
 // Apps opened from the macOS Dock or a Linux launcher get a minimal PATH, so
 // agents installed with Homebrew, nvm or npm aren't found. Borrow the PATH the
 // user's login shell would have.
-function adoptLoginShellPath(): void {
-  if (process.platform === "win32") return;
+function adoptLoginShellPath(): Promise<void> {
+  if (process.platform === "win32") return Promise.resolve();
+  // The usual places right away; the shell's own PATH (which may be slow: oh-my-zsh, nvm) is put in front once it answers.
+  process.env.PATH = mergePath(undefined, process.env.PATH, usualBinDirs(homedir()));
   const shellPath = process.env.SHELL || "/bin/zsh";
-  try {
-    const out = execFileSync(
+  return new Promise((resolve) => {
+    execFile(
       shellPath,
       ["-ilc", 'printf "__OC_PATH__%s__OC_PATH__" "$PATH"'],
-      { encoding: "utf8", timeout: 4000, stdio: ["ignore", "pipe", "ignore"] },
-    );
-    const found = out.match(/__OC_PATH__(.*)__OC_PATH__/)?.[1];
-    if (!found) return;
-    const merged = [...found.split(":"), ...(process.env.PATH ?? "").split(":")];
-    process.env.PATH = [...new Set(merged.filter(Boolean))].join(":");
-  } catch {
-    // Keep the PATH we have.
-  }
+      { encoding: "utf8", timeout: 4000, windowsHide: true },
+      (_err, out) => {
+        const found = String(out ?? "").match(/__OC_PATH__(.*)__OC_PATH__/)?.[1];
+        // A slow or broken shell profile: the usual places above still apply.
+        if (found) process.env.PATH = mergePath(found, process.env.PATH, []);
+        resolve();
+      },
+    ).stdin?.end();
+  });
 }
-adoptLoginShellPath();
+const loginPath = adoptLoginShellPath();
 
 // The app used to be called openclaude, then Cove, then Ancora: the newest of their data moves to the new
 // folder once (store/migrateFolder.ts). While an old copy still runs on it, or if it can't be moved,
@@ -118,11 +122,11 @@ const notifier = new Notifier({
       silent: false,
     });
     n.on("click", () => {
-      if (!win) return;
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-      publish({ type: "open-conversation", conversationId });
+      // On macOS the window may be closed while the app runs: open it, then the conversation once it has loaded.
+      const fresh = !win;
+      showWindow();
+      if (fresh) win?.webContents.once("did-finish-load", () => publish({ type: "open-conversation", conversationId }));
+      else publish({ type: "open-conversation", conversationId });
     });
     n.show();
   },
@@ -172,15 +176,32 @@ const unseal = (v: string) => {
   }
 };
 
+/** A secret the keychain won't open (access refused, or the app's signature changed): the value is kept, and Settings asks for it again. */
+const unreadable = new Set<string>();
+function secretLabel(id: string, key: string): string {
+  const p = plugins.find((x) => x.id === id);
+  return t("{0} 的 {1}", p?.name ?? id, t(p?.settings?.find((x) => x.key === key)?.label ?? key));
+}
+function unreadableSecret(id: string, key: string): void {
+  if (unreadable.has(`${id}\0${key}`)) return;
+  unreadable.add(`${id}\0${key}`);
+  setTimeout(() => {
+    const label = secretLabel(id, key);
+    const list = store.settings.secretsToReenter ?? [];
+    if (core && !list.includes(label)) void core.updateSettings({ secretsToReenter: [...list, label] });
+  }, 0);
+}
+
 const backends = new BackendManager({
   plugins,
   settings: {
     get: (id) =>
       Object.fromEntries(
-        Object.entries(store.backendSettings(id)).map(([k, v]) => [
-          k,
-          unseal(v),
-        ]),
+        Object.entries(store.backendSettings(id)).map(([k, v]) => {
+          const plain = unseal(v);
+          if (v.startsWith("enc:") && !plain) unreadableSecret(id, k);
+          return [k, plain];
+        }),
       ),
     set: (id, k, v) =>
       store.setBackendSetting(id, k, isSecret(id, k) ? seal(v) : v),
@@ -356,7 +377,14 @@ function onComputerActive(conversationId: string, active: boolean): void {
   minimizedForControl = false;
 }
 
-const inputs = inputDriver(process.platform, coords, resourcesDir);
+const inputs = inputDriver(process.platform, coords, resourcesDir, () => {
+  // Asking for Accessibility also shows macOS's own prompt the first time.
+  if (!systemPreferences.isTrustedAccessibilityClient(true))
+    return t("macOS 需要授权：在「系统设置 → 隐私与安全性 → 辅助功能」里允许 Fenn Code，然后再试。");
+  if (systemPreferences.getMediaAccessStatus("screen") !== "granted")
+    return t("macOS 需要授权：在「系统设置 → 隐私与安全性 → 屏幕录制」里允许 Fenn Code，然后重新打开 Fenn Code 再试。");
+  return undefined;
+});
 app.on("will-quit", () => inputs.dispose?.());
 const computer = {
   onActive: onComputerActive,
@@ -486,6 +514,8 @@ function setWindowMaterial(settings: { theme?: string; glass?: boolean }): void 
 
 function createWindow(): void {
   const isMac = process.platform === "darwin";
+  // A window reopened from the Dock saves what is typed in its files on close and quit, like the first.
+  editsFlushed = false;
   const area = screen.getPrimaryDisplay().workAreaSize;
   const width = Math.min(1440, area.width);
   const height = Math.min(900, area.height);
@@ -587,8 +617,46 @@ function boardPage(body: BoardWidgetBody | undefined, colors: URLSearchParams): 
 const PAGE_CSP =
   "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https:; style-src 'unsafe-inline' https:; img-src data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src 'none'"
 
+/**
+ * The menu bar. On macOS: the app menu with 设置… (⌘,), Edit (copy, paste, undo in every field) and Window.
+ * Reload and the developer tools stay out of a packaged build.
+ */
+function appMenu(): void {
+  // Windows and Linux show no menu bar; a packaged build drops Electron's default one too (Reload, DevTools).
+  // Copy, paste and undo in text fields work without it there.
+  if (process.platform !== "darwin") {
+    if (app.isPackaged) Menu.setApplicationMenu(null);
+    return;
+  }
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: app.getName(),
+        submenu: [
+          { role: "about", label: t("关于 Fenn Code") },
+          { type: "separator" },
+          { label: t("设置…"), accelerator: "Cmd+,", click: () => (showWindow(), publish({ type: "open-settings" })) },
+          { type: "separator" },
+          { role: "services" },
+          { type: "separator" },
+          { role: "hide" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          { role: "quit", label: t("退出 Fenn Code") },
+        ],
+      },
+      { role: "editMenu" },
+      ...(app.isPackaged ? [] : [{ role: "viewMenu" as const }]),
+      { role: "windowMenu" },
+    ]),
+  );
+}
+
 // One running copy: a second launch just brings the window back.
 if (!app.requestSingleInstanceLock()) app.quit();
+// Notifications and the taskbar group under the installed app's id (the installer's shortcuts carry the same).
+if (process.platform === "win32") app.setAppUserModelId("dev.fenncode.desktop");
 app.on("second-instance", showWindow);
 
 /**
@@ -615,6 +683,8 @@ async function adoptSystemProxy(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Agents are looked for on the PATH: wait for the login shell's (it gives up by itself after 4 s).
+  await loginPath;
   await adoptSystemProxy();
   // Menus, notifications and the app's own messages follow the UI language.
   const applyLanguage = (s: AppSettings) => setLang(resolveLang(s.language, app.getLocale()));
@@ -640,10 +710,7 @@ app.whenReady().then(async () => {
     const lost = repairSecrets(
       store,
       { open: (v) => safeStorage.decryptString(Buffer.from(v.slice(4), "base64")), seal },
-      (id, key) => {
-        const p = plugins.find((x) => x.id === id);
-        return t("{0} 的 {1}", p?.name ?? id, t(p?.settings?.find((x) => x.key === key)?.label ?? key));
-      },
+      secretLabel,
       () => (process.platform === "darwin" ? OLD_NAMES.map(legacyMacKey).filter((k): k is Buffer => !!k) : []),
     );
     core.updateSettings({
@@ -654,6 +721,7 @@ app.whenReady().then(async () => {
   // Without GPU compositing, backdrop blur makes scrolling choppy; the glass theme then skips it.
   const compositing = String(app.getGPUFeatureStatus().gpu_compositing ?? "");
   core.info.softwareRendering = !compositing.startsWith("enabled") && !process.env.FENN_FORCE_BLUR;
+  appMenu();
   createWindow();
   core.scheduler.start();
   core.resumeInterrupted();
@@ -698,7 +766,7 @@ app.on("before-quit", (e) => {
   quitting = true;
   clearTimeout(configReloadTimer);
   configWatcher.close();
-  store.flush();
+  store.freeze();
   tools.stop();
   core.scheduler.stop();
   // An agent's program outlives the app unless it is stopped first (Antigravity's server cleans up after itself only then).

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Copy, ExternalLink, FolderOpen } from 'lucide-react'
-import { api, toast, useApp } from '../store'
+import { api, toast, toastError, useApp } from '../store'
 import { t } from '../i18n'
 import { useMenu } from './Menu'
 import { Overlay } from './Modal'
@@ -27,7 +27,7 @@ function FileView({ abs, libraryId, rel }: { abs: string; libraryId?: string; re
   const [menu, openMenu] = useMenu({ align: 'right' })
   const close = () => void editor.stop().then((ok) => ok && useApp.getState().set({ fileView: null }))
   const name = abs.split(/[\\/]/).pop() ?? abs
-  const open = (reveal: boolean) => void api().openOutput(abs, reveal).then((r) => !r.ok && r.error && toast(r.error, 'error'))
+  const open = (reveal: boolean) => void api().openOutput(abs, reveal).then((r) => !r.ok && toast(r.error ?? t('打不开这个文件'), 'error'), toastError)
   const preview = (inFull: boolean) => (
     <FilePreview
       id={libraryId ?? ''}

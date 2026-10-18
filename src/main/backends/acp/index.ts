@@ -4,6 +4,7 @@ import { findOnPath } from '../install'
 import { t } from '../../../shared/i18n'
 import { readSessionContext, type SessionLogKind } from '../sessionLogs'
 import { AcpBackend, windowsSafe, type AcpLaunchSpec, type AcpQuirks } from './AcpBackend'
+import { endTree } from '../workspace'
 
 /** A command that reports the sign-in state, and how to read its output. */
 export interface AccountCheck {
@@ -52,7 +53,8 @@ export function runAccountCheck(check: AccountCheck, timeoutMs = 30_000): Promis
   if (!/[\\/]/.test(check.command) && !findOnPath(check.command, env)) return Promise.resolve({ installed: false })
   if (check.requires?.some((p) => !findOnPath(p, env))) return Promise.resolve({ installed: false })
   return new Promise((resolve) => {
-    execFile(command, args, { env, shell, timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
+    const child = execFile(command, args, { env, shell, windowsHide: true }, (err, stdout, stderr) => {
+      clearTimeout(timer)
       if (notFound(err, String(stderr))) return resolve({ installed: false })
       const out = check.stderr ? `${stdout}\n${stderr}` : String(stdout)
       if (err && !out.trim()) return resolve({})
@@ -62,6 +64,8 @@ export function runAccountCheck(check: AccountCheck, timeoutMs = 30_000): Promis
         resolve({})
       }
     })
+    // Not execFile's own timeout: on Windows that ends only cmd.exe, and the program keeps running.
+    const timer = setTimeout(() => endTree(child), timeoutMs)
   })
 }
 

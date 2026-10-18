@@ -8,28 +8,46 @@ You need Node.js 22 or newer.
 
 ```bash
 npm install
-npm run dev
+npm run dev          # the app with hot reload
 ```
 
-## Before sending a pull request
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the main process, the renderer and the agent backends fit together,
+and how to add an API method, a tool for agents or a new-chat page widget.
+
+## Checks
 
 ```bash
 npm run typecheck
-npm test
-npm run build && xvfb-run -a node scripts/e2e.mjs   # UI checks (Linux; on macOS/Windows drop xvfb-run)
-npm run dist -- --publish never
-npm run test:package  # Linux: xvfb-run -a npm run test:package
+npm test                                        # unit and integration tests
+npm run test:e2e                                # UI checks with Playwright (Linux: xvfb-run -a npm run test:e2e)
+npm run style-check                             # raw spacing and colors outside the tokens
+npm run dist -- --publish never && npm run test:package   # package, then smoke-test the packaged app (Linux: xvfb-run -a)
 ```
 
-* Tests use the built-in demo ACP agent (`resources/mock-agent.mjs`); no account or API key is needed.
-* The packaged-app check copies the app outside the checkout and uses isolated data. It checks startup,
-  model discovery, backend configuration reload, confirmation layouts and single-chat deletion.
-  On macOS it also checks native fullscreen round trips. It sends no real model requests and installs no agents.
-* The UI is written in Chinese with English translations. When you add or change a UI string, add its translation with
-  `node scripts/i18n-add.mjs '{"中文":"English"}'`; `test/i18n.test.ts` fails on untranslated strings.
-* Keep backend-specific code inside `src/main/backends/`. The rest of the app talks to agents only through
+* Tests use the built-in demo ACP agent (`resources/mock-agent.mjs`); no account or API key is needed, and nothing is
+  sent to a real agent. The `*.manual.test.ts` files talk to real agents and run only when you ask for them (see their headers).
+* The packaged-app check copies the app outside the checkout and uses isolated data. It sends no model requests and installs no agents.
+* CI runs typecheck and tests on Windows, macOS and Linux, the UI checks on Linux, and packages for all three.
+
+## Conventions
+
+* **Strings.** The UI is written in Chinese with English translations. When you add or change a UI string, wrap it in
+  `t()` (or mark it with `tk()` where it is translated later, when shown) and add its translation:
+  `node scripts/i18n-add.mjs '{"中文":"English"}'`. `test/i18n.test.ts` fails on untranslated strings.
+* **Styles.** Spacing, radii, colors and motion come from `src/renderer/src/tokens.css`; component styles live in
+  `src/renderer/src/styles/NN-area.css`. `npm run style-check` and `test/style-tokens.test.ts` catch raw values.
+* **Backends.** Keep backend-specific code inside `src/main/backends/`. The rest of the app talks to agents only through
   `src/shared/contract.ts`.
-* Match the style of the surrounding code. Keep changes focused, and explain the user-visible effect in the pull request.
+* **No surprises for users.** The app never installs an agent without confirmation, and it doesn't ask an agent to do
+  its own bookkeeping (chat titles are made locally); keep it that way.
+* Match the style of the surrounding code.
+
+## Pull requests
+
+* Keep each pull request focused on one change, and explain its user-visible effect.
+* Add or update a test for behavior you change, and make sure the checks above pass.
+* Update both `README.md` and `README.zh.md` when a user-facing feature changes.
+* Don't commit personal data: no real names, emails, local paths, API keys or tokens in code, tests, fixtures or screenshots.
 
 ## Reporting a bug
 

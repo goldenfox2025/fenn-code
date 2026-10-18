@@ -7,6 +7,12 @@ import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+// MOCK_EXIT_AT_START=1: dies before answering anything, like an agent missing a dependency.
+if (process.env.MOCK_EXIT_AT_START === "1") {
+  process.stderr.write("mock: missing dependency libfoo\n");
+  process.exit(7);
+}
+
 // MOCK_STDIO_MCP=1 makes the mock accept only stdio MCP servers, like some real agents.
 const STDIO_ONLY = process.env.MOCK_STDIO_MCP === "1";
 const LEGACY_MODES = process.env.MOCK_LEGACY_MODES === "1";
@@ -163,6 +169,8 @@ const handlers = {
       .filter((p) => p.type === "text")
       .map((p) => p.text)
       .join("\n");
+    // 「卡住不动」: an agent that hangs and ignores session/cancel.
+    if (raw.trim().endsWith("卡住不动")) return new Promise(() => {});
     // As Grok: "/context" only draws in its own terminal; "/session-info" answers.
     if (raw.trim() === "/context") return { stopReason: "end_turn", _meta: { totalTokens: 0 } };
     if (raw.trim() === "/session-info") {
@@ -184,6 +192,14 @@ const handlers = {
     // "规则在哪": says where the app's notes reached it.
     if (raw.includes("规则在哪")) {
       await stream(sessionId, `系统提示：${s.system.includes("<fenn-context") ? "有" : "无"}；本条消息：${raw.includes("<fenn-context") ? "有" : "无"}`, abort);
+      return { stopReason: "end_turn" };
+    }
+    // "指令是什么": repeats the newest user instructions it was given, and where (system prompt or this message).
+    if (raw.includes("指令是什么")) {
+      s.said = (s.said ?? []).concat(raw);
+      const pick = (text) => [...text.matchAll(/(?:自定义指令|项目指令)（必须遵守）：\n([^\n<]*)/g)].map((m) => m[1]);
+      const inMsg = pick(raw), inSys = pick(s.system), cleared = raw.includes("用户清空了自定义指令");
+      await stream(sessionId, `系统：${inSys.join("|") || "无"}；本条：${cleared ? "已清空" : inMsg.join("|") || "无"}`, abort);
       return { stopReason: "end_turn" };
     }
     // "#难点 …" reports an obstacle through the app's tool ("#难点" alone clears it).
@@ -861,6 +877,8 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
         title: i ? `写入 notes-${i + 1}.md` : "写入 notes.md",
         kind: "edit",
         rawInput: { path: i ? `notes-${i + 1}.md` : "notes.md" },
+        // MOCK_LOCATED=inside|outside: names the file, in the working folder or elsewhere, as real agents do.
+        ...(process.env.MOCK_LOCATED ? { locations: [{ path: join(process.env.MOCK_LOCATED === "inside" ? s.cwd : "/elsewhere", i ? `notes-${i + 1}.md` : "notes.md") }] } : {}),
       },
       options: [
         { optionId: "allow", name: "允许", kind: "allow_once" },
@@ -911,6 +929,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     return;
   }
   const h = handlers[msg.method];
+  // MOCK_METHOD_LOG=<file>: one line per request the client sent, to count session/new and session/prompt.
+  if (process.env.MOCK_METHOD_LOG) (await import("node:fs")).appendFileSync(process.env.MOCK_METHOD_LOG, `${msg.method}\n`);
   if (msg.id == null) return h?.(msg.params ?? {});
   if (!h)
     return send({

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, FolderKanban, MessageCircle, Clock } from 'lucide-react'
 import { api, refreshAccount, useApp } from '../store'
 import { t } from '../i18n'
-import { BackendField, LoginButton, TerminalLoginButton } from './Dialogs'
+import { AccountLine, BackendField, LoginButton, TerminalLoginButton } from './Dialogs'
+import { imeComposing } from '../util'
 
 /**
  * First run: what to call the user, which AI answers, and a first project.
@@ -15,7 +16,10 @@ export function Onboarding() {
   const [step, setStep] = useState(0)
   const [name, setName] = useState(settings.userName)
   const accounts = useApp((s) => s.accounts)
-  const [backendId, setBackendId] = useState(settings.defaultBackendId || backends[0]?.id)
+  // Only an installed agent can answer, so only one can be picked; the others offer 安装 instead.
+  const installed = (id: string) => (accounts[id]?.installed ?? backends.find((b) => b.id === id)?.installed) !== false
+  const firstInstalled = () => backends.find((b) => installed(b.id))?.id ?? ''
+  const [backendId, setBackendId] = useState(() => (settings.defaultBackendId && installed(settings.defaultBackendId) ? settings.defaultBackendId : firstInstalled()))
   const [project, setProject] = useState({ name: '', description: '' })
   const nameRef = useRef<HTMLInputElement>(null)
 
@@ -49,16 +53,23 @@ export function Onboarding() {
   useEffect(() => {
     for (const b of backends) void refreshAccount(b.id, 60_000)
   }, [backends.map((b) => b.id).join()])
+  // The pick found not installed after all (the check answered late): the first installed one instead.
+  // One installed later (from 安装 here) becomes the pick when there was none.
+  const installedKey = backends.map((b) => `${b.id}:${installed(b.id)}`).join()
+  useEffect(() => {
+    if (!backendId || !installed(backendId)) setBackendId(firstInstalled())
+  }, [installedKey])
 
   const finish = async (projectToCreate?: { name: string; description: string }) => {
-    await api().updateSettings({ onboarded: true, userName: name.trim(), ...(backendId ? { defaultBackendId: backendId } : {}) })
+    const usable = backendId && installed(backendId) ? backendId : undefined
+    await api().updateSettings({ onboarded: true, userName: name.trim(), ...(usable ? { defaultBackendId: usable } : {}) })
     if (projectToCreate?.name.trim()) {
-      const p = await api().createProject({ ...projectToCreate, name: projectToCreate.name.trim(), backendId })
+      const p = await api().createProject({ ...projectToCreate, name: projectToCreate.name.trim(), backendId: usable })
       navigate({ view: 'project', projectId: p.id })
     }
   }
 
-  const chosen = backends.find((b) => b.id === backendId)
+  const chosen = backends.find((b) => b.id === backendId && installed(b.id))
   return (
     <div className="onboarding">
       <div className="onboarding-card">
@@ -88,7 +99,7 @@ export function Onboarding() {
             </ul>
             <div className="field">
               <label>{t('怎么称呼您')}</label>
-              <input ref={nameRef} className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t('您的名字（可以不填）')} onKeyDown={(e) => e.key === 'Enter' && setStep(1)} />
+              <input ref={nameRef} className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t('您的名字（可以不填）')} onKeyDown={(e) => e.key === 'Enter' && !imeComposing(e) && setStep(1)} />
             </div>
             <div className="modal-actions">
               <button className="btn ghost skip" onClick={() => void finish()}>
@@ -105,20 +116,36 @@ export function Onboarding() {
             <h1>{t('选择回答您的 AI')}</h1>
             <p className="muted">{t('Fenn Code 本身不含模型，回答来自您选择的 agent。以后可以在 设置 → Agent 后端 里更换。')}</p>
             <div className="choice-list">
-              {backends.map((b) => (
-                <button key={b.id} className={'choice' + (b.id === backendId ? ' on' : '')} onClick={() => setBackendId(b.id)}>
-                  <span className="radio">{b.id === backendId && <Check size={12} />}</span>
-                  <span style={{ flex: 1, textAlign: 'left' }}>
-                    <span className="title">
-                      {b.name}
-                      {b.id === 'codex' && accounts[b.id]?.installed && <span className="rec">{t('推荐')}</span>}
-                      {accounts[b.id]?.installed === false && <span className="small muted"> · {t('未安装')}</span>}
+              {backends.map((b) =>
+                installed(b.id) ? (
+                  <button key={b.id} className={'choice' + (b.id === backendId ? ' on' : '')} onClick={() => setBackendId(b.id)}>
+                    <span className="radio">{b.id === backendId && <Check size={12} />}</span>
+                    <span style={{ flex: 1, textAlign: 'left' }}>
+                      <span className="title">
+                        {b.name}
+                        {b.id === 'codex' && accounts[b.id]?.installed && <span className="rec">{t('推荐')}</span>}
+                      </span>
+                      {b.description && <span className="small muted" style={{ display: 'block' }}>{b.description}</span>}
                     </span>
-                    {b.description && <span className="small muted" style={{ display: 'block' }}>{b.description}</span>}
-                  </span>
-                </button>
-              ))}
+                  </button>
+                ) : (
+                  // Not installed: can't be picked yet; 安装 runs the same confirmed install as Settings.
+                  <div key={b.id} className="choice unavailable" aria-disabled="true">
+                    <span className="radio" />
+                    <span style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                      <span className="title">{b.name}</span>
+                      {b.description && <span className="small muted" style={{ display: 'block' }}>{b.description}</span>}
+                      <AccountLine backendId={b.id} name={b.name} upgrade={b.upgrade} configKey={JSON.stringify(b.configured)} />
+                    </span>
+                  </div>
+                )
+              )}
             </div>
+            {!backendId && (
+              <p className="small muted" style={{ marginTop: 12 }}>
+                {t('还没有装好的 agent。可以先在上面安装一个；也可以先继续，以后在 设置 → Agent 后端 里安装。')}
+              </p>
+            )}
             {/* Only what still has to be done: a backend already signed in needs nothing here. */}
             {chosen && accounts[chosen.id]?.signedIn !== true && (chosen.signIn || chosen.terminalLogin || chosen.settings.length > 0) && (
               <div className="card" style={{ marginTop: 12 }}>
@@ -141,7 +168,7 @@ export function Onboarding() {
               <button className="btn ghost" onClick={() => setStep(0)}>
                 {t('返回')}</button>
               <span className="spacer" />
-              <button className="btn primary" disabled={!backendId} onClick={() => setStep(2)}>
+              <button className="btn primary" onClick={() => setStep(2)}>
                 {t('继续')}</button>
             </div>
           </>

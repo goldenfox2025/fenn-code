@@ -4,6 +4,14 @@
   "version": "0.1.2",
   "description": "Fenn Code: an unofficial, Claude-style desktop app for ACP agents (chats, projects, threads, scheduled tasks). Not affiliated with Anthropic.",
   "author": "Fenn Code contributors",
+  "homepage": "https://github.com/goldenfox2025/fenn-code#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goldenfox2025/fenn-code.git"
+  },
+  "bugs": {
+    "url": "https://github.com/goldenfox2025/fenn-code/issues"
+  },
   "keywords": [
     "acp",
     "agent-client-protocol",

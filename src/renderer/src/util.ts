@@ -62,3 +62,19 @@ export function duration(ms: number): string {
   if (s < 3600) return t('{0}分钟', Math.floor(s / 60))
   return t('{0}小时', Math.floor(s / 3600))
 }
+
+/**
+ * True while an input method is composing (Chinese, Japanese...): Enter picks a
+ * candidate and Esc dismisses the candidates, so neither may submit or close.
+ */
+export function imeComposing(e: KeyboardEvent | { nativeEvent: KeyboardEvent }): boolean {
+  const n = 'nativeEvent' in e ? e.nativeEvent : e
+  return n.isComposing || n.keyCode === 229
+}
+
+/** A time to the minute, never the seconds: 10月18日 09:00, with the year only when it isn't this one. */
+export function minuteTime(ts: number, now = Date.now()): string {
+  const d = new Date(ts)
+  const year = d.getFullYear() !== new Date(now).getFullYear() ? { year: 'numeric' as const } : {}
+  return d.toLocaleString(locale, { ...year, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+}

@@ -38,9 +38,10 @@ import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
 import { PlanLine, planHeadline } from '../components/PlanLine'
 import { api, useApp, toastError } from '../store'
-import { duration, relTime, threadState } from '../util'
+import { errorText } from '@shared/errors'
+import { duration, imeComposing, minuteTime, relTime, threadState } from '../util'
 import { EditableTitle } from './ChatView'
-import { locale, t } from '../i18n'
+import { t } from '../i18n'
 import { tk } from '@shared/i18n'
 import { FilesPane } from '../components/FilesPane'
 import { confirmDialog, EscLayer } from '../components/Modal'
@@ -75,7 +76,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
   useEffect(() => {
     if (!wide) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('.menu, .overlay')) setWide(false)
+      if (e.key === 'Escape' && !e.defaultPrevented && !imeComposing(e) && !document.querySelector('.menu, .overlay')) setWide(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -84,7 +85,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
     if (!floating) return
     const busy = () => !!document.querySelector('.menu, .overlay')
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented && !busy()) setOverlay(false)
+      if (e.key === 'Escape' && !e.defaultPrevented && !imeComposing(e) && !busy()) setOverlay(false)
     }
     const onDown = (e: PointerEvent) => {
       const el = e.target as Element | null
@@ -130,7 +131,7 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
                 {
                   icon: <Download size={15} />,
                   label: t('导出项目对话为 Markdown'),
-                  onClick: () => void api().exportConversation(project.conversationId)
+                  onClick: () => void api().exportConversation(project.conversationId).catch(toastError)
                 },
                 project.archived
                   ? { icon: <ArchiveRestore size={15} />, label: t('恢复项目'), onClick: () => void api().updateProject(project.id, { archived: false }) }
@@ -364,7 +365,7 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
                   <span className="title">{r.name}</span>
                   <span className={'status-chip ' + (r.enabled ? 'done' : '')}>{r.enabled ? t('启用') : r.pausedByArchive ? t('随项目暂停') : t('暂停')}</span>
                 </div>
-                {r.nextRunAt && <div className="preview">{t('下次运行：')}{new Date(r.nextRunAt).toLocaleString(locale)}</div>}
+                {r.nextRunAt && <div className="preview">{t('下次运行：')}{minuteTime(r.nextRunAt)}</div>}
               </div>
             ))}
           </div>
@@ -469,11 +470,30 @@ function FilesPanel({ projectId }: { projectId: string }) {
 }
 
 
+/** The core's limit on one memory entry, and how it names the entry's file (see ProjectMemory). */
+const MEMORY_MAX = 4000
+const memorySlug = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+
 function MemoryPanel({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<MemoryEntry[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
-  const [editing, setEditing] = useState<Partial<MemoryEntry> | null>(null)
-  const reload = () => api().listMemory(projectId).then(setItems)
+  const [editing, setEditingRaw] = useState<Partial<MemoryEntry> | null>(null)
+  // The entry being edited, as it was: a new name replaces it instead of leaving the old one behind.
+  const [editingFrom, setEditingFrom] = useState<string | undefined>()
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
+  const setEditing = (e: Partial<MemoryEntry> | null, from?: string) => {
+    if (!editing || !e) setEditingFrom(from)
+    setFormError('')
+    setEditingRaw(e)
+  }
+  const reload = () => api().listMemory(projectId).then(setItems).catch(toastError)
   // Reloads when an agent or the user changes the memory, instead of polling.
   const version = useApp((s) => s.memoryVersion[projectId] ?? 0)
   useEffect(() => {
@@ -508,21 +528,36 @@ function MemoryPanel({ projectId }: { projectId: string }) {
           <label>{t('内容')}</label>
           <textarea className="textarea" style={{ minHeight: 160 }} value={editing.body ?? ''} onChange={(e) => setEditing({ ...editing, body: e.target.value })} />
         </div>
+        {formError && <div className="msg-error" role="alert" style={{ marginBottom: 12 }}>{formError}</div>}
         <div className="modal-actions">
           <button className="btn" onClick={() => setEditing(null)}>
             {t('取消')}</button>
           <button
             className="btn primary"
-            disabled={!editing.name?.trim() || !editing.body?.trim()}
+            disabled={saving || !editing.name?.trim() || !editing.body?.trim()}
             onClick={async () => {
-              await api().saveMemory(projectId, {
-                name: editing.name!,
-                description: editing.description || editing.name!,
-                type: editing.type,
-                body: editing.body!
-              })
-              setEditing(null)
-              void reload()
+              const key = memorySlug(editing.name!)
+              const body = editing.body!.trim()
+              if (!key) return setFormError(t('名称需要包含文字或数字'))
+              if (body.length > MEMORY_MAX) return setFormError(t('单条记忆不能超过 {0} 字，现在是 {1} 字。请拆分或精简。', MEMORY_MAX, body.length))
+              const from = editingFrom ? memorySlug(editingFrom) : undefined
+              if (key !== from && items?.some((m) => memorySlug(m.name) === key)) return setFormError(t('已有一条叫「{0}」的记忆，请换个名称。', editing.name!.trim()))
+              setSaving(true)
+              try {
+                await api().saveMemory(projectId, {
+                  name: editing.name!,
+                  description: editing.description || editing.name!,
+                  type: editing.type,
+                  body
+                })
+                if (from && from !== key) await api().deleteMemory(projectId, editingFrom!)
+                setEditing(null)
+                void reload()
+              } catch (e) {
+                setFormError(errorText(e))
+              } finally {
+                setSaving(false)
+              }
             }}
           >
             {t('保存')}</button>
@@ -546,14 +581,14 @@ function MemoryPanel({ projectId }: { projectId: string }) {
             <>
               <div className="tool-detail" style={{ marginLeft: 0, fontFamily: 'var(--font)', fontSize: 13 }}>{m.body}</div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button className="btn" onClick={(e) => (e.stopPropagation(), setEditing(m))}>
+                <button className="btn" onClick={(e) => (e.stopPropagation(), setEditing(m, m.name))}>
                   {t('编辑')}</button>
                 <button
                   className="btn danger"
                   onClick={async (e) => {
                     e.stopPropagation()
                     if (!(await confirmDialog(t('删除记忆「{0}」？', m.name)))) return
-                    await api().deleteMemory(projectId, m.name)
+                    await api().deleteMemory(projectId, m.name).catch(toastError)
                     void reload()
                   }}
                 >
@@ -607,7 +642,7 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
               {
                 icon: <Download size={15} />,
                 label: t('导出为 Markdown'),
-                onClick: () => void api().exportConversation(th.id)
+                onClick: () => void api().exportConversation(th.id).catch(toastError)
               },
               {
                 icon: <Trash2 size={15} />,

@@ -35,7 +35,7 @@ describe('finding agent programs, never installing them unasked', () => {
       if (p.id === 'antigravity') {
         expect(p.upgrade.run.command).toBe('curl')
         expect(p.upgrade.run.args?.at(-1)).toMatch(/^https:\/\/dl\.google\.com\/agy-extensions\/releases\//)
-        expect(p.upgrade.after?.command).toBe('tar')
+        expect(p.upgrade.after?.command).toBe(process.platform === 'linux' ? (findOnPath('unzip') || !findOnPath('python3') ? 'unzip' : 'python3') : 'tar')
         continue
       }
       expect(p.upgrade.run.command, p.id).toBe('npm')

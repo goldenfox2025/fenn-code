@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, rmdirSync } from 'node:fs'
 import { open } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, StopReason, TurnResult } from '../../shared/contract'
 import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
@@ -44,6 +44,8 @@ export interface SendOptions {
 export interface TurnHooks {
   /** Text placed before the first prompt of a fresh session (instructions, history). */
   preamble?(conv: Conversation, isResume: boolean): string
+  /** The user's instructions inside the preamble, to notice when they change during a session. */
+  instructions?(conv: Conversation): string
   /** MCP-style tool server the agent session may use. */
   tools?(conv: Conversation): HostToolServer[]
   /**
@@ -93,6 +95,8 @@ interface Live {
   systemApplied?: boolean
   /** The agent compacted since the last prompt. */
   compacted?: boolean
+  /** The user's instructions as this session last received them. */
+  instructions?: string
   /** The context the agent last reported, to notice a compaction it didn't announce. */
   contextUsed?: number
   /** The latest compaction in the agent's log (Qoder), to notice the next one. */
@@ -104,6 +108,22 @@ interface QueuedTurn {
   text: string
   opts: SendOptions
   resolve: () => void
+}
+
+
+
+/** How long 停止 waits for the agent to end its turn before the app ends it (QA: an agent that hangs ignores the cancel). */
+export const STOP_GRACE_MS = 4000
+/** Tool kinds that change nothing (ACP ToolKind): an agent doing these is never held up for an answer. */
+const SAFE_TOOLS = new Set(['read', 'search', 'think', 'fetch'])
+
+/** `path` is `root` or inside it (case-insensitively where the file system is). */
+function within(root: string, path: string): boolean {
+  const fold = process.platform === 'win32' || process.platform === 'darwin'
+  const norm = (p: string) => (fold ? p.toLowerCase() : p)
+  if (!isAbsolute(path)) return false
+  const r = relative(norm(root), norm(path))
+  return !r.startsWith('..') && !isAbsolute(r)
 }
 
 export class ChatService {
@@ -355,6 +375,7 @@ export class ChatService {
         // ack (written by the app) is not a previous session.
         const resumed = prior.some((m) => m.role === 'user')
         const pre = live.systemApplied ? '' : (this.hooks.preamble?.(conv, resumed) ?? '')
+        live.instructions ??= this.hooks.instructions?.(conv) ?? ''
         const history = resumed ? (this.hooks.history?.(conv, prior) ?? transcript(prior)) : ''
         // After the history: a handoff may already carry what the updates would say.
         const updates = this.hooks.beforePrompt?.(conv) ?? ''
@@ -365,7 +386,15 @@ export class ChatService {
         // The agent compacted its context, and the notes were only in its first message: hand them over again, first.
         const rules = live.compacted && !live.systemApplied ? this.hooks.preamble?.(conv, true) : ''
         live.compacted = false
-        promptText = [rules, updates, note, text].filter(Boolean).join('\n\n')
+        // The user changed their instructions since this session got them: hand over the new ones, once.
+        const now = this.hooks.instructions?.(conv) ?? ''
+        const changed = !rules && live.instructions !== undefined && now !== live.instructions
+          ? now
+            ? `（应用）用户更新了指令，从现在起以这一版为准：\n${now}`
+            : '（应用）用户清空了自定义指令和项目指令，之前的那些不再适用。'
+          : ''
+        live.instructions = now
+        promptText = [rules, changed, updates, note, text].filter(Boolean).join('\n\n')
       }
       this.withdrawn.delete(conversationId)
       const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
@@ -374,13 +403,18 @@ export class ChatService {
       costAtStart = live.cost
       live.reported = false
       this.meters.set(conversationId, new TurnMeter(performance.now()))
-      result = this.stopped.has(conversationId) ? { stopReason: 'cancelled' } : await this.backends.prompt(live.backendId, live.sessionId, parts)
+      // 停止 always ends the turn here: an agent that ignores the cancel is let go after STOP_GRACE_MS (see interruptReply).
+      const given = new Promise<TurnResult>((resolve) => this.giveUp.set(conversationId, () => resolve({ stopReason: 'cancelled' })))
+      result = this.stopped.has(conversationId)
+        ? { stopReason: 'cancelled' }
+        : await Promise.race([this.backends.prompt(live.backendId, live.sessionId, parts), given]).finally(() => this.giveUp.delete(conversationId))
     } catch (err) {
       result = err === STOPPED ? { stopReason: 'cancelled' } : { stopReason: 'error', error: err instanceof Error ? err.message : String(err) }
     }
 
     this.flushEmit(reply)
     this.current.delete(conversationId)
+    this.rearmSpare(conversationId)
     reply.state = result.stopReason === 'error' ? 'error' : result.stopReason === 'cancelled' ? 'cancelled' : 'done'
     if (result.error) reply.error = result.error
     // An agent command it carried out without a word (Grok's /always-approve): say it ran.
@@ -516,6 +550,11 @@ export class ChatService {
     return spare && { folder: spare.folder }
   }
 
+  /** What the session opened ahead offers (models, choices), once it is open: a picker reads it instead of opening another. */
+  spareInfo(backendId: string): Promise<SessionInfo | undefined> | undefined {
+    return this.spares.get(backendId)?.info
+  }
+
   /** The id a new chat with this agent in `folder` takes, so it gets the session opened ahead for it. */
   spareId(backendId: string, folder?: string): string | undefined {
     const spare = this.spares.get(backendId)
@@ -548,9 +587,20 @@ export class ChatService {
       return undefined
     }
     spare.claimed = info
-    // The next new chat gets one too.
-    this.prepareSpare(conv.backendId, folder)
+    // The next new chat gets one too, once this chat's first reply is in: opening it now would hold that reply up
+    // (an agent opens one session at a time). The new-chat page asks for one again whenever it shows, too.
+    this.rearm.set(conv.id, { backendId: conv.backendId, folder })
     return spare
+  }
+
+  /** Chats that took the spare session: the next one is opened once their first turn ends (see claimSpare). */
+  private rearm = new Map<string, { backendId: string; folder?: string }>()
+
+  private rearmSpare(conversationId: string): void {
+    const next = this.rearm.get(conversationId)
+    if (!next) return
+    this.rearm.delete(conversationId)
+    this.prepareSpare(next.backendId, next.folder)
   }
 
   /** Sessions being opened, so a message sent meanwhile waits for the same one. */
@@ -698,13 +748,30 @@ export class ChatService {
     return back
   }
 
+  /** Ends a turn whose agent ignored 停止 (see interruptReply). */
+  private giveUp = new Map<string, () => void>()
+
   /** Stops the running reply only; what is queued goes next. */
   private async interruptReply(conversationId: string): Promise<void> {
     if (this.running.has(conversationId)) {
       this.stopped.add(conversationId)
       this.stopWaiters.get(conversationId)?.()
       const live = this.live.get(conversationId)
-      if (live) await this.backends.cancel(live.backendId, live.sessionId)
+      if (live) {
+        // An agent that doesn't answer the cancel (it hangs) mustn't keep the chat 运行中 with its queue stuck:
+        // the turn ends here after a few seconds, and the agent is started again once nothing else runs on it.
+        const timer = setTimeout(() => {
+          const end = this.giveUp.get(conversationId)
+          if (!end) return
+          end()
+          this.forgetSession(conversationId)
+          // Its hung reply still counts as running in the agent; another chat's reply on it would be cut off.
+          const others = [...this.running].some((id) => id !== conversationId && this.live.get(id)?.backendId === live.backendId)
+          if (!others) void this.backends.restart(live.backendId).catch(() => undefined)
+        }, STOP_GRACE_MS)
+        timer.unref?.()
+        await withTimeout(this.backends.cancel(live.backendId, live.sessionId), STOP_GRACE_MS, '').catch(() => undefined)
+      }
     }
     // Dismiss any permission prompt this turn is waiting on.
     for (const [rid, cid] of this.pendingPermissions) if (cid === conversationId) this.respondPermission(rid, null)
@@ -895,7 +962,7 @@ export class ChatService {
   async removeConversation(conversationId: string): Promise<void> {
     await this.cancel(conversationId).catch(() => {})
     this.forgetSession(conversationId)
-    for (const m of [this.meters, this.tags, this.epochs, this.current]) m.delete(conversationId)
+    for (const m of [this.meters, this.tags, this.epochs, this.current, this.rearm]) m.delete(conversationId)
     for (const s of [this.renewAfterTurn, this.unattendedTurns]) s.delete(conversationId)
     clearTimeout(this.emitTimers.get(conversationId))
     this.emitTimers.delete(conversationId)
@@ -941,17 +1008,56 @@ export class ChatService {
 
   routePermission(backendId: string, request: PermissionRequest): void {
     const conversationId = this.bySession.get(`${backendId}:${request.sessionId}`)
+    const auto = conversationId ? this.autoAnswer(conversationId, request) : undefined
+    if (auto) {
+      this.backends.respondPermission(request.requestId, auto.decision)
+      if (auto.note) this.notice(conversationId!, 'info', auto.note)
+      return
+    }
     if (conversationId) {
       this.meters.get(conversationId)?.interrupt()
       this.pendingPermissions.set(request.requestId, conversationId)
       this.patchConversation(conversationId, { status: 'waiting', needsUser: { kind: 'permission', text: request.title, at: Date.now() } })
     }
+    this.showPermission(conversationId, request)
+  }
+
+  /**
+   * Answers what needn't wait for the user (who may be away): an agent reading or searching, or editing
+   * files inside the chat's own working folder, goes ahead; a run nobody watches (a scheduled task,
+   * a board refresh) skips anything else and says so in its reply. The rest is asked inline, in its chat.
+   */
+  private autoAnswer(conversationId: string, request: PermissionRequest): { decision: string | null; note?: string } | undefined {
+    const pick = (...kinds: PermissionRequest['options'][number]['kind'][]) => kinds.map((k) => request.options.find((o) => o.kind === k)).find(Boolean)?.id
+    const conv = this.store.conversation(conversationId)
+    if (!conv) return undefined
+    if (!request.apps && request.toolKind) {
+      const allow = pick('allow_once', 'allow_always')
+      const roots = [this.folderOf(conv), this.scratchPath(conv.id)].filter((r): r is string => !!r)
+      const mine = !!request.paths?.length && request.paths.every((p) => roots.some((r) => within(r, p)))
+      if (allow && (SAFE_TOOLS.has(request.toolKind) || (request.toolKind === 'edit' && mine))) return { decision: allow }
+    }
+    if (!this.isUnattended(conversationId)) return undefined
+    return { decision: pick('reject_once', 'reject_always') ?? null, note: t('无人值守运行，没有人能确认，已跳过：{0}', request.title) }
+  }
+
+  /** Prompts on screen now, by request id: a reloaded window (language switch, a reopened macOS window) shows them again. */
+  private shownPermissions = new Map<string, { conversationId?: string; request: PermissionRequest }>()
+
+  private showPermission(conversationId: string | undefined, request: PermissionRequest): void {
+    this.shownPermissions.set(request.requestId, { conversationId, request })
     this.publish({ type: 'permission', conversationId, request })
+  }
+
+  /** The permission prompts still waiting for an answer, oldest first. */
+  pendingRequests(): { conversationId?: string; request: PermissionRequest }[] {
+    return [...this.shownPermissions.values()]
   }
 
   /** A backend dropped a permission prompt on its own (e.g. it crashed). */
   permissionDropped(requestId: string): void {
     this.pendingPermissions.delete(requestId)
+    this.shownPermissions.delete(requestId)
     this.publish({ type: 'permission-resolved', requestId })
   }
 
@@ -966,13 +1072,18 @@ export class ChatService {
     timeoutMs?: number
   ): Promise<string | null> {
     const requestId = 'host-' + randomUUID()
+    // Nobody is there to answer in an unattended run: the question is skipped at once, and the reply says so.
+    if (this.isUnattended(conversationId)) {
+      this.notice(conversationId, 'info', t('无人值守运行，没有人能确认，已跳过：{0}', q.title))
+      return Promise.resolve(null)
+    }
     this.meters.get(conversationId)?.interrupt()
     return new Promise((resolve) => {
       this.hostWaiters.set(requestId, resolve)
       if (timeoutMs) setTimeout(() => this.hostWaiters.has(requestId) && this.respondPermission(requestId, null), timeoutMs)
       this.pendingPermissions.set(requestId, conversationId)
       this.patchConversation(conversationId, { status: 'waiting', needsUser: { kind: 'permission', text: q.title, at: Date.now() } })
-      this.publish({ type: 'permission', conversationId, request: { ...q, requestId, sessionId: '' } })
+      this.showPermission(conversationId, { ...q, requestId, sessionId: '' })
     })
   }
 
@@ -983,6 +1094,7 @@ export class ChatService {
     this.hostWaiters.delete(requestId)
     if (host) host(decision)
     else this.backends.respondPermission(requestId, decision)
+    this.shownPermissions.delete(requestId)
     this.publish({ type: 'permission-resolved', requestId })
     const answered = conversationId && this.store.conversation(conversationId)?.needsUser?.kind === 'permission' && !this.awaitingPermission(conversationId)
     if (conversationId && this.running.has(conversationId)) this.patchConversation(conversationId, { status: 'working', ...(answered ? { needsUser: undefined } : {}) })

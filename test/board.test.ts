@@ -79,6 +79,11 @@ it('a refresh that leaves its card as it was is recorded as failed', async () =>
     // The mock agent only answers in words: the card is not updated.
     await core.scheduler.run(r.id)
     expect(store.routines.find((x) => x.id === r.id)?.lastError).toBe('这次运行没有更新卡片')
+    // Failed runs don't pile up: only the latest run's chat is kept, to show why it failed.
+    await core.scheduler.run(r.id)
+    await core.scheduler.run(r.id)
+    const runs = store.conversations.filter((c) => c.routineId === r.id)
+    expect(runs.map((c) => c.id)).toEqual([store.routines.find((x) => x.id === r.id)?.lastRunConversationId])
   } finally {
     await dispose()
   }

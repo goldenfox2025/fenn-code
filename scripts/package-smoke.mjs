@@ -19,7 +19,7 @@ const shots = join(release, 'package-smoke')
 mkdirSync(shots, { recursive: true })
 cpSync(source, staged, { recursive: true, verbatimSymlinks: true })
 const executablePath = process.platform === 'darwin'
-  ? join(staged, 'Contents/MacOS/FennCode')
+  ? join(staged, 'Contents/MacOS/Fenn Code')
   : join(staged, process.platform === 'win32' ? 'FennCode.exe' : 'fenn-code')
 const packagedResources = process.platform === 'darwin' ? join(staged, 'Contents/Resources') : join(staged, 'resources')
 assert(!existsSync(join(packagedResources, 'mock-agent.mjs')), 'Release must not ship the demo agent script')

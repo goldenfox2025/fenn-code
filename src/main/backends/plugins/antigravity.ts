@@ -1,7 +1,8 @@
 import { execFile, type ChildProcess } from 'node:child_process'
-import { existsSync, promises as fs, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, promises as fs, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import type { CommandSpec } from '../../../shared/contract'
 import { acpPlugin } from '../acp'
 import { findOnPath } from '../install'
 import { readPyiArchive, topNames, unpackPyi, unpackedEntries } from '../pyiArchive'
@@ -101,12 +102,54 @@ export async function unpackServer(exe: string, onLine: (line: string) => void, 
   if (existsSync(home)) {
     const old = `${home}.old`
     await fs.rm(old, { recursive: true, force: true })
-    await fs.rename(home, old)
+    await renameRetrying(home, old)
     await fs.rm(old, { recursive: true, force: true })
   }
-  await fs.rename(part, home)
+  await renameRetrying(part, home)
   stamp()
   onLine(t('已解出 {0} 个文件（{1} MB），以后启动不再解压到临时文件夹。', r.files, Math.round(r.bytes / 1048576)))
+}
+
+/**
+ * Renames, trying again briefly when Windows says the folder is busy: a virus scanner or the
+ * indexer often holds files just written for a moment. Any other error is thrown at once.
+ */
+export async function renameRetrying(
+  from: string,
+  to: string,
+  rename: (from: string, to: string) => Promise<void> = fs.rename,
+  waits: number[] = [100, 300, 700, 1500, 3000]
+): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      return await rename(from, to)
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (i >= waits.length || (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES')) throw e
+      await new Promise((r) => setTimeout(r, waits[i]))
+    }
+  }
+}
+
+/**
+ * The install step that unpacks the downloaded zip. tar reads a zip on Windows 10+ and macOS
+ * (both bsdtar); GNU tar on Linux doesn't, so there unzip, or Python's zipfile when that is all
+ * there is (it drops the execute bit, which launch sets again).
+ */
+export function unzipStep(
+  zip: string,
+  dir: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
+): CommandSpec & { label: string; labelArgs?: unknown[] } {
+  const label = tk('解压 Antigravity 服务')
+  if (platform !== 'linux') return { label, command: 'tar', args: ['-xf', zip, '-C', dir] }
+  if (!findOnPath('unzip', env) && findOnPath('python3', env)) return { label, command: 'python3', args: ['-I', '-m', 'zipfile', '-e', zip, dir] }
+  return {
+    label: findOnPath('unzip', env) ? label : tk('解压 Antigravity 服务（需要 unzip，但没有找到：请先安装它，例如 sudo apt install unzip，然后重试）'),
+    command: 'unzip',
+    args: ['-o', zip, '-d', dir]
+  }
 }
 
 /** The environment that makes the server run from its unpacked folder (native paths; with others it unpacks again). */
@@ -274,7 +317,7 @@ export default acpPlugin({
     // Each new server process asks for sign-in again: with a key, or the Google sign-in it stored.
     autoAuth: (config) => (config.GEMINI_API_KEY ? 'gemini-api-key' : existsSync(AGY_TOKEN) ? 'oauth-personal' : undefined)
   },
-  // Built-in curl and tar (Windows 10 and later have both): download Google's archive, unpack it into ~/.agy-acp-server.
+  // Built-in curl and tar (Windows 10 and later have both; on Linux unzip, see unzipStep): download Google's archive, unpack it into ~/.agy-acp-server.
   // The version is the one this release was tested with, so it is offered to install, not as an update.
   upgrade: archive
     ? {
@@ -293,11 +336,18 @@ export default acpPlugin({
             }
           : {}),
         run: { command: 'curl', args: ['-fsSL', '--retry', '2', '--connect-timeout', '30', '--create-dirs', '-o', join(AGY_HOME, 'agy-acp-server.zip'), `https://dl.google.com/agy-extensions/releases/${archive}`] },
-        after: { label: tk('解压 Antigravity 服务'), command: 'tar', args: ['-xf', join(AGY_HOME, 'agy-acp-server.zip'), '-C', AGY_HOME] }
+        after: unzipStep(join(AGY_HOME, 'agy-acp-server.zip'), AGY_HOME)
       }
     : undefined,
   launch: async ({ config, defaultModel }) => {
     const exe = findAgy(config)
+    // Unzipped by the app's install on macOS or Linux, the server may lack its execute bit.
+    if (exe && process.platform !== 'win32' && exe.startsWith(AGY_HOME))
+      try {
+        if (!(statSync(exe).mode & 0o100)) chmodSync(exe, 0o755)
+      } catch {
+        // Left as it is; starting it says what is wrong.
+      }
     // Leftovers can only come from an earlier run of the app, so one look per app start is enough; it runs alongside.
     if (exe) tidy(exe)
     // The last start from the unpacked folder never answered (e.g. refused when run as administrator): unpack as before.

@@ -88,7 +88,7 @@ describe('opening a terminal', () => {
   it('builds a visible window per platform', () => {
     const win = terminalLaunch('qodercli', ['login'], 'win32')!
     expect(win.command).toBe('cmd.exe')
-    expect(win.args.at(-1)).toBe('start "" cmd.exe /k qodercli login')
+    expect(win.args.at(-1)).toBe('start "" cmd.exe /s /k "qodercli login"')
     const mac = terminalLaunch('qodercli', ['login'], 'darwin')!
     expect(mac.args[1]).toContain('do script "qodercli login"')
     const dir = mkdtempSync(join(tmpdir(), 'oc-term-'))

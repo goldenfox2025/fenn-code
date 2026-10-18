@@ -68,6 +68,33 @@ describe('observed streaming timings', () => {
     few.chunk(3000, '世界')
     expect(few.m.finish({}, 'end_turn')?.noSpeed).toBe('short')
   })
+  it('times the reply text alone: thinking before it is not in the output count', () => {
+    // Antigravity on the PC: thinking streamed for ~4.5 s, then a one-line reply. Timed with the thinking it read 3.3 tok/s.
+    let now = 0
+    const m = new TurnMeter(0, () => now)
+    const thought = (at: number) => { now = at; m.observe({ kind: 'thought.delta', text: 'hmm' }) }
+    const reply = (at: number, text = 'x') => { now = at; m.observe({ kind: 'message.delta', text }) }
+    for (let at = 500; at <= 5000; at += 500) thought(at)
+    reply(5010, 'Hi!')
+    reply(5020, ' How can I help?')
+    expect(m.finish({ input: 13700, output: 15 }, 'end_turn')).toEqual({ firstResponseMs: 500, outputTokens: 15, noSpeed: 'short' })
+    // Thinking, then a reply that really streams: its speed covers the reply only.
+    let t2 = 0
+    const n = new TurnMeter(0, () => t2)
+    for (let at = 100; at <= 4000; at += 100) { t2 = at; n.observe({ kind: 'thought.delta', text: 'a' }) }
+    for (const at of [5000, 5600, 6000]) { t2 = at; n.observe({ kind: 'message.delta', text: 'b' }) }
+    expect(n.finish({ output: 21 }, 'end_turn')).toEqual({ firstResponseMs: 100, streamMs: 1000, outputTokens: 21, tpotMs: 50 })
+  })
+  it('does not take a tool that ran after the last reply text out of the stream', () => {
+    let now = 0
+    const m = new TurnMeter(0, () => now)
+    for (const at of [100, 700, 1300]) { now = at; m.observe({ kind: 'message.delta', text: 'x' }) }
+    now = 1400
+    m.observe({ kind: 'tool.start', toolId: 't', title: 'tool', status: 'running' })
+    now = 9000
+    m.observe({ kind: 'tool.update', toolId: 't', status: 'completed' })
+    expect(m.finish({ output: 13 }, 'end_turn')).toEqual({ firstResponseMs: 100, streamMs: 1200, outputTokens: 13, tpotMs: 100 })
+  })
   it('leaves out the time tools run, and gives no speed for waits it cannot account for', () => {
     const { m, chunk } = meter()
     chunk(100)

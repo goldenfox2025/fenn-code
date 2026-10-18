@@ -448,6 +448,8 @@ export interface AppSettings {
   /** UI language (Settings → 通用); 'system' follows the OS. */
   language?: 'system' | 'zh' | 'en'
   userName: string
+  /** 自定义指令: what every agent in every conversation should follow (Settings → 通用). */
+  customInstructions?: string
   notifications?: boolean
   /** Keep running in the tray after the window closes (Windows/Linux). */
   runInBackground?: boolean
@@ -495,6 +497,8 @@ export interface AppInfo {
   nativeGlass?: boolean
   /** Where chats' folders go when Settings names none. */
   defaultFolder?: string
+  /** The build has a release channel, so 检查更新 can work. */
+  updates?: boolean
   /** No GPU compositing: expensive effects like backdrop blur are skipped. */
   softwareRendering?: boolean
 }
@@ -514,6 +518,8 @@ export interface AppSnapshot {
   backends: BackendSummary[]
   platform: string
   peerMessages?: PeerMessage[]
+  /** Permission prompts still waiting (a reloaded window shows them again). */
+  permissions?: { conversationId?: string; request: PermissionRequest }[]
 }
 
 /** Pushed from main to renderer. */
@@ -537,6 +543,8 @@ export type AppEvent =
   | { type: 'permission-resolved'; requestId: string }
   | { type: 'toast'; level: 'info' | 'error'; text: string }
   | { type: 'open-conversation'; conversationId: string }
+  /** The macOS app menu's 「设置…」 (⌘,). */
+  | { type: 'open-settings' }
   /** Output of a backend upgrade as it runs. */
   | { type: 'backend-upgrade'; backendId: string; line: string }
 

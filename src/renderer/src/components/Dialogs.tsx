@@ -9,6 +9,8 @@ import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
 import type { BackendSummary } from '@shared/contract'
 import { backendAvailable, prestartOn } from '@shared/backendAvailability'
+import { imeComposing } from '../util'
+import appIcon from '../../../../build/icon.svg'
 
 export function Dialogs() {
   const open = useApp((s) => s.settingsOpen)
@@ -49,17 +51,25 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
     const h = setTimeout(() => void api().suggestFolders(f.name!, true).then((l) => setLikely(l.slice(0, 3)), () => {}), 300)
     return () => clearTimeout(h)
   }, [f.name, f.cwd])
+  // While it saves the button waits: a second click must not make a second project.
+  const [saving, setSaving] = useState(false)
   const save = async () => {
-    if (!f.name?.trim()) return
-    if (existing) {
-      // Only the fields on this form: the board and other state may have changed while it was open.
-      const { name, description, instructions, cwd, backendId } = f
-      await api().updateProject(existing.id, { name: name!.trim(), description, instructions, cwd, backendId })
-    } else {
-      const p = await api().createProject({ ...f, name: f.name.trim() } as Project)
-      navigate({ view: 'project', projectId: p.id })
+    if (!f.name?.trim() || saving) return
+    setSaving(true)
+    try {
+      if (existing) {
+        // Only the fields on this form: the board and other state may have changed while it was open.
+        const { name, description, instructions, cwd, backendId } = f
+        await api().updateProject(existing.id, { name: name!.trim(), description, instructions, cwd, backendId })
+      } else {
+        const p = await api().createProject({ ...f, name: f.name.trim() } as Project)
+        navigate({ view: 'project', projectId: p.id })
+      }
+      onDone()
+    } catch (e) {
+      toastError(e)
+      setSaving(false)
     }
-    onDone()
   }
   return (
     <>
@@ -108,7 +118,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
           {t('取消')}</button>
-        <button className="btn primary" disabled={!f.name?.trim()} onClick={save}>
+        <button className="btn primary" disabled={!f.name?.trim() || saving} onClick={save}>
           {existing ? t('保存') : t('创建项目')}
         </button>
       </div>
@@ -123,7 +133,12 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
   const projects = useApp((s) => s.projects)
   const [name, setName] = useState(existing?.name ?? '')
   const [prompt, setPrompt] = useState(existing?.prompt ?? '')
-  const [target, setTarget] = useState(existing?.target.projectId ?? projectId ?? '')
+  // An agent's routine may post into one conversation: that stays its target unless another is picked.
+  const convTarget = existing?.target.conversationId
+  const convTitle = useApp((s) => (convTarget ? s.conversations.find((c) => c.id === convTarget)?.title : undefined))
+  const [target, setTarget] = useState(convTarget ? `conv:${convTarget}` : (existing?.target.projectId ?? projectId ?? ''))
+  const keepsConversation = !!convTarget && target === `conv:${convTarget}`
+  const [saving, setSaving] = useState(false)
   const defaultBackend = useApp((s) => s.settings.defaultBackendId)
   const [backendId, setBackendId] = useState(existing?.backendId ?? '')
   const usableForRoutine = useUsableBackends(backendId)
@@ -132,19 +147,27 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
   const [schedule, setSchedule] = useState<Schedule>(existing?.schedule ?? { kind: 'daily', time: '09:00' })
 
   const save = async () => {
-    if (!name.trim() || !prompt.trim()) return
-    await api().saveRoutine({
-      id: existing?.id,
-      name: name.trim(),
-      prompt: prompt.trim(),
-      schedule,
-      target: target ? { projectId: target } : {},
-      // Results in a project go to its chat, which has its own backend.
-      backendId: target ? existing?.backendId : shownBackend || undefined,
-      enabled: existing?.enabled ?? true
-    } as Routine)
-    toast(existing ? t('已保存定时任务') : t('已创建定时任务'))
-    onDone()
+    if (!name.trim() || !prompt.trim() || saving) return
+    // The target as it was when it wasn't changed here (with every field the form doesn't show).
+    const sameTarget = existing && (keepsConversation || (!convTarget && (existing.target.projectId ?? '') === target))
+    setSaving(true)
+    try {
+      await api().saveRoutine({
+        id: existing?.id,
+        name: name.trim(),
+        prompt: prompt.trim(),
+        schedule,
+        target: sameTarget ? existing.target : target ? { projectId: target } : {},
+        // Results in a project (or an existing conversation) go to its chat, which has its own backend.
+        backendId: target ? existing?.backendId : shownBackend || undefined,
+        enabled: existing?.enabled ?? true
+      } as Routine)
+      toast(existing ? t('已保存定时任务') : t('已创建定时任务'))
+      onDone()
+    } catch (e) {
+      toastError(e)
+      setSaving(false)
+    }
   }
 
   return (
@@ -231,6 +254,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
           value={target}
           onChange={setTarget}
           options={[
+            ...(convTarget ? [{ value: `conv:${convTarget}`, label: convTitle ? t('对话「{0}」', convTitle) : t('原来的对话') }] : []),
             { value: '', label: t('每次新建一个对话') },
             ...(projects.some((p) => !p.archived || p.id === projectId) ? [{ heading: t('项目') }] : []),
             ...projects.filter((p) => !p.archived || p.id === projectId).map((p) => ({ value: p.id, label: p.name, icon: <FolderKanban size={15} /> }))
@@ -246,7 +270,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
           {t('取消')}</button>
-        <button className="btn primary" disabled={!name.trim() || !prompt.trim()} onClick={save}>
+        <button className="btn primary" disabled={!name.trim() || !prompt.trim() || saving} onClick={save}>
           {t('保存')}</button>
       </div>
     </>
@@ -333,12 +357,20 @@ function GeneralSettings() {
   const [name, setName] = useState(settings.userName)
   // Saved on blur, and also when Settings closes with the field still focused (Esc or ✕).
   useSaveOnLeave(name, (v) => v.trim() !== useApp.getState().settings.userName && void api().updateSettings({ userName: v.trim() }))
+  const [rules, setRules] = useState(settings.customInstructions ?? '')
+  const saveRules = (v: string) => v.trim() !== (useApp.getState().settings.customInstructions ?? '') && void api().updateSettings({ customInstructions: v.trim() })
+  useSaveOnLeave(rules, saveRules)
   return (
     <>
       <h2>{t('通用')}</h2>
       <div className="field">
         <label>{t('怎么称呼您')}</label>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => api().updateSettings({ userName: name.trim() })} placeholder={t('您的名字')} />
+      </div>
+      <div className="field">
+        <label>{t('自定义指令')}</label>
+        <textarea className="textarea" value={rules} onChange={(e) => setRules(e.target.value)} onBlur={() => saveRules(rules)} placeholder={t('每个对话里的 agent 都会遵守，例如：回答简短一些；代码注释用英文')} />
+        <div className="help">{t('所有后端都会收到。改了以后，进行中的对话从下一轮起按新的来；项目里的对话还会收到项目指令。')}</div>
       </div>
       <div className="field">
         <label>{t('默认文件夹')}</label>
@@ -407,7 +439,9 @@ function GeneralSettings() {
 function AboutSettings() {
   const [info, setInfo] = useState<AppInfo>()
   const [check, setCheck] = useState<UpdateCheck | 'checking'>()
-  useEffect(() => void api().appInfo().then(setInfo), [])
+  useEffect(() => void api().appInfo().then(setInfo, toastError), [])
+  // A build without a release channel can't check, so the control isn't there.
+  const canCheck = !!info?.updates
   const rows: [string, string | undefined][] = info
     ? [
         [t('版本'), info.version],
@@ -422,7 +456,7 @@ function AboutSettings() {
     <>
       <h2>{t('关于')}</h2>
       <div className="about-head">
-        <div className="about-logo">Co</div>
+        <img className="about-logo" src={appIcon} alt="" />
         <div>
           <div className="title">Fenn Code</div>
           <div className="small muted">{t('桌面上的 AI 工作台：对话、项目和定时任务，背后的 agent 可以随时更换。')}</div>
@@ -437,6 +471,7 @@ function AboutSettings() {
           </div>
         ))}
       </div>
+      {canCheck && (
       <div className="field" style={{ marginTop: 16 }}>
         <div className="row-between">
           <div>
@@ -467,13 +502,14 @@ function AboutSettings() {
               disabled={check === 'checking'}
               onClick={async () => {
                 setCheck('checking')
-                setCheck(await api().checkForUpdates())
+                setCheck(await api().checkForUpdates().catch((e: unknown) => ({ status: 'error' as const, message: errorText(e) })))
               }}
             >
               {t('检查更新')}</button>
           )}
         </div>
       </div>
+      )}
       <Diagnostics />
     </>
   )
@@ -946,16 +982,27 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
   const [value, setValue] = useState('')
   const [editing, setEditing] = useState(!configured)
   useEffect(() => setEditing(!configured), [configured])
+  // Enter saves, then leaving the field would save the same again.
+  const saving = useRef(false)
   const save = async () => {
     const v = value.trim()
     if (!v) return setEditing(!configured)
-    setValue('')
-    await api().setBackendSetting(backendId, setting.key, v)
-    setEditing(false)
-    toast(t('已保存，下次对话生效'))
+    if (saving.current) return
+    saving.current = true
+    try {
+      await api().setBackendSetting(backendId, setting.key, v)
+      setValue('')
+      setEditing(false)
+      toast(t('已保存，下次对话生效'))
+    } catch (e) {
+      // The typed key stays in the field, to save again.
+      toastError(e)
+    } finally {
+      saving.current = false
+    }
   }
   // A value typed but not yet saved is kept when Settings closes.
-  useSaveOnLeave(value, (v) => v.trim() && void api().setBackendSetting(backendId, setting.key, v.trim()))
+  useSaveOnLeave(value, (v) => v.trim() && !saving.current && void api().setBackendSetting(backendId, setting.key, v.trim()).catch(toastError))
   return (
     <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
       <label>{setting.label}</label>
@@ -969,6 +1016,7 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
           onChange={(e) => setValue(e.target.value)}
           onBlur={() => void save()}
           onKeyDown={(e) => {
+            if (imeComposing(e)) return
             if (e.key === 'Enter') void save()
             else if (e.key === 'Escape' && configured) {
               e.stopPropagation()
@@ -982,7 +1030,7 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
           <span className="small muted" style={{ flex: 1 }}>{setting.secret ? t('已设置（••••••）') : t('已设置')}</span>
           <button className="text-link" onClick={() => setEditing(true)}>
             {t('修改')}</button>
-          <button className="text-link danger" onClick={() => api().setBackendSetting(backendId, setting.key, '')}>
+          <button className="text-link danger" onClick={() => void api().setBackendSetting(backendId, setting.key, '').catch(toastError)}>
             {t('清除')}</button>
         </div>
       )}
@@ -1010,7 +1058,7 @@ interface ConnectorDraft {
 function ConnectorSettings({ onFormChange }: { onFormChange: (open: boolean) => void }) {
   const [list, setList] = useState<ConnectorView[] | null>(null)
   const [draft, setDraft] = useState<ConnectorDraft | null>(null)
-  const reload = () => api().listConnectors().then(setList)
+  const reload = () => api().listConnectors().then(setList, toastError)
   useEffect(() => {
     void reload()
   }, [])
@@ -1057,7 +1105,7 @@ function ConnectorSettings({ onFormChange }: { onFormChange: (open: boolean) => 
               className={'switch' + (c.enabled ? ' on' : '')}
               data-tip={c.enabled ? t('已启用') : t('已停用')}
               onClick={async () => {
-                await api().saveConnector({ ...c, enabled: !c.enabled })
+                await api().saveConnector({ ...c, enabled: !c.enabled }).catch(toastError)
                 void reload()
               }}
             />
@@ -1083,13 +1131,16 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
     onDone()
   })
   const set = (p: Partial<ConnectorDraft>) => setD({ ...d, ...p })
+  const [saving, setSaving] = useState(false)
   const save = async () => {
+    if (saving) return
     const words = splitArgs(d.commandLine)
     const secrets: Record<string, string> = {}
     for (const line of d.secretsText.split('\n')) {
       const m = /^\s*([^=:\s]+)\s*[=:]\s*(.*)$/.exec(line)
       if (m) secrets[m[1]] = m[2].trim()
     }
+    setSaving(true)
     try {
       await api().saveConnector({
         id: d.id,
@@ -1104,6 +1155,7 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
       onDone()
     } catch (e) {
       setError(errorText(e))
+      setSaving(false)
     }
   }
   return (
@@ -1159,8 +1211,12 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
               className="btn danger"
               onClick={async () => {
                 if (!(await confirmDialog(t('删除连接器「{0}」？', d.name)))) return
-                await api().deleteConnector(d.id!)
-                onDone()
+                try {
+                  await api().deleteConnector(d.id!)
+                  onDone()
+                } catch (e) {
+                  setError(errorText(e))
+                }
               }}
             >
               {t('删除')}</button>
@@ -1169,7 +1225,7 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
         <div className="field-row">
           <button className="btn" onClick={onDone}>
             {t('取消')}</button>
-          <button className="btn primary" onClick={save}>
+          <button className="btn primary" disabled={saving} onClick={save}>
             {t('保存')}</button>
         </div>
       </div>

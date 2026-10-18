@@ -4,7 +4,7 @@
  */
 import type { Conversation, Project } from '@shared/model'
 import { t } from './i18n'
-import { api, toastError, useApp } from './store'
+import { api, toast, toastError, useApp } from './store'
 import { routeFor } from './routes'
 
 export { routeFor }
@@ -42,4 +42,14 @@ export async function deleteProject(p: Project): Promise<boolean> {
   const route = useApp.getState().route
   if (route.view === 'project' && route.projectId === p.id) useApp.getState().navigate({ view: 'projects' })
   return true
+}
+
+/** Opens a file or folder with the system (or shows it in the file manager); says so when it can't. */
+export async function openInFileManager(path: string, reveal?: boolean): Promise<void> {
+  try {
+    const r = await api().openOutput(path, reveal)
+    if (!r.ok) toast(r.error ?? t('打不开这个文件夹'), 'error')
+  } catch (e) {
+    toastError(e)
+  }
 }

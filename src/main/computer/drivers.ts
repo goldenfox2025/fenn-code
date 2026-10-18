@@ -62,8 +62,8 @@ export interface Coords {
   fromDevice(x: number, y: number): [number, number]
 }
 
-export function inputDriver(platform: NodeJS.Platform, coords: Coords, resourcesDir: string): InputDriver {
-  if (platform === 'darwin') return new MacDriverImpl()
+export function inputDriver(platform: NodeJS.Platform, coords: Coords, resourcesDir: string, macAccess?: () => string | undefined): InputDriver {
+  if (platform === 'darwin') return new MacDriverImpl(macAccess)
   if (platform === 'win32') return new WindowsDriverImpl(coords, () => spawnWinHost(join(resourcesDir, 'win-input.ps1')))
   return new LinuxDriverImpl(coords)
 }

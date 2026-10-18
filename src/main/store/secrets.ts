@@ -41,7 +41,8 @@ export function legacyMacKey(oldName: string): Buffer | undefined {
     const pw = execFileSync('security', ['find-generic-password', '-w', '-s', `${oldName} Safe Storage`], {
       encoding: 'utf8',
       timeout: 60_000,
-      stdio: ['ignore', 'pipe', 'ignore']
+      stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true
     }).trim()
     return pw ? macKeyFromPassword(pw) : undefined
   } catch {

@@ -54,11 +54,24 @@ describe('the files panel', () => {
       tool([join(root, 'src', 'a.ts')], 'read', 'completed', 6),
       tool([join(root, 'failed.md')], 'edit', 'failed', 7)
     ])
-    expect(changes.map((c) => [c.path, c.changedAt, c.exists])).toEqual([
-      ['gone.md', 4, false],
-      ['src/a.ts', 3, true],
-      ['README.md', 2, true]
+    // A file still there shows its own last-modified time (the PC saw 「已修改 · 昨天」: the turn's start); a deleted one, the change.
+    utimesSync(join(root, 'README.md'), new Date(2_000_000), new Date(2_000_000))
+    utimesSync(join(root, 'src', 'a.ts'), new Date(1_000_000), new Date(1_000_000))
+    const real = changedFiles(root, [
+      tool([join(root, 'README.md')], 'edit', 'completed', 1),
+      tool(['src/a.ts'], 'edit', 'completed', 3),
+      tool([join(root, 'README.md')], 'edit', 'completed', 2),
+      tool([join(root, 'gone.md')], 'delete', 'completed', 4),
+      tool(['/elsewhere/x.md'], 'edit', 'completed', 5),
+      tool([join(root, 'src', 'a.ts')], 'read', 'completed', 6),
+      tool([join(root, 'failed.md')], 'edit', 'failed', 7)
     ])
+    expect(real.map((c) => [c.path, c.changedAt, c.exists])).toEqual([
+      ['README.md', 2_000_000, true],
+      ['src/a.ts', 1_000_000, true],
+      ['gone.md', 4, false]
+    ])
+    expect(changes.map((c) => c.path).sort()).toEqual(['README.md', 'gone.md', 'src/a.ts'])
   })
 
   it('finds files made before the chat had its folder', () => {

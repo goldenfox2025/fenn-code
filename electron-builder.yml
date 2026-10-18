@@ -17,7 +17,21 @@ asarUnpack:
   - "**/*.node"
 mac:
   category: public.app-category.productivity
+  # The bundle is "Fenn Code.app", as the README and macOS menus name it.
+  executableName: Fenn Code
+  artifactName: Fenn-Code-${version}-mac-${arch}.${ext}
+  # No Apple Developer ID yet: the app is signed ad hoc ("-"), which Apple Silicon needs to run it at all.
+  # Gatekeeper still blocks a downloaded copy until it is allowed (see the README). An ad-hoc signature
+  # has no team ID, so the hardened runtime's library validation would refuse Electron's own frameworks.
+  identity: "-"
+  hardenedRuntime: false
+  # The architecture of the machine that builds, so `./build.sh --installer --run` starts a native app;
+  # CI builds both with `--mac zip --arm64 --x64` (.github/workflows/build.yml).
   target: [dmg, zip]
+  extendInfo:
+    # Computer control drives other apps through System Events (Apple Events) and takes screenshots.
+    NSAppleEventsUsageDescription: Fenn Code controls other apps only when you turn on computer control and allow an agent to use them.
+    NSScreenCaptureUsageDescription: Fenn Code takes screenshots only when you turn on computer control, so the agent can see the apps you allow.
 win:
   target: [nsis, zip]
   artifactName: Fenn-Code-${version}-win.${ext}

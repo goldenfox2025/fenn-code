@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { routeFor } from '../actions'
+import { openInFileManager, routeFor } from '../actions'
 import { StatusChip } from './StatusChip'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -33,8 +33,8 @@ import {
 } from 'lucide-react'
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
 import { planHeadline } from './PlanLine'
-import { api, openFileInApp, refreshAccount, toast, useApp } from '../store'
-import { dayLabel, textOf } from '../util'
+import { api, openFileInApp, refreshAccount, useApp } from '../store'
+import { dayLabel, imeComposing, textOf } from '../util'
 import { markdownParts } from '../markdownParts'
 import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
@@ -221,7 +221,7 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
             value={editing}
             onChange={(e) => setEditing(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (e.key === 'Enter' && !e.shiftKey && !imeComposing(e)) {
                 e.preventDefault()
                 save()
               }
@@ -333,7 +333,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           case 'thought':
             return <ThoughtFold key={i} block={g} live={live} />
           case 'tools':
-            return <ToolRunView key={i} tools={g.tools} live={live} />
+            return <ToolRunView key={i} tools={g.tools} live={live} ended={!streaming} />
           case 'plan':
             return <PlanFold key={i} entries={g.entries} />
           case 'text':
@@ -733,11 +733,11 @@ function ThoughtFold({ block, live }: { block: Extract<Block, { type: 'thought' 
 /** A few tool calls stand on their own lines; a long run folds into one line that says what it did. */
 const RUN_SHOWN = 4
 
-function ToolRunView({ tools, live }: { tools: ToolBlock[]; live: boolean }) {
+function ToolRunView({ tools, live, ended }: { tools: ToolBlock[]; live: boolean; ended: boolean }) {
   const rows = (
     <div className="tool-run">
       {tools.map((s) => (
-        <ToolRow key={s.toolId} tool={s} />
+        <ToolRow key={s.toolId} tool={s} ended={ended} />
       ))}
     </div>
   )
@@ -749,9 +749,13 @@ function ToolRunView({ tools, live }: { tools: ToolBlock[]; live: boolean }) {
   )
 }
 
-/** One tool call; it opens to its input and output. */
-function ToolRow({ tool: s }: { tool: ToolBlock }) {
+/**
+ * One tool call; it opens to its input and output. In a reply that has ended (finished,
+ * stopped, or cut off by a restart) a call never reported done no longer spins.
+ */
+function ToolRow({ tool: s, ended }: { tool: ToolBlock; ended: boolean }) {
   const [open, setOpen] = useState(false)
+  const unfinished = ended && s.status !== 'completed' && s.status !== 'failed'
   return (
     <div className="step-tool">
       <button className="tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -766,12 +770,12 @@ function ToolRow({ tool: s }: { tool: ToolBlock }) {
         )}
         <span className="t" data-tip={toolTitle(s) !== s.title ? s.title : undefined}>{toolTitle(s)}</span>
         {/* Like Claude: a finished step needs no mark; running and failed ones do. */}
-        {s.status !== 'completed' && <StatusIcon status={s.status} />}
+        {s.status !== 'completed' && !unfinished && <StatusIcon status={s.status} />}
       </button>
       {open && (
         <div className="tool-detail">
           {s.input && `${t('输入')}\n${s.input}\n\n`}
-          {s.output ? `${t('输出')}\n${s.output}` : s.status === 'running' ? t('运行中…') : ''}
+          {s.output ? `${t('输出')}\n${s.output}` : unfinished ? t('没有运行完') : s.status === 'running' ? t('运行中…') : ''}
         </div>
       )}
     </div>
@@ -1003,10 +1007,7 @@ function ThreadSuggestion({ m, last, busy }: { m: Message; last?: boolean; busy?
 function PlacedLine({ path }: { path: string }) {
   const platform = useApp((s) => s.platform)
   const name = path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
-  const open = async () => {
-    const r = await api().openOutput(path)
-    if (!r.ok) toast(r.error ?? t('打不开这个文件夹'), 'error')
-  }
+  const open = () => openInFileManager(path)
   return (
     <div className="placed-line">
       <FolderOpen size={14} />

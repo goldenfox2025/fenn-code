@@ -1,15 +1,15 @@
 /**
  * Background tidying of a new chat after its first exchange:
- *  - gives it a short title (as Claude does), in one agent call;
+ *  - gives it a short title, made here from what the user wrote: no agent is asked,
+ *    so naming a chat never spends the user's quota;
  *  - when the chat has no folder and its first turn clearly worked inside one
  *    folder the app already knows, attaches the chat to that folder, silently.
  * It never files a chat into a project: projects are their own chat plus threads.
  */
 import type { Conversation, Message } from '../../shared/model'
-import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import { textOf, type ChatService } from './ChatService'
-import { titleFrom } from './titles'
+import { localTitle, titleFrom } from './titles'
 
 export class AutoAssigner {
   private checked = new Set<string>()
@@ -24,7 +24,6 @@ export class AutoAssigner {
   constructor(
     private readonly store: Store,
     private readonly chat: ChatService,
-    private readonly backends: BackendManager,
     /** Folders the app knows (recent ones, projects', the default). */
     private readonly knownFolders: () => string[] = () => [],
     private readonly attachFolder: (conversationId: string, folder: string) => void = () => {},
@@ -41,18 +40,19 @@ export class AutoAssigner {
 
   /**
    * Called after every turn. After the first exchange: a title, and a folder if one clearly fits.
-   * If that exchange was only a greeting, the title is made again once the chat has real content.
+   * If that exchange was only a greeting, the title is made again from the first message with real content.
    */
   async consider(conv: Conversation, reply: Message): Promise<void> {
     if (conv.kind !== 'chat' || reply.state !== 'done') return
-    const messages = this.store.messagesOf(conv.id).filter((m) => !m.hidden)
-    const users = messages.filter((m) => m.role === 'user')
+    const users = this.store.messagesOf(conv.id).filter((m) => !m.hidden && m.role === 'user')
     const firstUser = users[0]
     if (!firstUser) return
     const first = !this.checked.has(conv.id)
+    const latest = textOf(users[users.length - 1]).trim()
     // An agent command (/compact, /always-approve on) is not content to name the chat after.
-    const command = /^\/\S+/.test(textOf(users[users.length - 1]).trim())
-    const again = !first && !command && conv.titleAuto && isSmallTalk(textOf(firstUser)) && users.length >= 2 && users.length <= 3 && !this.retitled.has(conv.id)
+    const command = /^\/\S+/.test(latest)
+    const again = !first && !command && conv.titleAuto && isSmallTalk(textOf(firstUser)) && !isSmallTalk(latest) &&
+      users.length >= 2 && users.length <= 3 && !this.retitled.has(conv.id)
     if (!first && !again) return
     this.checked.add(conv.id)
     if (again) this.retitled.add(conv.id)
@@ -62,39 +62,12 @@ export class AutoAssigner {
       if (folder) this.attachFolder(conv.id, folder)
     }
 
-    const wantTitle = again || conv.title === titleFrom(textOf(firstUser))
-    if (!wantTitle) return
-
-    const exchange = again ? messages.slice(-4) : [firstUser, reply]
-    const chatText = exchange
-      .map((m) => `${m.role === 'user' ? '用户' : '助手'}：${textOf(m).slice(0, m.role === 'user' ? 1500 : 800)}`)
-      .join('\n\n')
-    const others = this.store.conversations
-      .filter((c) => c.kind === 'chat' && c.id !== conv.id)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 30)
-      .map((c) => c.title)
-    const prompt = [
-      '<<classify>>',
-      '这是一个后台整理任务，不要使用任何工具，只输出一行 JSON：{"title": "..."}。',
-      '- title：概括下面对话主题的简短标题，用对话的语言，不超过 16 个字，不加引号和句号。要具体到这次对话的内容，不要用“简单问候”“闲聊”这类笼统的词。',
-      ...(others.length ? [`- title 不要和这些已有标题重复：${others.join('；')}`] : []),
-      `<chat>${chatText}</chat>`
-    ].join('\n')
-
-    let answer = ''
-    try {
-      answer = await this.backends.ask(conv.backendId, prompt, { timeoutMs: 90_000 })
-    } catch {
-      return
-    }
-    const parsed = parseAnswer(answer)
+    // Only a title the app gave: one the user typed (or a routine's name) is never replaced.
     const current = this.store.conversation(conv.id)
-    if (!current) return
-
-    if (parsed.title && current.title === conv.title) {
-      this.chat.patchConversation(conv.id, { title: this.distinct(parsed.title.slice(0, 40), conv.id), titleAuto: true })
-    }
+    if (!current || current.title !== conv.title) return
+    if (!(again || conv.title === titleFrom(textOf(firstUser)))) return
+    const title = localTitle(again ? latest : textOf(firstUser))
+    if (title) this.chat.patchConversation(conv.id, { title: this.distinct(title, conv.id), titleAuto: true })
   }
 }
 
@@ -131,28 +104,4 @@ export function folderOfTurn(reply: Message, known: string[], ignored: string[] 
 export function isSmallTalk(text: string): boolean {
   const t = text.trim().replace(/[\s!！。.,，~～?？]+$/g, '')
   return t.length <= 6 || /^(你好|您好|嗨|哈喽|hello|hi|hey|在吗|早上好|晚上好|下午好|谢谢)/i.test(t)
-}
-
-/** Every {...} in the answer that parses as JSON, innermost-first candidates included. */
-function jsonObjects(answer: string): Record<string, unknown>[] {
-  const out: Record<string, unknown>[] = []
-  for (let start = answer.indexOf('{'); start >= 0; start = answer.indexOf('{', start + 1)) {
-    for (let end = answer.indexOf('}', start); end >= 0; end = answer.indexOf('}', end + 1)) {
-      try {
-        const v = JSON.parse(answer.slice(start, end + 1))
-        if (v && typeof v === 'object' && !Array.isArray(v)) {
-          out.push(v)
-          break
-        }
-      } catch {
-        /* keep extending */
-      }
-    }
-  }
-  return out
-}
-
-export function parseAnswer(answer: string): { title?: string } {
-  const v = jsonObjects(answer).find((o) => 'title' in o)
-  return { title: v && typeof v.title === 'string' ? v.title.trim().replace(/^["'「]|["'」。.]$/g, '') || undefined : undefined }
 }

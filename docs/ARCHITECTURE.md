@@ -18,7 +18,7 @@ flowchart LR
     BM["BackendManager"]
     ACP["AcpBackend"]
   end
-  AG["Agent CLIs<br/>Codex · Claude Code · Grok · Qoder"]
+  AG["Agent CLIs<br/>Codex · Claude Code · Grok · Antigravity · Qoder"]
 
   ST -- "API_METHODS (oc:name)" --> PRE --> CORE
   CORE -- "AppEvent stream" --> ST
@@ -56,7 +56,7 @@ flowchart TB
   CORE --> ORCH["Orchestrator"]
   CORE --> PEERS["PeerMail<br/>thread-to-thread notes"]
   CORE --> SCHED["Scheduler<br/>routines"]
-  CORE --> AUTO["AutoAssigner<br/>titles · folders"]
+  CORE --> AUTO["AutoAssigner<br/>local titles · folders"]
   CORE --> COMP["ComputerControl<br/>(only while 电脑控制 is on)"]
   ORCH --> TOOLS["core/tools/<br/>args · progress · project data · routines"]
   ORCH --> MEM["ProjectMemory"] & FILES["ProjectFiles"] & ART["Artifacts"]
@@ -70,10 +70,11 @@ flowchart TB
 |---|---|---|
 | API between renderer and core | `src/shared/model.ts` (`FennApi`), `src/shared/ipc.ts` (`API_METHODS`) | See "Adding an API method" |
 | Core facade | `src/main/core/AppCore.ts` | Every API method is an AppCore method of the same name |
-| Turns, sessions, streaming | `src/main/core/ChatService.ts` | One conversation's agent session, queue, permissions |
+| Turns, sessions, streaming | `src/main/core/ChatService.ts` | One conversation's agent session, queue, permissions, spare sessions |
+| Chat titles and folders | `src/main/core/AutoAssigner.ts`, `src/main/core/titles.ts` | Titles made locally (`localTitle`); no agent is asked |
 | Prompts and app tools | `src/main/core/Orchestrator.ts`, `src/main/core/tools/*` | Tool families are plain functions of their deps |
 | Persistence | `src/main/store/Store.ts` | Debounced, atomic JSON files; lookups by id |
-| Backends | `src/main/backends/` | ACP adapter plus one plugin file per backend (see the README) |
+| Backends | `src/main/backends/` | ACP adapter (`acp/`), one plugin file per built-in backend in `plugins/` (Codex, Claude Code, Grok, Antigravity, Qoder), `backends.json` entries in `registry.ts` |
 | Renderer state | `src/renderer/src/store.ts` | Applies AppEvents; `toast`, `toastError` |
 | Shared renderer actions | `src/renderer/src/actions.ts`, `routes.ts` | Deleting chats and projects, where a conversation opens |
 | Styles | `src/renderer/src/tokens.css`, `styles.css` → `styles/NN-area.css` | Files load in cascade order; values come from tokens. Motion: `--ease` and `--dur-1/2/3`, entrances in `19-motion.css` |
@@ -113,6 +114,30 @@ A thread's tool list counts against `test/prompt-size.test.ts`. That test measur
 
 A chat with no folder works in a private scratch folder (`ChatService.scratchPath`), where the agent reads, writes and runs commands freely. Anything outside the working folder goes through a permission prompt (`backends/workspace.ts`); in a chat with no folder of its own, that prompt also offers 「设为工作文件夹」 for the folder involved (its nearest `.git` project, when there is one). Choosing it sets the chat's folder; the next turn's session starts there and the scratch files move in without replacing the user's. A mode that trusts the agent (bypassPermissions, full-access) is not asked. A chat that only made files in scratch gets `Documents/Fenn Code/<title>` after its turn (`AppCore.placeChat`).
 
+## Chat titles
+
+`AutoAssigner.consider` runs after every turn of a plain chat. After the first exchange it names the chat with `localTitle` (`core/titles.ts`): the first sentence of the user's first message (its first line, when the sentence is too short to say anything), without openers such as "please" or "帮我", cut to about 20 CJK or 40 Latin characters. Until then the chat shows `titleFrom`, the start of that message. If that first message was only a greeting, the title is made once more from the next message with real content. No agent is asked, so naming a chat never spends the user's quota. A title the user typed (or a routine's name) is never replaced, and a title another chat already has gets a number.
+
+The same pass attaches a chat that has no folder to a folder the app already knows, when every path its first turn's tool calls touched lies inside that one folder. It never files a chat into a project.
+
+## Permissions
+
+An agent's permission request reaches `ChatService.routePermission`. `autoAnswer` settles what needn't wait for the user:
+
+- read, search, think and fetch tool calls go ahead;
+- edits whose paths all lie inside the chat's own folder (its working folder, or its scratch folder) go ahead;
+- in an unattended run (a scheduled task, a board card's refresh, and threads handed work from one) anything else is rejected at once, and a notice in the reply says what was skipped. `askUser`, the app's own questions, does the same.
+
+Everything else is asked inline, in its chat: the conversation shows as waiting on the user until it is answered. A mode that trusts the agent (bypassPermissions, full-access) is not asked by the agent in the first place.
+
+## Spare sessions
+
+Opening a session takes seconds in some agents even when the process is already running (Antigravity creates its conversation on Google's side). A backend that says so (`AgentBackend.wantsSpare`, from the `spareSession` quirk) gets one session opened ahead per agent, in `ChatService.spares`. It is opened for the id the next new chat will take, with that chat's scratch folder, tools and system prompt, and what the agent sends meanwhile is kept for it.
+
+- The new-chat page's model picker reads that session's models and options (`AppCore.fromSpare`) instead of opening one of its own.
+- The next new chat with that agent and folder takes it (`claimSpare`); if the folder or system prompt no longer match, it is closed and a fresh session opens.
+- After a chat takes it, the next spare opens once that chat's first reply is in, so it doesn't hold the reply up. Choosing another default model, or another folder on the new-chat page, closes it and opens a new one.
+
 ## Per-conversation state
 
 A conversation is deleted only through `ChatService.removeConversation`. That method stops the turn and forgets the session, then calls every function in `chat.removedListeners`.
@@ -133,9 +158,12 @@ Derive per-item data in one pass with `useMemo`, as the sidebar's `projectStats`
 ## Checks
 
 ```
-npx tsc --noEmit -p .          # strict, no unused locals
-node scripts/style-check.mjs   # raw values outside tokens (ratchet)
-npx vitest run
-npx electron-vite build && xvfb-run -a node scripts/e2e.mjs <dir>
-xvfb-run -a node scripts/visual.mjs
+npm run typecheck                         # tsc: strict, no unused locals
+npm run style-check                       # raw values outside tokens (ratchet)
+npm test                                  # vitest, against the demo agent
+xvfb-run -a npm run test:e2e -- <dir>     # build, then Playwright UI checks; <dir> keeps screenshots
+xvfb-run -a npm run visual                # screenshot regression (baselines from the Linux CI image)
+npm run dist -- --publish never && xvfb-run -a npm run test:package
 ```
+
+On macOS and Windows, drop `xvfb-run -a`. CI (`.github/workflows/build.yml`) runs typecheck and tests on all three systems, the UI checks on Linux, and packages and smoke-tests each.

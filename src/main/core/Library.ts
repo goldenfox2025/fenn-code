@@ -104,7 +104,8 @@ const CHANGES = new Set(['edit', 'delete', 'move'])
 /**
  * Files the agents changed in this folder, newest first: each tool call that
  * edited, deleted or moved files and finished, with the paths it named. A file
- * changed again keeps only its latest change. `formerRoots`: where the agents
+ * changed again keeps only its latest change; a file still there shows when it was last modified.
+ * `formerRoots`: where the agents
  * worked before the folder was chosen (their files moved here).
  */
 export function changedFiles(root: string, messages: Message[], formerRoots: string[] = []): LibraryChange[] {
@@ -129,7 +130,9 @@ export function changedFiles(root: string, messages: Message[], formerRoots: str
       const abs = join(root, c.path)
       try {
         const st = statSync(abs)
-        return { ...c, exists: true, size: st.isDirectory() ? undefined : st.size }
+        // The file's own last-modified time: the reply's start (when the turn began, perhaps yesterday)
+        // says nothing about later edits, by the agent or by the user.
+        return { ...c, exists: true, size: st.isDirectory() ? undefined : st.size, changedAt: st.mtimeMs }
       } catch {
         return { ...c, exists: false }
       }

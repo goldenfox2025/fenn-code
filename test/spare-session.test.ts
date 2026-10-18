@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -26,7 +26,47 @@ const opened = (core: { chat: unknown }, not?: string) => until((): Spare | unde
   return s?.sessionId && s.sessionId !== not ? s : undefined
 })
 
+// Antigravity's own quirks: its first session warms it up too.
+const agyLike = acpPlugin({
+  id: 'mock',
+  testOnly: true,
+  name: 'Mock',
+  launch: ({ nodeCommand, resourcesDir, defaultModel }) => ({
+    command: nodeCommand.command,
+    args: [join(resourcesDir, 'mock-agent.mjs')],
+    env: { ...nodeCommand.env, MOCK_DEFAULT_MODEL: defaultModel?.() }
+  }),
+  quirks: { warmSession: true, spareSession: true, modelAtStart: true }
+})
+
 describe('a session opened ahead for the next new chat', () => {
+  it('is the only session the new-chat page, its model list and the first message open (PC check on RC21)', async () => {
+    const log = join(mkdtempSync(join(tmpdir(), 'oc-methods-')), 'methods.log')
+    const t = await makeCore(undefined, { MOCK_METHOD_LOG: log }, {}, [agyLike])
+    const count = (method: string) => { try { return readFileSync(log, 'utf8').split('\n').filter((l) => l === method).length } catch { return 0 } }
+    try {
+      // The app starts it ahead; then the new-chat page shows it, with no folder, and its model picker asks for the models.
+      await t.core.prestartBackends()
+      await t.core.warmBackend('mock', '')
+      const catalog = await t.core.backendModels('mock')
+      expect(catalog.models.length).toBeGreaterThan(0)
+      await opened(t.core)
+      expect(count('session/new')).toBe(1)
+      const conv = await t.core.startChat({ text: 'hi', backendId: 'mock' })
+      await until(() => t.store.conversation(conv.id)?.status === 'idle' && t.store.messagesOf(conv.id).some((m) => m.role === 'assistant' && m.state === 'done'))
+      // The first message used the spare: one prompt, and no session/new before it.
+      expect(count('session/prompt')).toBe(1)
+      // The next new chat's spare is opened once the reply is in, and no hidden prompt (a title) follows.
+      await opened(t.core, t.store.conversation(conv.id)?.sessionRef?.sessionId)
+      await new Promise((r) => setTimeout(r, 500))
+      expect(count('session/new')).toBe(2)
+      expect(count('session/prompt')).toBe(1)
+      expect(t.store.conversation(conv.id)?.title).toBe('Hi')
+    } finally {
+      await t.dispose()
+    }
+  }, 30000)
+
   it('is the one a new chat gets, with its id, and the next one is opened after', async () => {
     const t = await makeCore(undefined, {}, {}, [slowSessions])
     try {

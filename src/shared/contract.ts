@@ -112,6 +112,9 @@ export interface PermissionRequest {
    * can change each tier; the answer is then `allow:` + JSON {key: tier|'none'}.
    */
   apps?: { key: string; name: string; tier: 'view' | 'click' | 'full'; running: boolean }[]
+  /** An agent's tool call: its ACP kind (read, edit, execute, …) and the files it names, to judge whether asking is needed. */
+  toolKind?: string
+  paths?: string[]
 }
 
 /** null means the user dismissed the prompt (treated as cancelled). */

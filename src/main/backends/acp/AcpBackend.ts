@@ -150,7 +150,6 @@ export class AcpBackend implements AgentBackend {
   private contextTokens = new Map<string, number>()
   /** Sessions whose updates are not shown: a command sent for a session option is running. */
   private quiet = new Set<string>()
-  private stderrTail: string[] = []
   /** Why the agent process last exited, for readable errors. */
   private exitReason?: string
   /** Why the app stopped a process on purpose, shown instead of its raw exit signal. */
@@ -223,10 +222,13 @@ export class AcpBackend implements AgentBackend {
     })
     this.proc = proc
     this.exitReason = undefined
+    // Each process keeps its own stderr, so an error never repeats an earlier process's output.
+    const errTail: string[] = []
+    let ready = false
     proc.stderr!.setEncoding('utf8')
     proc.stderr!.on('data', (chunk: string) => {
-      this.stderrTail.push(chunk)
-      if (this.stderrTail.length > 40) this.stderrTail.shift()
+      errTail.push(chunk)
+      if (errTail.length > 40) errTail.shift()
       this.host.log('debug', `[${this.name} stderr] ${chunk.trimEnd()}`)
     })
     const exited = new Promise<never>((_, reject) => {
@@ -246,9 +248,10 @@ export class AcpBackend implements AgentBackend {
         this.starting = undefined
         if (!wasUs) this.open.clear()
         // Through a shell (Windows .cmd), a missing program shows up as an exit, not ENOENT.
-        this.exitReason = /is not recognized as an internal or external command|command not found/i.test(this.stderrTail.join(''))
+        const how = signal ?? `code ${code}`
+        this.exitReason = /is not recognized as an internal or external command|command not found/i.test(errTail.join(''))
           ? this.missing(spec.command)
-          : this.stopReasons.get(proc) ?? t('{0} 已退出（{1}）', this.name, signal ?? `code ${code}`) + tail(this.stderrTail)
+          : this.stopReasons.get(proc) ?? (ready ? t('{0} 已退出（{1}）', this.name, how) : t('{0} 启动后立即退出（{1}）', this.name, how)) + tail(errTail)
         reject(new Error(this.exitReason))
         // Sessions lived in that process; tell the app so it can start over cleanly.
         if (!wasUs) this.host.sessionsLost()
@@ -272,9 +275,14 @@ export class AcpBackend implements AgentBackend {
         // compaction: the agent says when it compacted, so the app can hand its notes over again.
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true, session: { compaction: {} } } as acp.ClientCapabilities,
         clientInfo: { name: 'fenn', version: '0.1.0' }
+      }).catch(async (err) => {
+        // stdout closing beats the exit event; wait a moment so the exit reason (with stderr) is what shows.
+        await Promise.race([exited, new Promise((r) => setTimeout(r, 1000))])
+        throw err
       }),
       exited
     ])
+    ready = true
     this.caps = init.agentCapabilities ?? undefined
     this.auth = (init.authMethods ?? []).map((m) => ({ id: m.id, name: m.name, description: m.description ?? undefined }))
     this.host.log('info', `${this.name} initialized (protocol v${init.protocolVersion})`)
@@ -321,7 +329,9 @@ export class AcpBackend implements AgentBackend {
           sessionId,
           title: toolCall.title ?? t('工具调用'),
           detail: stringify(toolCall.rawInput),
-          options: options.map((o) => ({ id: o.optionId, label: o.name, kind: o.kind }))
+          options: options.map((o) => ({ id: o.optionId, label: o.name, kind: o.kind })),
+          toolKind: toolCall.kind ?? undefined,
+          paths: toolCall.locations?.map((l) => l.path)
         })
         return decision
           ? { outcome: { outcome: 'selected', optionId: decision } }
@@ -392,7 +402,8 @@ export class AcpBackend implements AgentBackend {
   warm(cwd: string): Promise<void> {
     this.warmed ??= (async () => {
       await this.start()
-      if (!this.quirks.warmSession) return
+      // An agent given a spare session (see wantsSpare) warms up by opening that one: no extra session to throw away.
+      if (!this.quirks.warmSession || this.quirks.spareSession) return
       const res = await this.conn!.newSession({ cwd, mcpServers: [] })
       void this.closeSession(res.sessionId, { discard: true })
     })().catch(() => {
@@ -755,13 +766,33 @@ function tail(lines: string[]): string {
  * through a shell splits unquoted paths with spaces. Use the shell only for
  * bare command names and .cmd/.bat files, and quote arguments when we do.
  */
-export function windowsSafe(command: string, args: string[]): { command: string; args: string[]; shell: boolean } {
-  if (process.platform !== 'win32') return { command, args, shell: false }
+export function windowsSafe(
+  command: string,
+  args: string[],
+  platform: NodeJS.Platform = process.platform
+): { command: string; args: string[]; shell: boolean } {
+  if (platform !== 'win32') return { command, args, shell: false }
   const isScript = /\.(cmd|bat)$/i.test(command)
   const isBare = !/[\\/]/.test(command) && !/\.(exe|com)$/i.test(command)
   if (!isScript && !isBare) return { command, args, shell: false }
-  const q = (a: string) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a)
-  return { command: q(command), args: args.map(q), shell: true }
+  return { command: cmdQuote(command), args: args.map(cmdQuote), shell: true }
+}
+
+/**
+ * One argument for a `cmd.exe /d /s /c "..."` line (what spawn's shell option runs), read back
+ * unchanged by the program (the C runtime's rules) and by a .cmd shim passing it on with %*.
+ * Inside quotes cmd leaves & | < > ^ ( ) alone, and `""` keeps its quote state while the program
+ * reads it as one `"`. cmd expands %VAR% even inside quotes, so each % stands outside them as ^%,
+ * which no variable name can follow. A newline cannot be passed through cmd at all.
+ */
+function cmdQuote(a: string): string {
+  if (a && !/[\s"&|<>^()%!,;=]/.test(a)) return a
+  const s = a
+    // Backslashes are literal except before a quote: double those, then each quote is "".
+    .replace(/(\\*)"/g, '$1$1""')
+    .replace(/(\\*)%/g, '$1$1"^%"')
+    .replace(/(\\+)$/, '$1$1')
+  return `"${s}"`
 }
 
 /**

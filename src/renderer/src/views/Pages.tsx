@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { deleteChat, routeFor } from '../actions'
 import { Check, CheckSquare, ChevronDown, Clock, Folder, FolderKanban, MessageCircle, Pause, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { searchable, type Conversation, type Project, type Routine, type Schedule, type SearchHit } from '@shared/model'
-import { api, useApp } from '../store'
-import { relTime } from '../util'
-import { locale, t } from '../i18n'
+import { api, toastError, useApp } from '../store'
+import { minuteTime, relTime } from '../util'
+import { t } from '../i18n'
 import { confirmDialog } from '../components/Modal'
 import { boardCount } from '../components/ProgressPanel'
 import { groupByFolder } from '../folderGroups'
@@ -281,7 +281,7 @@ function Highlight({ text, q }: { text: string; q: string }) {
 export function describeSchedule(s: Schedule): string {
   switch (s.kind) {
     case 'once':
-      return t('一次：{0}', new Date(s.at).toLocaleString(locale))
+      return t('一次：{0}', minuteTime(s.at))
     case 'interval':
       return s.minutes % 60 === 0 ? t('每 {0} 小时', s.minutes / 60) : t('每 {0} 分钟', s.minutes)
     case 'daily': {
@@ -299,6 +299,8 @@ export function RoutinesPage() {
   const conversations = useApp((s) => s.conversations)
   const navigate = useApp((s) => s.navigate)
   const set = useApp((s) => s.set)
+  // The run's conversation, shown where it lives: a project's chat opens as the project.
+  const lastRun = (r: Routine) => conversations.find((c) => c.id === r.lastRunConversationId)
   const target = (r: Routine) =>
     projects.find((p) => p.id === r.target.projectId)?.name ??
     conversations.find((c) => c.id === r.target.conversationId)?.title ??
@@ -328,28 +330,28 @@ export function RoutinesPage() {
               <div className="small muted">
                 {describeSchedule(r.schedule)} {' '}{t('· 发到')}{' '}{target(r)}
                 {r.pausedByArchive ? t(' · 已暂停：项目已归档，恢复项目后继续') : !r.enabled ? t(' · 已暂停') : ''}
-                {r.nextRunAt && r.enabled ? t(' · 下次 {0}', new Date(r.nextRunAt).toLocaleString(locale)) : ''}
+                {r.nextRunAt && r.enabled ? t(' · 下次 {0}', minuteTime(r.nextRunAt)) : ''}
                 {r.lastError ? t(' · 上次失败：{0}', r.lastError) : r.lastRunAt ? t(' · 上次 {0}', relTime(r.lastRunAt)) : ''}
               </div>
             </div>
-            {r.lastRunConversationId && (
-              <button className="btn" onClick={() => navigate({ view: 'chat', conversationId: r.lastRunConversationId! })}>
+            {lastRun(r) && (
+              <button className="btn" onClick={() => navigate(routeFor(lastRun(r)!))}>
                 {t('查看结果')}</button>
             )}
-            <button className="icon-btn" data-tip={t('立即运行')} onClick={() => api().runRoutineNow(r.id)}>
+            <button className="icon-btn" data-tip={t('立即运行')} onClick={() => void api().runRoutineNow(r.id).catch(toastError)}>
               <Play size={15} />
             </button>
             <button
               className="icon-btn"
               data-tip={r.enabled ? t('暂停') : t('启用')}
-              onClick={() => api().saveRoutine({ ...r, enabled: !r.enabled })}
+              onClick={() => void api().saveRoutine({ ...r, enabled: !r.enabled }).catch(toastError)}
             >
               {r.enabled ? <Pause size={15} /> : <Play size={15} style={{ color: 'var(--green)' }} />}
             </button>
             <button
               className="icon-btn"
               data-tip={t('删除')}
-              onClick={async () => (await confirmDialog(t('删除定时任务「{0}」？', r.name))) && api().deleteRoutine(r.id)}
+              onClick={async () => (await confirmDialog(t('删除定时任务「{0}」？', r.name))) && void api().deleteRoutine(r.id).catch(toastError)}
             >
               <Trash2 size={15} />
             </button>

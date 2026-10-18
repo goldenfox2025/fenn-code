@@ -30,3 +30,12 @@ describe('folders a chat may never work in', () => {
     } finally { await dispose() }
   })
 })
+
+describe('unsafe folders on a case-insensitive Mac disk', () => {
+  it('knows the home folder however it is spelled', () => {
+    expect(isUnsafeFolder('/Users/Me', '/Users/me', '/Users/me/Library/Application Support/Fenn Code/data', true)).toBe(true)
+    expect(isUnsafeFolder('/users', '/Users/me', '/x', true)).toBe(true)
+    expect(isUnsafeFolder('/Users/me/Code', '/Users/me', '/x', true)).toBe(false)
+    expect(isUnsafeFolder('/Users/Me', '/Users/me', '/x')).toBe(false)
+  })
+})

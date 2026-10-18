@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, rmdirSync, statSync, writeF
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
-import { boardWidgetKey, type AppEvent, type AppSettings, type AppSnapshot, type Attachment, type BoardWidget, type Conversation, Message, NewChatOptions, Project, Routine, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
+import { boardWidgetKey, type AppEvent, type AppSettings, type AppSnapshot, type Attachment, type BoardWidget, type Conversation, Message, NewChatOptions, Project, Routine, Schedule, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
 import { removeTurn } from '../../shared/usage'
 import { UsageCalendar } from './UsageCalendar'
 import type { BackendManager } from '../backends/BackendManager'
@@ -115,7 +115,6 @@ export class AppCore {
     this.autoAssigner = new AutoAssigner(
       store,
       this.chat,
-      backends,
       () => [...new Set([...(store.settings.recentFolders ?? []), ...store.projects.map((p) => p.cwd ?? '')])].filter((f) => f && !this.unsafeFolder(f)),
       (id, folder) => void this.updateConversation(id, { cwd: folder }).catch(() => {}),
       [join(store.dir, 'workspaces')]
@@ -176,7 +175,7 @@ export class AppCore {
 
   /** Home, a drive root or Fenn Code's own data: never a working folder (see isUnsafeFolder). */
   unsafeFolder(path: string | undefined): boolean {
-    return !!path && isUnsafeFolder(path, homedir(), this.store.dir)
+    return !!path && isUnsafeFolder(path, homedir(), this.store.dir, process.platform === 'darwin')
   }
 
   private refuseFolder(path: string | undefined): void {
@@ -286,7 +285,8 @@ export class AppCore {
       settings: this.store.settings,
       backends: this.backends.list(),
       platform: this.platform,
-      peerMessages: this.store.peerMessages
+      peerMessages: this.store.peerMessages,
+      permissions: this.chat.pendingRequests()
     }
   }
 
@@ -713,7 +713,7 @@ export class AppCore {
     const key = `${backendId}\0${modelId ?? ''}`
     const pending = this.modelProbes.get(key)
     if (pending) return this.notTooLong(key, backendId, pending)
-    const probe = this.backends.modelCatalog(backendId, modelId).then((info) => {
+    const probe = this.fromSpare(backendId, modelId).then((spare) => spare ?? this.backends.modelCatalog(backendId, modelId)).then((info) => {
       const catalog = { models: info.models ?? [], current: info.currentModelId, options: info.options }
       this.chat.rememberModels(backendId, catalog.models, catalog.current, catalog.options)
       return catalog
@@ -725,6 +725,16 @@ export class AppCore {
     }).finally(() => this.modelProbes.delete(key))
     this.modelProbes.set(key, probe)
     return this.notTooLong(key, backendId, probe)
+  }
+
+  /**
+   * The models of the session opened ahead for the next new chat, when it opens on the model asked
+   * about: reading them there opens no session of its own (each one costs Antigravity seconds and a helper process).
+   */
+  private async fromSpare(backendId: string, modelId: string | undefined) {
+    const info = await this.chat.spareInfo(backendId)
+    if (!info?.models?.length || (modelId && info.currentModelId !== modelId)) return undefined
+    return info
   }
 
   /**
@@ -882,6 +892,13 @@ export class AppCore {
   }
 
   async deleteConversation(id: string): Promise<void> {
+    // A project's own chat goes only with its project: without it the project can't open.
+    const c = this.store.conversation(id)
+    if (c?.kind === 'project' && this.store.project(c.projectId)) throw new Error(t('这是项目的主对话，不能单独删除。要删除，请删除整个项目。'))
+    return this.dropConversation(id)
+  }
+
+  private async dropConversation(id: string): Promise<void> {
     const gone = this.store.conversation(id)
     if (!gone) return
     // Its card goes from where it was started: a thread's from the project chat, a sub-chat's from its parent.
@@ -983,6 +1000,7 @@ export class AppCore {
   async updateProject(id: string, patch: Partial<Project>): Promise<void> {
     const p = this.store.project(id)
     if (!p) return
+    if (patch.cwd) this.refuseFolder(patch.cwd)
     const next = { ...p, ...patch, updatedAt: Date.now() }
     this.store.putProject(next)
     this.publish({ type: 'project', project: next })
@@ -1050,7 +1068,7 @@ export class AppCore {
   async deleteProject(id: string): Promise<void> {
     for (const c of this.store.conversations.filter((c) => c.projectId === id)) {
       if (c.kind === 'chat') this.chat.patchConversation(c.id, { projectId: undefined })
-      else await this.deleteConversation(c.id)
+      else await this.dropConversation(c.id)
     }
     this.store.removeProject(id)
     this.publish({ type: 'project-removed', id })
@@ -1058,8 +1076,11 @@ export class AppCore {
 
   // ---- routines (scheduler lives elsewhere; this is CRUD) ---------------------
 
-  async saveRoutine(r: Omit<Routine, 'id' | 'createdAt'> & { id?: string }): Promise<Routine> {
-    const prev = r.id ? this.store.routines.find((x) => x.id === r.id) : undefined
+  async saveRoutine(input: Omit<Routine, 'id' | 'createdAt'> & { id?: string }): Promise<Routine> {
+    const prev = input?.id ? this.store.routines.find((x) => x.id === input.id) : undefined
+    // It comes over IPC: a routine the scheduler or the routines page can't read is refused here.
+    const r = { ...input, target: input?.target ?? prev?.target ?? {} }
+    if (!validRoutine({ ...prev, ...r })) throw new Error(t('定时任务的内容不完整：需要名称、提示词和有效的时间安排。'))
     const merged = { ...prev, ...r, id: r.id ?? randomUUID(), createdAt: prev?.createdAt ?? Date.now(), lastError: undefined } as Routine
     // Turning it on (or off) by hand is the user's call from now on.
     if ('enabled' in r && r.enabled !== prev?.enabled) merged.pausedByArchive = undefined
@@ -1492,7 +1513,7 @@ export class AppCore {
   }
 
   appInfo(): AppInfo {
-    return { ...this.info, defaultFolder: this.defaultFolder() }
+    return { ...this.info, defaultFolder: this.defaultFolder(), updates: !!this.updateFeed }
   }
 
   async checkForUpdates(): Promise<UpdateCheck> {
@@ -1584,3 +1605,16 @@ const SAFE_TO_OPEN =
 
 
 export { parseScheduleArgs, scheduleText } from './tools/routineTools'
+
+/** A routine the app can show and run: a name, a prompt, a schedule of a known kind, and a target object. */
+function validRoutine(r: Partial<Routine>): boolean {
+  const s = r.schedule as Partial<Schedule> | undefined
+  const scheduleOk =
+    !!s &&
+    ((s.kind === 'once' && Number.isFinite((s as { at?: number }).at)) ||
+      (s.kind === 'interval' && Number((s as { minutes?: number }).minutes) > 0) ||
+      (s.kind === 'daily' && /^\d{1,2}:\d{2}$/.test(String((s as { time?: string }).time ?? ''))) ||
+      (s.kind === 'cron' && typeof (s as { expr?: string }).expr === 'string' && !!(s as { expr?: string }).expr!.trim()))
+  return typeof r.name === 'string' && !!r.name.trim() && typeof r.prompt === 'string' && !!r.prompt.trim() &&
+    scheduleOk && !!r.target && typeof r.target === 'object' && typeof r.enabled === 'boolean'
+}

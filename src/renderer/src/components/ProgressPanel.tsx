@@ -6,6 +6,7 @@ import { api, useApp, toastError } from '../store'
 import { Dropdown, useMenu } from './Menu'
 import { confirmDialog, EscLayer } from './Modal'
 import { t } from '../i18n'
+import { imeComposing } from '../util'
 
 export const STATUS_TEXT: Record<ProgressStatus, string> = {
   todo: t('未开始'),
@@ -119,7 +120,7 @@ export function ProgressPanel({ project }: { project: Project }) {
         placeholder={draft.parentId ? t('任务名称') : t('里程碑名称')}
         value={draft.title ?? ''}
         onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-        onKeyDown={(e) => e.key === 'Enter' && draft.title?.trim() && void submit()}
+        onKeyDown={(e) => e.key === 'Enter' && !imeComposing(e) && draft.title?.trim() && void submit()}
       />
       <div className="progress-form-row">
         <Dropdown

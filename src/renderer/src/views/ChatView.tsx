@@ -6,11 +6,12 @@ import { Composer } from '../components/Composer'
 import { useMenu } from '../components/Menu'
 import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
-import { api, useApp } from '../store'
+import { api, useApp, toastError } from '../store'
 import { t } from '../i18n'
 import { PlanLine } from '../components/PlanLine'
 import { UsageButton } from '../components/Usage'
 import { useRunning } from '../components/SidePane'
+import { imeComposing } from '../util'
 
 export function ChatView({ conversationId }: { conversationId: string }) {
   const conv = useApp((s) => s.conversations.find((c) => c.id === conversationId))
@@ -41,20 +42,25 @@ export function ChatView({ conversationId }: { conversationId: string }) {
               {
                 icon: conv.pinned ? <PinOff size={15} /> : <Pin size={15} />,
                 label: conv.pinned ? t('取消置顶') : t('置顶'),
-                onClick: () => api().updateConversation(conv.id, { pinned: !conv.pinned })
+                onClick: () => void api().updateConversation(conv.id, { pinned: !conv.pinned }).catch(toastError)
               },
               { separator: true },
               {
                 icon: <Download size={15} />,
                 label: t('导出为 Markdown'),
-                onClick: () => void api().exportConversation(conv.id)
+                onClick: () => void api().exportConversation(conv.id).catch(toastError)
               },
-              {
-                icon: <Trash2 size={15} />,
-                label: t('删除对话'),
-                danger: true,
-                onClick: () => void deleteChat(conv)
-              }
+              // A project's main conversation goes with its project, never on its own.
+              ...(conv.kind === 'project'
+                ? []
+                : [
+                    {
+                      icon: <Trash2 size={15} />,
+                      label: t('删除对话'),
+                      danger: true,
+                      onClick: () => void deleteChat(conv)
+                    }
+                  ])
             ])
           }
         >
@@ -72,7 +78,8 @@ export function ChatView({ conversationId }: { conversationId: string }) {
 
 /** Opens the files and background pane beside the chat (a dot while something runs in the background). */
 function SidePaneButton({ conv }: { conv: Conversation }) {
-  const open = useApp((s) => s.sidePane)
+  // A page or file open beside the chat covers the pane: then the button brings the pane back.
+  const open = useApp((s) => (s.page || s.fileView ? null : s.sidePane))
   const running = useRunning(conv)
   return (
     <button
@@ -80,7 +87,10 @@ function SidePaneButton({ conv }: { conv: Conversation }) {
       data-tip={running ? t('文件与后台（{0} 个在运行）', running) : t('文件与后台')}
       aria-label={t('文件与后台')}
       aria-pressed={!!open}
-      onClick={() => useApp.getState().set({ sidePane: open ? null : running ? 'background' : 'files', page: null })}
+      onClick={() => {
+        const shown = useApp.getState().sidePane
+        useApp.getState().set({ sidePane: open ? null : (shown ?? (running ? 'background' : 'files')), page: null, fileView: null })
+      }}
     >
       <FolderOpen size={16} />
       {running > 0 && <span className="run-dot" />}
@@ -146,6 +156,7 @@ export function EditableTitle({ conv }: { conv: Conversation }) {
           if (value.trim() && value !== conv.title) void api().updateConversation(conv.id, { title: value.trim() })
         }}
         onKeyDown={(e) => {
+          if (imeComposing(e)) return
           if (e.key === 'Enter') e.currentTarget.blur()
           if (e.key === 'Escape') setEditing(false)
         }}

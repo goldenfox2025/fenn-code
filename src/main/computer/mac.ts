@@ -30,7 +30,14 @@ const FLAGS: Record<string, number> = {
 export class MacDriverImpl implements InputDriver {
   readonly name = 'macOS'
 
+  /** What macOS still has to allow (Accessibility, Screen Recording), checked by the app shell; undefined when all is allowed. */
+  constructor(private readonly access?: () => string | undefined) {}
+
   async unavailable(): Promise<string | undefined> {
+    // Without Accessibility the events are dropped silently, and without Screen Recording the
+    // screenshots show only the wallpaper: say so before the agent works blind.
+    const missing = this.access?.()
+    if (missing) return missing
     try {
       await this.jxa(`Application('System Events').processes.length`)
       return undefined

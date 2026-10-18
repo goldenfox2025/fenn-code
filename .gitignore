@@ -1,12 +1,39 @@
+# Dependencies
 node_modules/
+
+# Build output (electron-vite → out/, electron-builder → release/)
 out/
 dist/
 release/
+*.tsbuildinfo
+
+# Logs
 *.log
-.DS_Store
-*.bundle
+/logs/
+npm-debug.log*
+
+# Environment and secrets
 .env
 .env.*
+!.env.example
+
+# Test and screenshot artifacts
 coverage/
+.nyc_output/
+test-results/
+playwright-report/
 shots/
 test/visual/*.actual.png
+
+# OS and editor junk
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# git bundles used to move the repository around
+*.bundle

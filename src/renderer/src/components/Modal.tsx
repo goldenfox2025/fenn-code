@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { t } from '../i18n'
 import { lastMenuAnchor } from './Menu'
+import { imeComposing } from '../util'
 
 /*
  * Every dialog and in-dialog form is a layer. Esc closes only the topmost
@@ -14,7 +15,7 @@ const layers: Layer[] = []
 
 document.addEventListener('keydown', (e) => {
   // Menus and inline editors handle their own Esc and stop it before here.
-  if (e.key !== 'Escape' || e.defaultPrevented || !layers.length) return
+  if (e.key !== 'Escape' || e.defaultPrevented || !layers.length || imeComposing(e)) return
   e.preventDefault()
   layers[layers.length - 1].close()
 })
@@ -181,7 +182,7 @@ export function ConfirmHost() {
             placeholder={req.input.placeholder}
             onChange={(e) => setText(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
-            onKeyDown={(e) => e.key === 'Enter' && finish(true)}
+            onKeyDown={(e) => e.key === 'Enter' && !imeComposing(e) && finish(true)}
           />
         )}
         <div className="modal-actions">

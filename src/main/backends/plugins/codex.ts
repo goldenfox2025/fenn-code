@@ -1,12 +1,36 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { acpPlugin, type AccountCheck } from '../acp'
 import { nodeScript, packageDir } from '../nodeScript'
 import { t, tk } from '../../../shared/i18n'
 
+const versionIn = (dir: string | undefined): string | undefined => {
+  if (!dir) return undefined
+  try {
+    const v = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version
+    return typeof v === 'string' ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The versions the app actually runs: the ACP adapter, and the Codex it ships with (what it starts,
+ * unless the user named their own Codex). A global `codex` elsewhere on PATH is not what runs.
+ */
+export function launchedVersions(config: Record<string, string> = {}): { adapter?: string; codex?: string } {
+  const spec = nodeScript(config.CODEX_ACP_PATH?.trim() || 'codex-acp', '@agentclientprotocol/codex-acp/dist/index.js', [])
+  const script = spec.requires?.[0]
+  if (!script) return {}
+  const own = config.CODEX_CLI_PATH?.trim()
+  return { adapter: versionIn(packageDir(script, '@agentclientprotocol/codex-acp')), codex: own ? undefined : versionIn(bundledCodex(script)?.root) }
+}
+
 /** `codex login status` says "Logged in using ChatGPT" (exit 0) or "Not logged in" (exit 1). */
 export function codexAccount(config: Record<string, string> = {}): AccountCheck {
+  const running = launchedVersions(config)
+  const versions = [running.adapter && t('适配器 {0}', running.adapter), running.codex && `Codex ${running.codex}`].filter(Boolean).join(' · ')
   return {
     command: config.CODEX_CLI_PATH?.trim() || 'codex',
     args: ['login', 'status'],
@@ -14,9 +38,12 @@ export function codexAccount(config: Record<string, string> = {}): AccountCheck 
     stderr: true,
     parse: (out) => {
       const line = out.split(/\r?\n/).find((l) => /logged in/i.test(l))?.trim() ?? ''
-      if (/not logged in/i.test(line)) return { installed: true, signedIn: false }
+      // The version is the adapter's: upgrading it is what changes the Codex that runs (it ships its own).
+      const version = running.adapter
+      if (/not logged in/i.test(line)) return { installed: true, signedIn: false, version, detail: versions || undefined }
       const via = /using (.+)$/i.exec(line)?.[1]
-      return { installed: true, signedIn: line ? true : undefined, detail: via ? (/chatgpt/i.test(via) ? t('ChatGPT 账号') : via) : undefined }
+      const who = via ? (/chatgpt/i.test(via) ? t('ChatGPT 账号') : via) : ''
+      return { installed: true, signedIn: line ? true : undefined, version, detail: [who, versions].filter(Boolean).join(' · ') || undefined }
     }
   }
 }
@@ -82,7 +109,8 @@ export default acpPlugin({
   account: (config) => codexAccount(config),
   upgrade: {
     run: { command: 'npm', args: ['install', '-g', '@openai/codex@latest', '@agentclientprotocol/codex-acp@latest'] },
-    latest: { command: 'npm', args: ['view', '@openai/codex', 'version'] }
+    // Compared with the adapter that runs (see launchedVersions), not with a global codex the app never starts.
+    latest: { command: 'npm', args: ['view', '@agentclientprotocol/codex-acp', 'version'] }
   },
   quirks: {
     inputIncludesCache: true,

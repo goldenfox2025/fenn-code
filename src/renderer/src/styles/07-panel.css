@@ -205,21 +205,3 @@
   gap: var(--space-3);
   align-items: center;
 }
-.board-card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: var(--space-5) var(--space-6);
-  margin-bottom: var(--space-4);
-  background: var(--bg-elevated);
-  width: 100%;
-  text-align: left;
-}
-.board-card .small.clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.board-card:hover {
-  border-color: var(--border-strong);
-}

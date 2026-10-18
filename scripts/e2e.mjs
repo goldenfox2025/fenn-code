@@ -293,6 +293,27 @@ await check('Esc closes dialogs, and Settings keeps one size on every tab', asyn
   await page.waitForSelector('.overlay', { state: 'detached', timeout: 2000 })
 })
 
+await check('自定义指令 in Settings saves as typed, even when Settings closes with Esc', async () => {
+  await page.click('.user-btn')
+  await page.click('.settings-nav .nav-item:has-text("通用")')
+  const box = page.locator('.field:has(label:text-is("自定义指令")) textarea')
+  await box.fill('回答简短一些')
+  await page.keyboard.press('Escape')
+  await page.waitForSelector('.overlay', { state: 'detached', timeout: 2000 })
+  for (let i = 0; (await page.evaluate(() => window.fenn.snapshot().then((s) => s.settings.customInstructions))) !== '回答简短一些'; i++) {
+    if (i > 30) throw new Error('自定义指令 was not saved')
+    await page.waitForTimeout(100)
+  }
+  if (shots) {
+    await page.click('.user-btn')
+    await page.click('.settings-nav .nav-item:has-text("通用")')
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: join(shots, 'settings-instructions.png') })
+    await page.keyboard.press('Escape')
+  }
+  await page.evaluate(() => window.fenn.updateSettings({ customInstructions: '' }))
+})
+
 await check('text fields never show the square browser focus ring', async () => {
   await page.click('.nav-item:has-text("项目")')
   await page.click('.page-head .btn')
@@ -721,13 +742,18 @@ await check('every 「…」 menu opens next to its button, inside the window', 
   const near = async (btn, label) => {
     await page.waitForSelector('.menu', { timeout: 2000 })
     await page.waitForTimeout(80)
-    // Both measured in the same frame: the button may have moved since the click, and the menu follows it.
-    const [b, m] = await page.evaluate((el) => [el.getBoundingClientRect(), document.querySelector('.menu').getBoundingClientRect()].map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height })), btn)
-    const vp = page.viewportSize()
-    const vertical = Math.min(Math.abs(m.y - (b.y + b.height)), Math.abs(m.y + m.height - b.y))
-    const horizontal = Math.min(Math.abs(m.x - b.x), Math.abs(m.x + m.width - (b.x + b.width)))
-    if (vertical > 12 || horizontal > 12 || m.x < 0 || m.y < 0 || m.x + m.width > vp.width || m.y + m.height > vp.height)
-      throw new Error(`${label}: menu at ${Math.round(m.x)},${Math.round(m.y)} but button at ${Math.round(b.x)},${Math.round(b.y)}`)
+    // Both measured in the same frame: the button may have moved since the click, and the menu
+    // follows it one frame later, so a miss is measured again a few times before it counts.
+    for (let tries = 0; ; tries++) {
+      const [b, m] = await page.evaluate((el) => [el.getBoundingClientRect(), document.querySelector('.menu').getBoundingClientRect()].map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height })), btn)
+      const vp = page.viewportSize()
+      const vertical = Math.min(Math.abs(m.y - (b.y + b.height)), Math.abs(m.y + m.height - b.y))
+      const horizontal = Math.min(Math.abs(m.x - b.x), Math.abs(m.x + m.width - (b.x + b.width)))
+      const ok = !(vertical > 12 || horizontal > 12 || m.x < 0 || m.y < 0 || m.x + m.width > vp.width || m.y + m.height > vp.height)
+      if (ok) break
+      if (tries >= 5) throw new Error(`${label}: menu at ${Math.round(m.x)},${Math.round(m.y)} but button at ${Math.round(b.x)},${Math.round(b.y)}`)
+      await page.waitForTimeout(60)
+    }
     await page.keyboard.press('Escape')
     await page.waitForSelector('.menu', { state: 'detached', timeout: 2000 })
   }

@@ -98,6 +98,21 @@
   border-color: var(--accent);
   color: #fff;
 }
+/* Not installed: shown, not pickable; its 安装 link is the way in. */
+.choice.unavailable {
+  align-items: flex-start;
+  cursor: default;
+}
+.choice.unavailable:hover {
+  background: var(--bg-elevated);
+}
+.choice.unavailable .radio {
+  opacity: 0.45;
+  margin-top: 1px;
+}
+.choice.unavailable .account-line {
+  margin-top: var(--space-3);
+}
 
 /* ---------- about ---------- */
 .about-head {
@@ -107,15 +122,9 @@
   margin-bottom: var(--space-7);
 }
 .about-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: var(--accent);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-serif);
-  font-size: 20px;
+  width: 52px;
+  height: 52px;
+  display: block;
   flex: none;
 }
 .about-rows {
@@ -173,4 +182,45 @@
   background: var(--bg-elevated);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* ---------- a render error: the app's own small panel instead of a blank window ---------- */
+.crash {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--space-9);
+  background: var(--bg);
+}
+.crash-card {
+  width: min(480px, 100%);
+  padding: var(--space-9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+.crash-card h2 {
+  margin: var(--space-4) 0 var(--space-3);
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+}
+.crash-card p {
+  margin: 0 0 var(--space-7);
+}
+.crash-icon {
+  color: var(--red);
+}
+.crash-detail {
+  margin: 0 0 var(--space-7);
+  max-height: 160px;
+  overflow: auto;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { deleteChat, deleteProject } from '../actions'
+import { deleteChat, deleteProject, openInFileManager, routeFor } from '../actions'
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,11 +16,12 @@ import {
   Search,
   Settings,
   Trash2,
-  Pencil
+  Pencil,
+  User
 } from 'lucide-react'
 import { searchable, type Conversation, type NotifyLevel, type Project } from '@shared/model'
 import { useShallow } from 'zustand/react/shallow'
-import { api, useApp } from '../store'
+import { api, toastError, useApp } from '../store'
 import { initials } from '../util'
 import { useMenu } from './Menu'
 import { t } from '../i18n'
@@ -48,6 +49,7 @@ export function Sidebar() {
   const width = usePaneWidth('sidebar')
   const [menu, openMenu] = useMenu({ align: 'left' })
   const q = s.search.trim().toLowerCase()
+  const userName = typeof s.settings.userName === 'string' ? s.settings.userName.trim() : ''
   const route = s.route
 
   const live = s.projects.filter((p) => !p.archived)
@@ -76,6 +78,16 @@ export function Sidebar() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const SHOWN = 8
   const matchingProjects = q ? s.projects.filter((p) => !p.archived && p.name.toLowerCase().includes(q)) : []
+  // Threads live in their projects, but searching finds them by title too.
+  const matchingThreads = useMemo(() => {
+    if (!q) return []
+    const live = new Map(s.projects.filter((p) => !p.archived).map((p) => [p.id, p.name]))
+    return s.conversations
+      .filter((c) => c.kind === 'thread' && c.projectId && live.has(c.projectId) && c.title.toLowerCase().includes(q))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 8)
+      .map((c) => ({ c, project: live.get(c.projectId!)! }))
+  }, [s.conversations, s.projects, q])
 
   const projectActivity = (p: Project) => stats.get(p.id)?.activity ?? ''
 
@@ -86,13 +98,13 @@ export function Sidebar() {
         label: t('重命名'),
         onClick: async () => {
           const title = await promptDialog(t('重命名对话'), c.title)
-          if (title && title !== c.title) void api().updateConversation(c.id, { title })
+          if (title && title !== c.title) void api().updateConversation(c.id, { title }).catch(toastError)
         }
       },
       {
         icon: c.pinned ? <PinOff size={15} /> : <Pin size={15} />,
         label: c.pinned ? t('取消置顶') : t('置顶'),
-        onClick: () => api().updateConversation(c.id, { pinned: !c.pinned })
+        onClick: () => void api().updateConversation(c.id, { pinned: !c.pinned }).catch(toastError)
       },
       { separator: true },
       { icon: <Trash2 size={15} />, label: t('删除'), danger: true, onClick: () => void deleteChat(c) }
@@ -105,7 +117,7 @@ export function Sidebar() {
       {
         label: t('打开方式'),
         submenu: [
-          { label: t('文件管理器'), disabled: !p.cwd, onClick: () => p.cwd && void api().openOutput(p.cwd) },
+          { label: t('文件管理器'), disabled: !p.cwd, onClick: () => p.cwd && void openInFileManager(p.cwd) },
           { label: t('项目设置'), onClick: () => s.set({ settingsOpen: `project:${p.id}` }) }
         ]
       },
@@ -200,7 +212,7 @@ export function Sidebar() {
             <MenuIcon size={17} />
           </button>
         )}
-        <button className="icon-btn" data-tip={t('收起侧栏 (Ctrl+B)')} onClick={() => s.set({ sidebarOpen: false })}>
+        <button className="icon-btn" data-tip={t('收起侧栏 ({0})', s.platform === 'darwin' ? '⌘B' : 'Ctrl+B')} onClick={() => s.set({ sidebarOpen: false })}>
           <PanelLeft size={17} />
         </button>
         <button className="icon-btn" data-tip={t('后退')} disabled={!s.history.length} onClick={s.back}>
@@ -323,7 +335,20 @@ export function Sidebar() {
             </div>
             <nav className="nav">
               {chats.map((c) => chatRow(c))}
-              {q && !chats.length && <div className="small muted" style={{ padding: '4px 10px' }}>{t('没有匹配的对话标题')}</div>}
+              {matchingThreads.map(({ c, project }) => (
+                <div
+                  key={c.id}
+                  className={'nav-item' + (route.view === 'project' && route.threadId === c.id ? ' selected' : '')}
+                  role="button"
+                  onClick={() => s.navigate(routeFor(c))}
+                  data-tip={`${project} · ${c.title}`}
+                >
+                  <MessagesSquare size={15} style={{ flex: 'none' }} />
+                  <span className="label">{c.title}</span>
+                  <span className="muted small thread-hit-project">{project}</span>
+                </div>
+              ))}
+              {q && !chats.length && !matchingThreads.length && <div className="small muted" style={{ padding: '4px 10px' }}>{t('没有匹配的对话标题')}</div>}
               {searchable(q) && (
                 <button className="nav-item" onClick={() => s.navigate({ view: 'chats' })}>
                   <Search size={15} />
@@ -337,9 +362,16 @@ export function Sidebar() {
 
       <div className="sidebar-foot">
         <button className="user-btn" onClick={() => s.set({ settingsOpen: 'general' })}>
-          <span className="avatar">{initials(s.settings.userName)}</span>
+          {/* No name given: a plain avatar and 「本地」, never 「您」 as if it were a name. */}
+          <span className="avatar">{userName ? initials(userName) : <User size={14} />}</span>
           <span className="label" style={{ flex: 1, textAlign: 'left' }}>
-            {s.settings.userName || t('您')} <span className="muted">{t('· 本地')}</span>
+            {userName ? (
+              <>
+                {userName} <span className="muted">{t('· 本地')}</span>
+              </>
+            ) : (
+              t('本地')
+            )}
           </span>
           <ChevronsUpDown size={14} className="muted" />
         </button>

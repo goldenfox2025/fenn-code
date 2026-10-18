@@ -5,6 +5,8 @@ import { MODEL_PROBE_TIMEOUT_MS, type Attachment, type Conversation, type Folder
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp, toastError } from '../store'
 import { useMenu, type MenuItem } from './Menu'
+import { openInFileManager } from '../actions'
+import { imeComposing } from '../util'
 import { lang, t } from '../i18n'
 import { tk } from '@shared/i18n'
 const tr = t
@@ -23,7 +25,7 @@ interface Props {
   placeholder?: string
   autoFocus?: boolean
   /** For a not-yet-created chat: called with the text instead of sending. */
-  onSubmit?: (text: string, attachments: Attachment[], optionValues?: Record<string, string>) => void
+  onSubmit?: (text: string, attachments: Attachment[], optionValues?: Record<string, string>) => Promise<unknown>
   /** Extra controls rendered on the left of the bottom row. */
   leading?: React.ReactNode
   /** Backend picker for a new chat. */
@@ -62,6 +64,17 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   const hasPermission = useApp((s) => !!conversation && s.permissions.some((p) => p.conversationId === conversation.id))
   const busy = conversation?.status === 'working' || hasPermission
   const draftKey = conversation ? `draft:${conversation.id}` : 'draft:new'
+  const draftKeyNow = useRef(draftKey)
+  draftKeyNow.current = draftKey
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  // A new chat being started: the send button waits, so a second press doesn't start another.
+  const [starting, setStarting] = useState(false)
 
   useEffect(() => {
     setText(sessionStorage.getItem(draftKey) ?? '')
@@ -140,14 +153,43 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       return toast(tr(NO_COMMAND, currentBackend?.name ?? conversation!.backendId, unknown), 'error')
     }
     warned.current = undefined
+    // A new chat keeps its text in the box until it has started: nothing typed is lost if it can't.
+    if (onSubmit) {
+      if (starting) return
+      setStarting(true)
+      try {
+        await onSubmit(t, files, Object.keys(pending).length ? pending : undefined)
+        sessionStorage.removeItem(draftKey)
+        if (mounted.current) {
+          setText('')
+          setFiles([])
+        }
+      } catch (e) {
+        toastError(e)
+      } finally {
+        if (mounted.current) setStarting(false)
+      }
+      return
+    }
+    const sentText = text
+    const sentFiles = files
+    const key = draftKey
     setText('')
     setFiles([])
-    sessionStorage.removeItem(draftKey)
+    sessionStorage.removeItem(key)
+    // A message that didn't go comes back into the box (unless something new was typed there meanwhile).
+    const putBack = (e: unknown) => {
+      toastError(e)
+      if (sessionStorage.getItem(key)) return
+      sessionStorage.setItem(key, sentText)
+      if (!mounted.current || draftKeyNow.current !== key) return
+      setText((cur) => cur || sentText)
+      setFiles((cur) => (cur.length ? cur : sentFiles))
+    }
     if (target && conversation) {
-      void api().sendToThread(conversation.id, target.id, t, files).catch(toastError)
+      void api().sendToThread(conversation.id, target.id, t, files).catch(putBack)
       setTarget(null)
-    } else if (onSubmit) onSubmit(t, files, Object.keys(pending).length ? pending : undefined)
-    else if (conversation) void api().send(conversation.id, t, files)
+    } else if (conversation) void api().send(conversation.id, t, files).catch(putBack)
   }
 
   // In a project chat, @ picks a thread: the message then goes straight to it.
@@ -292,7 +334,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   // One choice at a time; the message waits until it has been applied.
   const [selecting, setSelecting] = useState(false)
   // A picked app command (/子对话) needs words after it; an agent command (/compact) goes as it is.
-  const canSend = !!text.trim() || files.length > 0 || (!!picked && !picked.app)
+  const canSend = !starting && (!!text.trim() || files.length > 0 || (!!picked && !picked.app))
   // Choices run one at a time; a click while one is still switching is kept, and the latest one wins.
   const selection = useRef<Promise<void> | null>(null)
   const nextChoice = useRef<(() => Promise<unknown>) | null>(null)
@@ -671,7 +713,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
               }
             }}
             onKeyDown={(e) => {
-              if (slashOpen && !e.nativeEvent.isComposing) {
+              if (slashOpen && !imeComposing(e)) {
                 if (e.key === 'Escape') return (e.preventDefault(), setSlashClosed(true))
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                   e.preventDefault()
@@ -683,7 +725,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
                   return pickCommand(commands[Math.min(slashAt, commands.length - 1)])
                 }
               }
-              if (mention && !e.nativeEvent.isComposing) {
+              if (mention && !imeComposing(e)) {
                 if (e.key === 'Escape') return (e.preventDefault(), setMention(null))
                 if (mentionable.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
                   e.preventDefault()
@@ -705,7 +747,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
                 e.preventDefault()
                 return setTarget(null)
               }
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (e.key === 'Enter' && !e.shiftKey && !imeComposing(e)) {
                 e.preventDefault()
                 submit()
               }
@@ -845,7 +887,8 @@ export function AttachmentChip({ a, onRemove }: { a: Attachment; onRemove?: () =
 }
 
 async function readAttachment(f: File): Promise<Attachment> {
-  const path = (window as unknown as { fennFilePath?: (f: File) => string }).fennFilePath?.(f)
+  // The file's real place on disk (from the preload); a pasted image has none.
+  const path = (window as unknown as { fennFilePath?: (f: File) => string }).fennFilePath?.(f) || undefined
   if (f.type.startsWith('image/')) {
     if (f.size > MAX_IMAGE) throw new Error(t('{0} 太大（图片上限 8 MB）', f.name))
     const buf = new Uint8Array(await f.arrayBuffer())
@@ -899,7 +942,7 @@ export function FolderChip({ folder, onChange, hint = '' }: { folder: string; on
           if (folder)
             return openMenu(el, [
               { icon: <Folder size={15} />, label: baseName(folder), sub: folder, info: true },
-              { icon: <FolderOpen size={15} />, label: t('在文件管理器中打开'), onClick: () => void api().openOutput(folder) },
+              { icon: <FolderOpen size={15} />, label: t('在文件管理器中打开'), onClick: () => void openInFileManager(folder) },
               { icon: <ArrowLeftRight size={15} />, label: t('换一个文件夹…'), onClick: () => void choose() },
               ...(others.length ? [{ separator: true } as MenuItem, ...recentItems(others.slice(0, 3))] : []),
               { separator: true },

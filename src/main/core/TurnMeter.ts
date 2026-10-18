@@ -8,7 +8,9 @@ import { MIN_CHUNKS, MIN_STREAM_MS, type GenerationTiming } from '../../shared/u
  */
 export class TurnMeter {
   private first?: number
-  private last?: number
+  /** The reply's own text: speed is measured over it alone (thinking streams first and isn't in the output count). */
+  private replyFirst?: number
+  private replyLast?: number
   private chunks = 0
   /** Characters of text (the reply and its thinking) seen, for agents that report no token counts. */
   private chars = 0
@@ -16,6 +18,8 @@ export class TurnMeter {
   /** Tools running now, by id, with when they started. */
   private open = new Map<string, number>()
   private toolMs = 0
+  /** Tool time inside the reply that more reply text hasn't followed yet. */
+  private pendingToolMs = 0
 
   constructor(private readonly started: number, private readonly now = () => performance.now()) {}
 
@@ -23,18 +27,23 @@ export class TurnMeter {
     const time = this.now()
     if ((event.kind === 'message.delta' || event.kind === 'thought.delta') && event.text.trim()) {
       this.first ??= time
-      this.last = time
-      this.chunks++
-      this.chars += [...event.text].length
+      if (event.kind === 'message.delta') {
+        this.replyFirst ??= time
+        this.replyLast = time
+        this.toolMs += this.pendingToolMs
+        this.pendingToolMs = 0
+        this.chunks++
+        this.chars += [...event.text].length
+      }
     } else if (event.kind === 'tool.start') {
       // The call itself is the model's output; running it is not.
       this.first ??= time
-      this.last = time
       if (event.status === 'pending' || event.status === 'running') this.open.set(event.toolId, time)
     } else if (event.kind === 'tool.update' && (event.status === 'completed' || event.status === 'failed')) {
       const since = this.open.get(event.toolId)
       if (since !== undefined) {
-        this.toolMs += time - since
+        // Only a tool that ran inside the reply's stream is taken out of it.
+        if (this.replyFirst !== undefined && since >= this.replyFirst) this.pendingToolMs += time - since
         this.open.delete(event.toolId)
       }
     } else if (event.kind === 'notice') this.interrupt()
@@ -50,10 +59,11 @@ export class TurnMeter {
     const timing: GenerationTiming = { firstResponseMs: Math.max(0, this.first - this.started) }
     const output = usage?.output
     const tokens = reliableTokens && output !== undefined && Number.isSafeInteger(output) && output > 1
-    // Speed is the stream itself, first chunk to last, without the tools' time. The wait before the first
-    // chunk is not output: a reply that arrives in a few chunks or all at once (an agent that buffers it)
-    // can't be timed, and gets no speed rather than one that is mostly waiting.
-    const span = this.last! - this.first - this.toolMs
+    // Speed is the reply's own text as it streamed, first chunk to last, without the tools' time. The wait
+    // before it, thinking included (ACP counts thought tokens apart from output), is not output: a reply that
+    // arrives in a few chunks or all at once (an agent that buffers it) can't be timed, and gets no speed
+    // rather than one that is mostly waiting.
+    const span = this.replyFirst === undefined ? 0 : this.replyLast! - this.replyFirst - this.toolMs
     const measurable = this.chunks >= MIN_CHUNKS && span >= MIN_STREAM_MS
     if (tokens) timing.outputTokens = output
     if (stop !== 'end_turn') timing.noSpeed = 'stopped'

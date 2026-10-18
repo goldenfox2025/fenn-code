@@ -28,7 +28,7 @@ import {
 import type { LibraryChange, LibraryEntry } from '@shared/model'
 import { api, toast, useApp, toastError } from '../store'
 import { t } from '../i18n'
-import { relTime } from '../util'
+import { imeComposing, relTime } from '../util'
 import { humanSize } from './Outputs'
 import { Markdown } from './Transcript'
 import { useMenu, type MenuItem } from './Menu'
@@ -421,7 +421,7 @@ export function FilesPane({ id }: { id: string }) {
     reload()
   }
   const fullPath = (path: string) => (root ? [root.replace(/[\\/]+$/, ''), ...path.split('/')].join(root.includes('\\') ? '\\' : '/') : path)
-  const openWith = (path: string, reveal: boolean) => void api().openLibraryPath(id, path, reveal).then((r) => !r.ok && r.error && toast(r.error, 'error'))
+  const openWith = (path: string, reveal: boolean) => void api().openLibraryPath(id, path, reveal).then((r) => !r.ok && toast(r.error ?? t('打不开这个文件'), 'error'), toastError)
   /** One list of actions for a file or folder, shown on right-click, on its … button and in the preview. */
   const actions = (path: string, dir: boolean, where: 'tree' | 'preview'): MenuItem[] => [
     ...(dir
@@ -442,7 +442,8 @@ export function FilesPane({ id }: { id: string }) {
     if (e.key === 'F2') {
       e.preventDefault()
       setNaming({ mode: 'rename', path: entry.path, where: 'tree' })
-    } else if (e.key === 'Delete') {
+    } else if (e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey)) {
+      // ⌘⌫ on a Mac keyboard, where the key named Delete is Backspace.
       e.preventDefault()
       void remove(entry.path, entry.dir)
     }
@@ -706,6 +707,7 @@ function NameField({ value, placeholder, onCommit, onCancel }: { value: string; 
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation()
+        if (imeComposing(e)) return
         if (e.key === 'Enter') void done(true)
         else if (e.key === 'Escape') {
           e.preventDefault()

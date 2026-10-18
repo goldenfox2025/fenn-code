@@ -81,6 +81,9 @@ export function dismissToast(id: number): void {
   useApp.setState({ toasts: useApp.getState().toasts.filter((t) => t.id !== id) })
 }
 
+/** A page or file open beside a conversation belongs to it: going anywhere else closes it. */
+const LEAVE = { page: null, fileView: null } as const
+
 export const useApp = create<State>((set, get) => ({
   ready: false,
   projects: [],
@@ -109,24 +112,24 @@ export const useApp = create<State>((set, get) => ({
 
   async init() {
     const snap = await api().snapshot()
-    set({ ...snap, peerMessages: snap.peerMessages ?? [], boardWidgets: snap.boardWidgets ?? [], ready: true })
+    set({ ...snap, peerMessages: snap.peerMessages ?? [], boardWidgets: snap.boardWidgets ?? [], permissions: snap.permissions ?? [], ready: true })
     api().onEvent((e) => applyEvent(e, set, get))
   },
 
   navigate(r) {
     const cur = get().route
     if (JSON.stringify(cur) === JSON.stringify(r)) return
-    set({ route: r, history: [...get().history, cur].slice(-50), future: [] })
+    set({ route: r, history: [...get().history, cur].slice(-50), future: [], ...LEAVE })
   },
   back() {
     const h = get().history
     if (!h.length) return
-    set({ route: h[h.length - 1], history: h.slice(0, -1), future: [get().route, ...get().future] })
+    set({ route: h[h.length - 1], history: h.slice(0, -1), future: [get().route, ...get().future], ...LEAVE })
   },
   forward() {
     const f = get().future
     if (!f.length) return
-    set({ route: f[0], future: f.slice(1), history: [...get().history, get().route] })
+    set({ route: f[0], future: f.slice(1), history: [...get().history, get().route], ...LEAVE })
   },
 
   async loadMessages(conversationId) {
@@ -208,6 +211,9 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
       if (!c) return
       return s.navigate(routeFor(c))
     }
+    case 'open-settings':
+      // The first-run guide covers the app; settings open once it is done.
+      return s.settings.onboarded ? set({ settingsOpen: 'general' }) : undefined
     case 'backend-upgrade':
       window.dispatchEvent(new CustomEvent('oc-upgrade-line', { detail: e }))
       return

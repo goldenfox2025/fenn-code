@@ -1,5 +1,6 @@
 import { ExternalLink, FileText, FolderOpen, Link2 } from 'lucide-react'
 import { routeFor } from '../actions'
+import { errorText } from '@shared/errors'
 import type { Project, ProjectOutput } from '@shared/model'
 import { api, openFileInApp, toast, useApp } from '../store'
 import { t } from '../i18n'
@@ -13,7 +14,7 @@ export function humanSize(n: number): string {
 type Output = Pick<ProjectOutput, 'kind' | 'title' | 'path' | 'url' | 'size'> & { conversationId?: string }
 
 async function openFile(path: string, reveal = false) {
-  const r = await api().openOutput(path, reveal)
+  const r = await api().openOutput(path, reveal).catch((e: unknown) => ({ ok: false, error: errorText(e) }))
   if (!r.ok) toast(r.error ?? t('打不开这个文件'), 'error')
 }
 

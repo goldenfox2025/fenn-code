@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { CreditQuota } from '../../shared/contract'
 import { windowsSafe } from './acp/AcpBackend'
 import { qoderCommand } from './qoderCommand'
+import { endTree } from './workspace'
 
 const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 
@@ -56,7 +57,8 @@ export function readQoderCredits(config: Record<string, string>, timeoutMs = 20_
       clearTimeout(timer)
       lines.close()
       proc.stdin.end()
-      proc.kill()
+      // On Windows the CLI may run under cmd.exe (a .cmd shim): end both, not only cmd.exe.
+      endTree(proc)
       void unlink(authFile).catch(() => {}).then(() => rmdir(authDir).catch(() => {})).then(() => resolve(value))
     }
     const send = (request_id: string, subtype: string) => proc.stdin.write(JSON.stringify({ type: 'control_request', request_id, request: { subtype } }) + '\n')

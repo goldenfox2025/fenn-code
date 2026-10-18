@@ -32,7 +32,8 @@ export function terminalLaunch(
   if (platform === 'win32') {
     const line = [command, ...args].map(winQuote).join(' ')
     // `start` opens a new console window; the empty title keeps it from eating the first quoted argument.
-    return { command: 'cmd.exe', args: ['/d', '/c', `start "" cmd.exe /k ${line}`], windowsVerbatimArguments: true }
+    // /s /k "<line>": cmd drops just the outer quotes, so every quoted argument inside survives.
+    return { command: 'cmd.exe', args: ['/d', '/c', `start "" cmd.exe /s /k "${line}"`], windowsVerbatimArguments: true }
   }
   const line = [command, ...args].map(shQuote).join(' ')
   if (platform === 'darwin') {
@@ -61,7 +62,9 @@ export function openTerminal(command: string, args: string[]): Promise<void> {
   const l = terminalLaunch(command, args)
   if (!l) return Promise.reject(new Error(t('没有找到可用的终端。请自己打开一个终端，运行：{0}', [command, ...args].join(' '))))
   return new Promise((resolve, reject) => {
-    const p = spawn(l.command, l.args, { detached: true, stdio: 'ignore', windowsVerbatimArguments: l.windowsVerbatimArguments })
+    // The one window the app opens on purpose: the terminal the user signs in with. On Windows the outer
+    // cmd.exe is detached (no console of its own) and `start` opens the visible one, so nothing flashes.
+    const p = spawn(l.command, l.args, { detached: true, stdio: 'ignore', windowsVerbatimArguments: l.windowsVerbatimArguments, windowsHide: false })
     p.once('error', (e) => reject(new Error(t('无法打开终端：{0}。请自己打开一个终端，运行：{1}', e.message, [command, ...args].join(' ')))))
     p.once('spawn', () => {
       p.unref()

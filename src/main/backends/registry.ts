@@ -174,7 +174,8 @@ export function jsonErrorAt(text: string): string {
 
 export function readDeclared(file?: string): DeclaredAcpBackend[] {
   if (!file || !existsSync(file)) return []
-  const text = readFileSync(file, 'utf8')
+  // Windows Notepad (before 2019) saves UTF-8 with a byte order mark, which JSON.parse refuses.
+  const text = readFileSync(file, 'utf8').replace(/^\uFEFF/, '')
   if (!text.trim()) return []
   let list: unknown
   try {

@@ -6,7 +6,9 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, lstatSync, promises as fs, readlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { t, tk } from '../../shared/i18n'
+import { windowsSafe } from './acp/AcpBackend'
 
 export interface ExitStatus {
   exitCode: number | null
@@ -53,6 +55,75 @@ export function whenExited(proc: ChildProcess, waitMs: number): Promise<void> {
       done()
     })
   })
+}
+
+/**
+ * Ends a program that ran too long. On Windows a command through cmd.exe is a child of it, and
+ * killing only cmd.exe leaves that running (holding its output open): end the whole tree there.
+ */
+export function endTree(proc: ChildProcess, platform: NodeJS.Platform = process.platform): void {
+  if (platform === 'win32' && proc.pid && proc.exitCode === null && proc.signalCode === null)
+    spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }).on('error', () => proc.kill())
+  else proc.kill()
+}
+
+/**
+ * Turns a program's output into text as it arrives. A character split across two chunks is
+ * kept until its rest comes. On Windows a console program prints in the console's code page
+ * (GBK on Chinese Windows), not UTF-8: once a chunk isn't valid UTF-8, the stream is read as
+ * GB18030 (a superset of GBK) from there on. Node tools print UTF-8 and stay as they are.
+ */
+export function outputDecoder(platform: NodeJS.Platform = process.platform): { write(chunk: Buffer): string; end(): string } {
+  const utf8 = new StringDecoder('utf8')
+  let gbk: TextDecoder | undefined
+  let pending = Buffer.alloc(0)
+  const strict = new TextDecoder('utf-8', { fatal: true })
+  const legacy = (): TextDecoder | undefined => {
+    try {
+      return new TextDecoder('gb18030')
+    } catch {
+      return undefined // Node without full ICU: stay with UTF-8.
+    }
+  }
+  return {
+    write(chunk) {
+      if (gbk) return gbk.decode(chunk, { stream: true })
+      if (platform !== 'win32') return utf8.write(chunk)
+      const buf = pending.length ? Buffer.concat([pending, chunk]) : chunk
+      const cut = buf.length - incompleteTail(buf)
+      try {
+        const text = strict.decode(buf.subarray(0, cut))
+        pending = Buffer.from(buf.subarray(cut))
+        return text
+      } catch {
+        gbk = legacy()
+        pending = Buffer.alloc(0)
+        return gbk ? gbk.decode(buf, { stream: true }) : buf.toString('utf8')
+      }
+    },
+    end() {
+      if (gbk) return gbk.decode()
+      if (platform !== 'win32') return utf8.end()
+      const rest = pending
+      pending = Buffer.alloc(0)
+      try {
+        return strict.decode(rest)
+      } catch {
+        return legacy()?.decode(rest) ?? rest.toString('utf8')
+      }
+    }
+  }
+}
+
+/** How many bytes at the end begin a UTF-8 character whose rest hasn't arrived (0 to 3). */
+function incompleteTail(buf: Buffer): number {
+  for (let k = 1; k <= Math.min(3, buf.length); k++) {
+    const b = buf[buf.length - k]
+    if ((b & 0xc0) === 0x80) continue // a continuation byte: look further back
+    const need = b >= 0xf8 ? 1 : b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : b >= 0xc0 ? 2 : 1
+    return need > k ? k : 0
+  }
+  return 0
 }
 
 function killTree(proc: ChildProcess): void {
@@ -226,9 +297,11 @@ export class Workspaces {
       throw new Error(`用户没有允许在这里运行命令：${cwd}`)
     const env = { ...process.env }
     for (const v of req.env ?? []) env[v.name] = v.value
-    // No args: a shell command line, as agents usually send.
-    const proc = req.args?.length
-      ? spawn(req.command, req.args, { cwd, env, windowsHide: true, detached: !WINDOWS })
+    // No args: a shell command line, as agents usually send. With args on Windows, `npm` and the
+    // like are .cmd shims only a shell finds (see windowsSafe).
+    const safe = req.args?.length ? windowsSafe(req.command, req.args) : undefined
+    const proc = safe
+      ? spawn(safe.command, safe.args, { cwd, env, shell: safe.shell, windowsHide: true, detached: !WINDOWS })
       : spawn(req.command, { cwd, env, shell: true, windowsHide: true, detached: !WINDOWS })
     const id = `term-${this.nextId++}`
     const term: Terminal = {
@@ -244,21 +317,25 @@ export class Workspaces {
           done(term.exit)
         })
         proc.on('close', (code, signal) => {
+          add(out.end() + err.end())
           term.exit ??= { exitCode: code, signal: signal ?? null }
           done(term.exit)
         })
       })
     }
-    const add = (chunk: Buffer) => {
-      term.output += chunk.toString('utf8')
+    const out = outputDecoder()
+    const err = outputDecoder()
+    const add = (text: string) => {
+      if (!text) return
+      term.output += text
       // Keep the end: the latest output matters most.
       while (Buffer.byteLength(term.output) > term.limit) {
         term.output = term.output.slice(Math.ceil(term.output.length / 10))
         term.truncated = true
       }
     }
-    proc.stdout?.on('data', add)
-    proc.stderr?.on('data', add)
+    proc.stdout?.on('data', (chunk: Buffer) => add(out.write(chunk)))
+    proc.stderr?.on('data', (chunk: Buffer) => add(err.write(chunk)))
     this.terminals.set(id, term)
     this.hooks.onTerminal?.(sessionId, { id, command: line, state: 'running' })
     void term.exited.then((x) =>

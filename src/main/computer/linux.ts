@@ -261,7 +261,7 @@ export class LinuxDriverImpl implements InputDriver {
     }
     const exec = desktopExec(name)
     const cmd = exec ?? name
-    const child = spawn('/bin/sh', ['-c', `exec ${exec ? cmd : shellQuote(cmd)}`], { detached: true, stdio: 'ignore' })
+    const child = spawn('/bin/sh', ['-c', `exec ${exec ? cmd : shellQuote(cmd)}`], { detached: true, stdio: 'ignore', windowsHide: true })
     const failed = await new Promise<boolean>((resolve) => {
       child.once('error', () => resolve(true))
       child.once('exit', (code) => resolve(code === 127))
