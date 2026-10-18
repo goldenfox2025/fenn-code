@@ -194,7 +194,7 @@ export class BackendManager {
 
   async newSession(backendId: string, opts: { cwd?: string; folder?: string; tools?: HostToolServer[]; system?: string } = {}): Promise<SessionInfo> {
     return this.signedInSince(backendId, () =>
-      this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system }))
+      this.whileOpening(backendId, () => this.get(backendId).newSession({ cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })))
   }
 
   /** Replies running now, per backend: a restart would stop them. */
@@ -206,13 +206,32 @@ export class BackendManager {
    * again and ask once more.
    */
   private async signedInSince<T>(backendId: string, open: () => Promise<T>): Promise<T> {
+    const attempt = open()
+    const asked = this.instances.get(backendId)
     try {
-      return await open()
+      return await attempt
     } catch (err) {
       const kind = classifyError(err instanceof Error ? err.message : String(err))
-      if ((kind !== 'auth' && kind !== 'refresh') || this.prompting.get(backendId)) throw err
+      if (kind !== 'auth' && kind !== 'refresh') throw err
+      // Started again meanwhile (a new key in Settings): the old process's answer says nothing about the new one.
+      if (this.instances.get(backendId) !== asked) return open()
+      // A reply running, or a chat opening its session, would be cut off (QA: a model probe that failed
+      // before the key was entered restarted Grok under the first reply).
+      if (this.prompting.get(backendId) || this.opening.get(backendId)) throw err
       await this.restart(backendId)
       return open()
+    }
+  }
+
+  /** Chats opening their session now, per backend: like a running reply, a restart would cut them off. */
+  private opening = new Map<string, number>()
+
+  private async whileOpening<T>(backendId: string, run: () => Promise<T>): Promise<T> {
+    this.opening.set(backendId, (this.opening.get(backendId) ?? 0) + 1)
+    try {
+      return await run()
+    } finally {
+      this.opening.set(backendId, this.opening.get(backendId)! - 1)
     }
   }
 
@@ -311,7 +330,7 @@ export class BackendManager {
   ): Promise<SessionInfo | null> {
     const b = this.get(backendId)
     if (!b.resumeSession) return null
-    return b.resumeSession({ sessionId, cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system })
+    return this.whileOpening(backendId, () => b.resumeSession!({ sessionId, cwd: opts.cwd || this.opts.defaultCwd, folder: opts.folder, tools: opts.tools, system: opts.system }))
   }
 
   async prompt(backendId: string, sessionId: string, parts: PromptPart[]): Promise<TurnResult> {
