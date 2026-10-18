@@ -62,7 +62,7 @@ export class AppCore {
     readonly platform: string,
     readonly tools: ToolServer,
     extras: {
-      computer?: Pick<ComputerDeps, 'screen' | 'input' | 'clipboard' | 'pasteChord' | 'onActive' | 'onAction' | 'isOwnApp'>
+      computer?: Pick<ComputerDeps, 'screen' | 'input' | 'clipboard' | 'pasteChord' | 'onActive' | 'onAction' | 'onAsking' | 'isOwnApp'>
       /** Encrypts connector secrets at rest (the OS keychain in the app). */
       secrets?: { seal(v: string): string; unseal(v: string): string }
       /** backends.json couldn't be read at startup (see backendsConfigError). */

@@ -80,6 +80,8 @@ export interface ComputerDeps {
   onActive?(conversationId: string, active: boolean): void
   /** What the agent is doing now, for the stop control. */
   onAction?(conversationId: string, label: string): void
+  /** A conversation asks the user for access, or has its answer: the app brings the question in front while it waits. */
+  onAsking?(conversationId: string, asking: boolean): void
 }
 
 /** A grant lasts this long after the agent's last action; then it asks again. */
@@ -526,10 +528,14 @@ export class ComputerControl {
 
     let pending = this.asking.get(id) as Promise<Record<string, TierChoice> | null> | undefined
     if (!pending) {
-      pending = this.deps.askAccess(id, { reason: String(a.reason ?? '').slice(0, 300), apps: wanted })
+      this.deps.onAsking?.(id, true)
+      pending = this.deps.askAccess(id, { reason: String(a.reason ?? '').slice(0, 300), apps: wanted }).finally(() => {
+        this.asking.delete(id)
+        this.deps.onAsking?.(id, false)
+      })
       this.asking.set(id, pending)
     }
-    const answer = await pending.finally(() => this.asking.delete(id))
+    const answer = await pending
     if (!answer) {
       this.denied.add(id)
       throw new Error('用户没有允许（或没有回应）操控电脑。不要再试，直接告诉用户需要什么。')

@@ -39,6 +39,7 @@ import { AppCore } from "./core/AppCore";
 import { Notifier } from "./core/Notifier";
 import type { DisplayInfo, ScreenSource } from "./computer/ComputerControl";
 import { inputDriver, type Coords } from "./computer/drivers";
+import { ControlWindow } from "./computer/controlWindow";
 import { legacyMacKey, OLD_NAMES, repairSecrets } from "./store/secrets";
 import { resolveLang, setLang, t } from "../shared/i18n";
 import { Store } from "./store/Store";
@@ -300,7 +301,6 @@ const coords: Coords =
 // agent doesn't act on its own window) and a small always-on-top bar offers Stop.
 const controlling = new Set<string>();
 let controlBar: BrowserWindow | null = null;
-let minimizedForControl = false;
 const CONTROL_BAR_HTML = `<!doctype html><meta charset="utf-8"><style>
 html,body{margin:0;height:100%;background:transparent;font:13px system-ui,-apple-system,"Segoe UI",sans-serif}
 .bar{display:flex;align-items:center;gap:10px;height:100%;box-sizing:border-box;padding:0 6px 0 14px;border-radius:12px;background:#1f1e1d;color:#f5f4ef}
@@ -354,15 +354,12 @@ function setControlLabel(label: string): void {
     .catch(() => {});
 }
 
+const controlWindow = new ControlWindow(() => win, process.platform);
+
 function onComputerActive(conversationId: string, active: boolean): void {
+  controlWindow.setActive(conversationId, active);
   if (active) {
     controlling.add(conversationId);
-    if (win && win.isVisible() && !win.isMinimized()) {
-      // Linux window managers vary (and some can't minimize at all), so hide there.
-      if (process.platform === "linux") win.hide();
-      else win.minimize();
-      minimizedForControl = true;
-    }
     showControlBar();
     return;
   }
@@ -370,11 +367,12 @@ function onComputerActive(conversationId: string, active: boolean): void {
   if (controlling.size) return;
   controlLabel = "";
   controlBar?.close();
-  if (minimizedForControl && win) {
-    if (win.isMinimized()) win.restore();
-    else if (!win.isVisible()) win.showInactive();
-  }
-  minimizedForControl = false;
+}
+
+/** An agent asks for access to more programs: the card is in the main window, so it comes back, on that chat. */
+function onComputerAsking(conversationId: string, asking: boolean): void {
+  controlWindow.setAsking(conversationId, asking);
+  if (asking) publish({ type: "open-conversation", conversationId });
 }
 
 const inputs = inputDriver(process.platform, coords, resourcesDir, () => {
@@ -388,6 +386,7 @@ const inputs = inputDriver(process.platform, coords, resourcesDir, () => {
 app.on("will-quit", () => inputs.dispose?.());
 const computer = {
   onActive: onComputerActive,
+  onAsking: onComputerAsking,
   onAction: (_id: string, label: string) => setControlLabel(label),
   screen: screenSource,
   input: inputs,
