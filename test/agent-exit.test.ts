@@ -12,7 +12,9 @@ describe('an agent that exits right after starting', () => {
         const msgs = conv ? t.store.messagesOf(conv.id) : []
         return msgs.map((m: any) => JSON.stringify(m)).find((s) => s.includes('启动后立即退出'))
       }, 15000)
-      expect(text).toContain('code 7')
+      // One clean sentence, then its stderr on the next lines (shown under 详情).
+      expect(text).toContain('启动后立即退出了（代码 7）。\\n')
+      expect(text).not.toContain('：')
       expect(text).toContain('missing dependency libfoo')
       expect(text).not.toMatch(/connection closed/i)
     } finally {

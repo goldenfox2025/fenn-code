@@ -139,6 +139,8 @@ export function grokExt(method: string, params: Record<string, unknown>): { sess
   const events: AgentEvent[] = []
   switch (u.sessionUpdate) {
     case 'retry_state':
+      // Only a retry in progress says so; "failed" (a 400, a bad key or model) ends the turn, and its error bar covers it.
+      if (u.type !== 'retrying' || typeof u.attempt !== 'number' || typeof u.max_retries !== 'number') break
       events.push({
         kind: 'notice',
         level: 'warning',

@@ -42,6 +42,14 @@ describe('Grok vendor notifications', () => {
     ])
   })
 
+  it('says it is retrying only while it retries; a hard failure adds no notice', () => {
+    const retrying = note({ sessionUpdate: 'retry_state', type: 'retrying', attempt: 2, max_retries: 15, reason: 'API error (status 503)' })
+    expect(retrying?.events).toEqual([{ kind: 'notice', level: 'warning', key: 'grok-retry', text: '连接 Grok 失败，正在重试（2/15）' }])
+    // What Grok sends on a 400, a bad key or model: no numbers, the reason in "message"; the error bar covers it.
+    expect(note({ sessionUpdate: 'retry_state', type: 'failed', error_type: 'api', message: 'API error (status 400 Bad Request)' })).toBeNull()
+    expect(note({ sessionUpdate: 'retry_state', type: 'retrying' })).toBeNull()
+  })
+
   it('ignores what it does not know', () => {
     expect(note({ sessionUpdate: 'background_tasks' })).toBeNull()
     expect(grokExt('_other/x', { sessionId: 's1', update: { sessionUpdate: 'retry_state' } })).toBeNull()

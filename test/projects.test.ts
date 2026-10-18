@@ -303,7 +303,7 @@ describe('what a failed reply shows', () => {
   it('never shows an agent\'s raw text, nor more than the first line of the app\'s own', async () => {
     const { errorLead } = await import('../src/shared/errors')
     expect(errorLead('Unexpected case: {"type":"autocompact_state"}')).toEqual({ reword: true })
-    expect(errorLead('Claude Code 启动后立即退出（code 1）\nError: Cannot find module')).toEqual({ line: 'Claude Code 启动后立即退出（code 1）' })
+    expect(errorLead('Claude Code 启动后立即退出了（代码 1）。\nError: Cannot find module')).toEqual({ line: 'Claude Code 启动后立即退出了（代码 1）。' })
     expect(errorLead('Claude Code 意外退出了，点「重试」继续。')).toBeNull()
   })
 })

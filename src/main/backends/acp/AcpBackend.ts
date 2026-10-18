@@ -341,11 +341,12 @@ export class AcpBackend implements AgentBackend {
         this.quirks.sessionTracker?.exited()
         // Through a shell (Windows .cmd), a missing program shows up as an exit, not ENOENT.
         const how = signal ?? `code ${code}`
+        const startHow = signal ? t('信号 {0}', signal) : t('代码 {0}', code ?? '?')
         this.exitReason = /is not recognized as an internal or external command|command not found/i.test(errTail.join(''))
           ? this.missing(spec.command)
           : this.stopReasons.get(proc) ??
             // Once running, what it printed (often raw JSON) goes only to the log; at start it says what is missing.
-            (ready ? t('{0} 意外退出了，点「重试」继续。', this.name) : t('{0} 启动后立即退出（{1}）', this.name, how) + tail(errTail))
+            (ready ? t('{0} 意外退出了，点「重试」继续。', this.name) : t('{0} 启动后立即退出了（{1}）。', this.name, startHow) + tail(errTail, '\n'))
         if (ready && !wasUs && !this.stopReasons.has(proc)) this.host.log('warn', `${this.name} exited (${how})${tail(errTail)}`)
         reject(new Error(this.exitReason))
         // Sessions lived in that process; tell the app so it can start over cleanly.
@@ -888,9 +889,9 @@ export class AcpBackend implements AgentBackend {
   }
 }
 
-function tail(lines: string[]): string {
+function tail(lines: string[], lead = '：\n'): string {
   const t = lines.join('').trim().split('\n').slice(-6).join('\n').slice(-600)
-  return t ? `：\n${t}` : ''
+  return t ? `${lead}${t}` : ''
 }
 
 /**
