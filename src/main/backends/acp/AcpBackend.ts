@@ -107,6 +107,11 @@ export interface AcpQuirks {
   modelAtStart?: boolean
   /** Each session/new takes seconds even in a running process (Antigravity creates its conversation): see AgentBackend.wantsSpare. */
   spareSession?: boolean
+  /**
+   * Brings back a session hidden from the agent's own app (Codex: `codex unarchive`), which the agent
+   * can't resume while hidden. Set for plugins with an appListing; there, session/delete only hides (archives).
+   */
+  unhide?(sessionId: string): Promise<void>
   /** Stops the agent's process its own way (Antigravity: so it can clean up after itself); resolves once it is done. */
   stop?(proc: ChildProcess): Promise<void>
 }
@@ -441,7 +446,7 @@ export class AcpBackend implements AgentBackend {
     return true
   }
 
-  async closeSession(sessionId: string, opts: { discard?: boolean } = {}): Promise<void> {
+  async closeSession(sessionId: string, opts: { discard?: boolean; hide?: boolean } = {}): Promise<void> {
     this.open.delete(sessionId)
     this.workspaces.close(sessionId)
     this.modelSelectors.delete(sessionId)
@@ -450,7 +455,8 @@ export class AcpBackend implements AgentBackend {
     const caps = this.caps?.sessionCapabilities as { close?: unknown; delete?: unknown } | null | undefined
     if (caps?.close) await this.conn?.closeSession({ sessionId }).catch(() => {})
     // Otherwise it would sit in the agent's own session list (the Codex app shows every one).
-    if (opts.discard && caps?.delete) await this.conn?.deleteSession({ sessionId }).catch(() => {})
+    // `hide` only where delete is known to archive (see unhide), never a real delete.
+    if ((opts.discard || (opts.hide && this.quirks.unhide)) && caps?.delete) await this.conn?.deleteSession({ sessionId }).catch(() => {})
     this.quirks.sessionTracker?.closed(sessionId, this.proc)
   }
 
@@ -459,6 +465,8 @@ export class AcpBackend implements AgentBackend {
     this.workspaces.setRoot(sessionId, folder, cwd)
     const mcpServers = this.mcpServers(tools)
     let res: { configOptions?: unknown; models?: unknown; _meta?: Record<string, unknown> | null } | undefined
+    // Shown again while it is open (an archived Codex thread can't be resumed); hidden again once released.
+    await this.quirks.unhide?.(sessionId).catch((err) => this.host.log('warn', `${this.name} could not unarchive ${sessionId}: ${errorText(err)}`))
     const opened = this.quirks.sessionTracker?.begin(sessionId)
     try {
       if (this.caps?.sessionCapabilities?.resume) {

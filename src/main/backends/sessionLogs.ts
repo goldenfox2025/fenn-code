@@ -4,7 +4,8 @@
  * when an old conversation is reopened and nothing has been reported yet.
  * Each log is found by the ACP session id; nothing is guessed when it isn't there.
  */
-import { open, readdir, stat } from 'node:fs/promises'
+import { open, readdir, readFile, stat } from 'node:fs/promises'
+import * as zlib from 'node:zlib'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { SessionContext } from '../../shared/contract'
@@ -63,19 +64,39 @@ async function inAnyFolder(root: string, file: string): Promise<string | undefin
   return undefined
 }
 
-/** Codex: sessions/YYYY/MM/DD/rollout-<time>-<session id>.jsonl, newest days first. */
-async function codexFile(home: string, id: string): Promise<string | undefined> {
-  const root = join(process.env.CODEX_HOME || join(home, '.codex'), 'sessions')
+const codexHome = (home: string) => process.env.CODEX_HOME || join(home, '.codex')
+
+/** Usually rollout-<time>-<id>.jsonl; a few are rollout-<time>-<id>_<other id>.jsonl; a cold one is compressed (.jsonl.zst). */
+function rolloutOf(files: string[], id: string): string | undefined {
+  const named = new RegExp(`[-_]${id.replace(/\./g, '\\.')}[_.]`)
+  return files.find((f) => f.startsWith('rollout-') && /\.jsonl(\.zst)?$/.test(f) && named.test(f))
+}
+
+/**
+ * Codex keeps a thread in sessions/YYYY/MM/DD/ (searched newest days first) and, once archived
+ * (hidden from Codex Desktop), flat in archived_sessions/ under the same name.
+ */
+export async function codexRollout(id: string, home = homedir()): Promise<{ path: string; archived: boolean } | undefined> {
+  if (!safeId(id)) return undefined
+  const root = join(codexHome(home), 'sessions')
   const desc = (l: string[]) => l.sort().reverse()
   for (const y of desc(await dirs(root)))
     for (const m of desc(await dirs(join(root, y))))
       for (const d of desc(await dirs(join(root, y, m)))) {
         const day = join(root, y, m, d)
-        // Usually rollout-<time>-<id>.jsonl; a few are rollout-<time>-<id>_<other id>.jsonl.
-        const hit = (await readdir(day).catch(() => [] as string[])).find((f) => f.startsWith('rollout-') && f.endsWith('.jsonl') && new RegExp(`[-_]${id.replace(/\./g, '\\.')}[_.]`).test(f))
-        if (hit) return join(day, hit)
+        const hit = rolloutOf(await readdir(day).catch(() => [] as string[]), id)
+        if (hit) return { path: join(day, hit), archived: false }
       }
-  return undefined
+  const archive = join(codexHome(home), 'archived_sessions')
+  const hit = rolloutOf(await readdir(archive).catch(() => [] as string[]), id)
+  return hit ? { path: join(archive, hit), archived: true } : undefined
+}
+
+/** A compressed rollout, read whole; undefined where this Node can't decompress zstd. */
+async function zstdLines(path: string): Promise<string[] | undefined> {
+  const unzip = (zlib as { zstdDecompressSync?: (b: Buffer) => Buffer }).zstdDecompressSync
+  if (!unzip) return undefined
+  return unzip(await readFile(path)).toString('utf8').split('\n').filter((l) => l.trim())
 }
 
 /** Codex: the last token_count event; `last_token_usage` is the latest request alone. */
@@ -215,8 +236,10 @@ export async function readSessionContext(kind: SessionLogKind, sessionId: string
   if (!safeId(sessionId)) return undefined
   try {
     if (kind === 'codex') {
-      const f = await codexFile(home, sessionId)
-      return f ? codexContext(await tailLines(f)) : undefined
+      const f = (await codexRollout(sessionId, home))?.path
+      if (!f) return undefined
+      const lines = f.endsWith('.zst') ? await zstdLines(f) : await tailLines(f)
+      return lines && codexContext(lines)
     }
     if (kind === 'claude') {
       const root = join(process.env.CLAUDE_CONFIG_DIR || join(home, '.claude'), 'projects')

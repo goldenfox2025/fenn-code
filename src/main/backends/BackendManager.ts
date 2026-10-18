@@ -71,6 +71,8 @@ export class BackendManager {
         description: p.description && t(p.description),
         settings: (p.settings ?? []).map((s) => ({ ...s, label: t(s.label), help: s.help && t(s.help) })),
         configured: Object.fromEntries((p.settings ?? []).map((s) => [s.key, !!cfg[s.key]])),
+        toggles: Object.fromEntries((p.settings ?? []).filter((s) => s.type === 'toggle').map((s) => [s.key, (cfg[s.key] || s.default) === '1'])),
+        appListing: p.appListing && t(p.appListing.app),
         signIn: p.signIn,
         terminalLogin: !!p.login,
         account: !!p.account,
@@ -96,6 +98,7 @@ export class BackendManager {
 
   async setSetting(backendId: string, key: string, value: string): Promise<void> {
     this.opts.settings.set(backendId, key, value)
+    if (this.opts.plugins.find((p) => p.id === backendId)?.settings?.find((s) => s.key === key)?.noRestart) return
     // Restart so the new settings take effect on the next call.
     await this.restart(backendId, t('{0} 的设置已更改，已重新启动。请点「重试」。', this.nameOf(backendId)))
   }
@@ -230,9 +233,35 @@ export class BackendManager {
     void this.instances.get(backendId)?.closeSession?.(sessionId, { discard: true }).catch(() => {})
   }
 
-  /** Closes a session the app is done with; unlike discardSession it stays in the agent's history, to resume. */
-  releaseSession(backendId: string, sessionId: string): void {
-    void this.instances.get(backendId)?.closeSession?.(sessionId).catch(() => {})
+  /**
+   * Closes a session the app is done with; unlike discardSession it stays in the agent's history, to resume.
+   * `hide`: its conversation is kept out of the agent's own app (see appListing). A session whose agent
+   * isn't running any more is hidden from outside it.
+   */
+  releaseSession(backendId: string, sessionId: string, hide = false): void {
+    const inst = this.instances.get(backendId)
+    if (inst?.closeSession) void inst.closeSession(sessionId, { hide: hide && this.hasAppListing(backendId) }).catch(() => {})
+    else if (hide) void this.setShownInApp(backendId, sessionId, false)
+  }
+
+  hasAppListing(backendId: string): boolean {
+    return !!this.opts.plugins.find((p) => p.id === backendId)?.appListing
+  }
+
+  /** Whether the app's conversations with this backend show in the agent's own app (see BackendPlugin.appListing). */
+  shownInApp(backendId: string): boolean {
+    const listing = this.opts.plugins.find((p) => p.id === backendId)?.appListing
+    return !listing || listing.shown(this.opts.settings.get(backendId))
+  }
+
+  /** Shows or hides a session the app has no open session for in the agent's own app. Never throws. */
+  async setShownInApp(backendId: string, sessionId: string, shown: boolean): Promise<void> {
+    const listing = this.opts.plugins.find((p) => p.id === backendId)?.appListing
+    await listing?.setShown(this.opts.settings.get(backendId), sessionId, shown).catch((err) => {
+      const message = `${backendId}: could not ${shown ? 'unarchive' : 'archive'} ${sessionId}: ${errorText(err)}`
+      console.warn(message)
+      this.opts.emit({ type: 'backend-log', backendId, level: 'warn', message })
+    })
   }
 
   /** See AgentBackend.openSessionLimit. */

@@ -233,9 +233,10 @@ export interface AgentBackend {
   resumeSession?(opts: NewSessionOptions & { sessionId: string }): Promise<SessionInfo | null>
   /**
    * Frees a session the app no longer needs (if the backend can). `discard`: a background chore's
-   * session, also removed from the agent's own history where it can (Codex archives it).
+   * session, also removed from the agent's own history where it can (Codex archives it). `hide`: the
+   * user keeps the app's conversations out of the agent's own app (see BackendPlugin.appListing), also archived.
    */
-  closeSession?(sessionId: string, opts?: { discard?: boolean }): Promise<void>
+  closeSession?(sessionId: string, opts?: { discard?: boolean; hide?: boolean }): Promise<void>
   /** Starts the agent before it is needed (and, where its first session is slow to open, opens and discards one). Sends nothing. */
   warm?(cwd: string): Promise<void>
   /**
@@ -302,6 +303,25 @@ export interface PluginSetting {
   secret?: boolean
   placeholder?: string
   help?: string
+  /** An on/off switch: the value is '1' or '0'. */
+  type?: 'toggle'
+  /** The value while the user hasn't set one. */
+  default?: string
+  /** Read when it is needed, so changing it doesn't restart the agent. */
+  noRestart?: boolean
+}
+
+/**
+ * The agent's own app lists the chats the app has with it (Codex Desktop lists every Codex
+ * thread): whether they show there is the user's choice, one setting for all of them.
+ */
+export interface AppListing {
+  /** The app's name, e.g. 「Codex 桌面版」 (an i18n key). */
+  app: string
+  /** Whether the app's conversations show there (the user's setting). */
+  shown(config: Record<string, string>): boolean
+  /** Shows or hides a session the app is not running there; nothing happens when it already is so. */
+  setShown(config: Record<string, string>, sessionId: string, shown: boolean): Promise<void>
 }
 
 /** One drop-in file under src/main/backends/plugins/ exports one of these. */
@@ -310,6 +330,7 @@ export interface BackendPlugin {
   name: string
   description?: string
   settings?: PluginSetting[]
+  appListing?: AppListing
   /** The agent can sign in from the app (ACP authenticate), so settings show a 「登录」 button. */
   signIn?: boolean
   /** A command that signs in from a terminal (e.g. `qodercli login`); settings show a 「登录」 button that opens it. */
@@ -348,6 +369,10 @@ export interface BackendSummary {
   settings: PluginSetting[]
   /** Which settings currently have a value (values themselves never leave main). */
   configured: Record<string, boolean>
+  /** The current value of each on/off setting. */
+  toggles?: Record<string, boolean>
+  /** The agent's own app, which lists its chats (see BackendPlugin.appListing): conversations can be shown there or not. */
+  appListing?: string
   signIn?: boolean
   /** Signs in by running a command in a terminal window. */
   terminalLogin?: boolean

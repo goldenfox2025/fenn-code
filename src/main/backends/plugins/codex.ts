@@ -1,7 +1,12 @@
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import type { AppListing } from '../../../shared/contract'
 import { acpPlugin, type AccountCheck } from '../acp'
+import { windowsSafe } from '../acp/AcpBackend'
+import { codexRollout } from '../sessionLogs'
+import { decodeOutput } from '../workspace'
 import { nodeScript, packageDir } from '../nodeScript'
 import { t, tk } from '../../../shared/i18n'
 
@@ -90,6 +95,41 @@ export function codexLaunch(config: Record<string, string>): { command: string; 
   }
 }
 
+/** The Codex program the app runs (the user's own, else the one the adapter ships), for its plain subcommands. */
+export function codexProgram(config: Record<string, string>): string {
+  const own = config.CODEX_CLI_PATH?.trim()
+  if (own) return own
+  const script = nodeScript(config.CODEX_ACP_PATH?.trim() || 'codex-acp', '@agentclientprotocol/codex-acp/dist/index.js', []).requires?.[0]
+  return (script && bundledCodex(script)?.exe) || 'codex'
+}
+
+function runCodex(program: string, args: string[]): Promise<void> {
+  const spec = windowsSafe(program, args)
+  return new Promise((resolve, reject) => {
+    execFile(spec.command, spec.args, { shell: spec.shell, windowsHide: true, timeout: 20_000, encoding: 'buffer' }, (err, _out, errBuf) =>
+      err ? reject(new Error(decodeOutput(errBuf).trim() || err.message)) : resolve()
+    )
+  })
+}
+
+/**
+ * Codex Desktop lists every Codex thread on the machine, the app's too. Hiding one archives it
+ * (`codex archive`, local, nothing deleted; Desktop's Archived view still has it) and showing it
+ * unarchives it. The rollout's folder says which it is, so nothing runs when it already is so.
+ */
+export function codexAppListing(run: (program: string, args: string[]) => Promise<void> = runCodex): AppListing {
+  return {
+    app: tk('Codex 桌面版'),
+    shown: (config) => config.CODEX_SHOW_IN_DESKTOP === '1',
+    async setShown(config, sessionId, shown) {
+      const at = await codexRollout(sessionId)
+      // No rollout yet: a session never prompted, which Desktop doesn't list either.
+      if (!at || at.archived === !shown) return
+      await run(codexProgram(config), [shown ? 'unarchive' : 'archive', sessionId])
+    }
+  }
+}
+
 /**
  * OpenAI Codex CLI, through the ACP adapter (@agentclientprotocol/codex-acp).
  * The adapter uses the login Codex already has (`codex login`).
@@ -103,8 +143,11 @@ export default acpPlugin({
     { key: 'CODEX_CLI_PATH', label: tk('Codex CLI 路径'), placeholder: 'codex',
       help: tk('可填写实际可执行文件的绝对路径。桌面应用无法执行 shell 别名；留空则从 PATH 查找。') },
     { key: 'CODEX_ACP_PATH', label: tk('Codex ACP 适配器路径'), placeholder: 'codex-acp',
-      help: tk('填写 codex-acp 可执行文件的路径；留空则从 PATH 查找。') }
+      help: tk('填写 codex-acp 可执行文件的路径；留空则从 PATH 查找。') },
+    { key: 'CODEX_SHOW_IN_DESKTOP', type: 'toggle', default: '0', noRestart: true, label: tk('在 Codex 桌面版中显示 Fenn 的 Codex 对话'),
+      help: tk('关闭时，Fenn 用完一个对话的会话后会在 Codex 里把它归档（不删除，桌面版的「已归档」里还在）。正在 Fenn 里打开的对话仍会暂时出现在桌面版。') }
   ],
+  appListing: codexAppListing(),
   login: (config) => ({ command: config.CODEX_CLI_PATH?.trim() || 'codex', args: ['login'] }),
   account: (config) => codexAccount(config),
   upgrade: {

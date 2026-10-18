@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import type { AccountStatus, BackendHost, BackendPlugin, PluginSetting, UpgradeSpec } from '../../../shared/contract'
+import type { AccountStatus, AppListing, BackendHost, BackendPlugin, PluginSetting, UpgradeSpec } from '../../../shared/contract'
 import { findOnPath } from '../install'
 import { t } from '../../../shared/i18n'
 import { readSessionContext, type SessionLogKind } from '../sessionLogs'
@@ -29,6 +29,8 @@ export interface AcpPluginOptions {
    */
   launch: (host: BackendHost) => AcpLaunchSpec | Promise<AcpLaunchSpec>
   quirks?: AcpQuirks
+  /** See BackendPlugin.appListing; resuming a hidden session shows it again first (AcpQuirks.unhide). */
+  appListing?: AppListing
   signIn?: boolean
   login?: BackendPlugin['login']
   signature?: string
@@ -98,6 +100,7 @@ export function acpPlugin(opts: AcpPluginOptions): BackendPlugin {
     name: opts.name,
     description: opts.description,
     settings: opts.settings,
+    appListing: opts.appListing,
     signIn: opts.signIn,
     credits: opts.credits,
     login: opts.login,
@@ -117,7 +120,11 @@ export function acpPlugin(opts: AcpPluginOptions): BackendPlugin {
     upgrade: opts.upgrade,
     sessionContext: opts.sessionLog ? (sessionId) => readSessionContext(opts.sessionLog!, sessionId) : undefined,
     create: (host: BackendHost) =>
-      new AcpBackend(opts.name, () => opts.launch(host), host, { ...opts.quirks, authHint: opts.quirks?.authHint ?? authHintFor(opts) })
+      new AcpBackend(opts.name, () => opts.launch(host), host, {
+        ...opts.quirks,
+        authHint: opts.quirks?.authHint ?? authHintFor(opts),
+        unhide: opts.appListing ? (sessionId) => opts.appListing!.setShown(host.config, sessionId, true) : undefined
+      })
   }
 }
 

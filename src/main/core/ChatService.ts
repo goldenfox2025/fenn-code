@@ -213,6 +213,8 @@ export class ChatService {
     backends.onSessionsLost((backendId) => {
       for (const [convId, live] of this.live) if (live.backendId === backendId) this.forgetSession(convId)
       this.dropSpare(backendId, false)
+      // Its sessions were never closed in the agent, so the ones kept out of its app weren't archived.
+      void this.syncAgentApp(backendId)
     })
   }
 
@@ -235,6 +237,7 @@ export class ChatService {
   patchConversation(id: string, patch: Partial<Conversation>): Conversation | undefined {
     const conv = this.store.conversation(id)
     if (!conv) return undefined
+    if ('sessionRef' in patch && conv.sessionRef && conv.sessionRef.sessionId !== patch.sessionRef?.sessionId) this.leftBehind(conv.sessionRef)
     const next = { ...conv, ...patch }
     this.saveConversation(next)
     return next
@@ -1116,6 +1119,30 @@ export class ChatService {
     for (let extra = open.length - limit; extra > 0 && idle.length; extra--) this.forgetSession(idle.shift()![0])
   }
 
+  /** Sessions released hidden (closed and archived in the agent): replacing their ref needs no second archive. */
+  private hiddenOnRelease = new Set<string>()
+
+  /**
+   * Shows or hides, in the agent's own app (Codex Desktop), the released sessions of the app's own
+   * conversations, as the user's setting says: those the app couldn't close in the agent (it quit or
+   * crashed with them open, or the setting just changed). Open sessions follow when they are released.
+   */
+  async syncAgentApp(backendId?: string): Promise<void> {
+    for (const conv of this.store.conversations) {
+      const ref = conv.sessionRef
+      if (!ref || (backendId && ref.backendId !== backendId) || !this.backends.hasAppListing(ref.backendId)) continue
+      if (this.live.has(conv.id) || this.connecting.has(conv.id)) continue
+      await this.backends.setShownInApp(ref.backendId, ref.sessionId, this.backends.shownInApp(ref.backendId))
+    }
+  }
+
+  /** A conversation leaves a session behind for good (a new session, another agent): hidden there too, when the user keeps them out. */
+  private leftBehind(ref: { backendId: string; sessionId: string }): void {
+    const key = `${ref.backendId}:${ref.sessionId}`
+    if (this.hiddenOnRelease.delete(key) || this.bySession.has(key)) return
+    if (this.backends.hasAppListing(ref.backendId) && !this.backends.shownInApp(ref.backendId)) void this.backends.setShownInApp(ref.backendId, ref.sessionId, false)
+  }
+
   forgetSession(conversationId: string): void {
     this.epochs.set(conversationId, (this.epochs.get(conversationId) ?? 0) + 1)
     this.connecting.delete(conversationId)
@@ -1123,7 +1150,9 @@ export class ChatService {
     if (live) {
       this.bySession.delete(`${live.backendId}:${live.sessionId}`)
       // Closed in the agent too (it stays in its history, to resume): an open one holds the agent's resources.
-      this.backends.releaseSession(live.backendId, live.sessionId)
+      const hide = !this.backends.shownInApp(live.backendId)
+      if (hide) this.hiddenOnRelease.add(`${live.backendId}:${live.sessionId}`)
+      this.backends.releaseSession(live.backendId, live.sessionId, hide)
     }
     this.live.delete(conversationId)
     this.deferred.delete(conversationId)
