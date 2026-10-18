@@ -117,6 +117,8 @@ Without the scripts: `npm install`, then `npm run dist -- --publish never` packa
 - Codex, Claude Code, Grok and Qoder install through npm and need Node.js on the machine.
 - Antigravity's Windows server is a large PyInstaller "onefile" program that unpacks some 330 MB to the temp folder on every start. **Start faster**, next to it in Settings → Agent backends, unpacks it once into `~/.agy-acp-server` so later starts skip that.
 - Whether an agent is signed in is shown only where the agent reports it.
+- Antigravity is told the chat's folder is its working directory, so its files land there; a command it runs without naming a working directory may still start in its own skills folder (`~/.gemini/antigravity-cli/skills`).
+- In Codex's default "Auto review" mode, Codex has its own reviewer model look at each call to Fenn Code's tools before it runs, which costs a model call per tool call.
 - Custom and project instructions go in as the system prompt where the agent says it takes one (Grok and Antigravity do; so does Claude Code where its adapter advertises it), so they survive its compaction. Other agents, such as Codex and Qoder, get them in the first message of each session instead, and again after a compaction the app notices.
 
 ## Privacy

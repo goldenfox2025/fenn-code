@@ -53,6 +53,18 @@ describe('observed streaming timings', () => {
     silent.chunk(5000, '')
     expect(silent.m.finish({}, 'end_turn')?.noSpeed).toBe('output')
   })
+  it('gives no speed when the output count includes what never streamed (PC: agy thinking, 1235 tok/s)', () => {
+    const { m, chunk } = meter()
+    const line = '这是回复的一段文字，'
+    chunk(1000, line)
+    chunk(1500, line)
+    chunk(2000, line)
+    chunk(2500, line)
+    const timing = m.finish({ output: 2031 }, 'end_turn')
+    expect(timing).toEqual({ firstResponseMs: 1000, outputTokens: 2031, noSpeed: 'unstreamed' })
+    // A count that fits the text is still timed in tokens.
+    expect(m.finish({ output: 45 }, 'end_turn')?.tpotMs).toBeCloseTo(1500 / 44)
+  })
   it('without a token count, measures the text as it streamed in characters per second, never from the send', () => {
     const { m, chunk } = meter()
     chunk(11500, '嗨！')

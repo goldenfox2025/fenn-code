@@ -15,7 +15,7 @@ const NO_COMMAND = tk('{0} 的命令里没有 /{1}。要照原样发出去，再
 const NEED_NAME = tk('请在 /rename 后面写上新名字')
 const RENAME_FIRST = tk('还没有对话可以重命名：先发一条消息开始对话，再用 /rename。')
 import { choiceLabel, optionLabel } from './sessionOptionLabels'
-import { sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
+import { perChatOption, sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
 import { EffortPicker } from './EffortPicker'
 import { ContextRing } from './Usage'
@@ -266,11 +266,11 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   // The session's other choices (mode, thinking level); before a session, the backend's last list and the defaults.
   const defaults = sessionOptionDefaults(settings, bid, currentModel?.id)
   const options = visibleSessionOptions(session?.sessionOptions ?? remembered?.options ?? [], currentBackend?.optionPolicy)
-  // A mode picked before the first message belongs to that chat only, not to every later one.
+  // A mode or role picked before the first message belongs to that chat only, not to every later one.
   const [pending, setPending] = useState<Record<string, string>>({})
   useEffect(() => setPending({}), [bid, conversation?.id])
   const valueOf = (o: SessionOption) => {
-    const v = session?.sessionOptions !== undefined ? o.current : (session?.optionValues?.[o.id] ?? pending[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id]) ?? o.current)
+    const v = session?.sessionOptions !== undefined ? o.current : (session?.optionValues?.[o.id] ?? pending[o.id] ?? (perChatOption(o) ? undefined : defaults[o.id]) ?? o.current)
     return o.choices.some((c) => c.value === v) ? v : o.current
   }
   // Thinking level gets its own slider beside the model, like Claude's effort control.
@@ -363,8 +363,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   }
 
   const setOptionValue = (o: SessionOption, value: string) => {
-    if (!conversation && o.category === 'mode') return setPending((p) => ({ ...p, [o.id]: value }))
-    // A thinking level carries over to new chats (the app remembers it); a mode stays with this conversation.
+    if (!conversation && perChatOption(o)) return setPending((p) => ({ ...p, [o.id]: value }))
+    // A thinking level carries over to new chats (the app remembers it); a mode or role stays with this conversation.
     choose(() => (session ? api().setOption(session.id, o.id, value) : api().setOptionDefault(bid, o.id, value)))
   }
 

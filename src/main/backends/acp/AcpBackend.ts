@@ -66,6 +66,11 @@ export interface AcpQuirks {
    */
   systemPromptMeta?: string
   /**
+   * A note on the session's working folder, added to the system prompt above. Antigravity takes session/new
+   * cwd as a root but tells its model another folder (its skills folder) is the working directory.
+   */
+  workingFolderNote?(cwd: string): string
+  /**
    * A sign-in the agent needs again in each new process, and can do without the user (an API key
    * in settings, or a stored token it refreshes). Tried once when a session says it needs sign-in.
    */
@@ -148,7 +153,65 @@ const OPTION_LABEL: Record<string, string> = {
   allow_always: tk('总是允许'),
   allow_once: tk('允许'),
   reject_once: tk('不允许'),
-  reject_always: tk('不允许')
+  reject_always: tk('总是拒绝')
+}
+
+/**
+ * The card's buttons in the app's own words, by kind: an agent's labels are in its language ("Allow Always").
+ * Codex offers a second allow_always that lasts the session (allow_session); no two buttons read the same.
+ */
+export function optionLabels(options: { optionId: string; name: string; kind: string }[]): { id: string; label: string; kind: acp.PermissionOptionKind }[] {
+  const out: { id: string; label: string; kind: acp.PermissionOptionKind }[] = []
+  let always = false
+  for (const o of options) {
+    const session = o.kind === 'allow_always' && (/session/i.test(o.optionId) || (always && !/always/i.test(o.optionId)))
+    if (o.kind === 'allow_always' && !session) always = true
+    const label = session ? t('本次会话内允许') : OPTION_LABEL[o.kind] ? t(OPTION_LABEL[o.kind]) : o.name
+    if (out.some((x) => x.label === label)) continue
+    out.push({ id: o.optionId, label, kind: o.kind as acp.PermissionOptionKind })
+  }
+  return out
+}
+
+/** A card's heading by the call's kind, where the agent titles it in English ("Run command"); its own title goes in the details. */
+const KIND_HEADING: Record<string, string> = {
+  execute: tk('运行命令'),
+  edit: tk('修改文件'),
+  delete: tk('删除文件'),
+  move: tk('移动文件'),
+  read: tk('读取文件'),
+  fetch: tk('访问网络'),
+  other: tk('使用工具')
+}
+
+/** The heading and details of a permission card for this call. */
+export function permissionText(call: { title?: string | null; kind?: string | null; rawInput?: unknown }): { title: string; detail?: string } {
+  const own = call.title?.trim()
+  const input = stringify(call.rawInput)
+  const heading = KIND_HEADING[call.kind ?? 'other'] ?? KIND_HEADING.other
+  if (own && /\p{Script=Han}/u.test(own)) return { title: own, detail: input }
+  if (!own) return { title: t(heading), detail: input }
+  return { title: t(heading), detail: input ? `${own}\n${input}` : own }
+}
+
+/**
+ * The tool a call runs, as `mcp__server__tool` where the agent says which MCP server it is (its metadata
+ * first, then its title), so the app's own tools are matched however each agent names them:
+ * Qoder `_meta.qoder.toolName` or "X (fenn MCP Server)", Claude `_meta.claudeCode.mcpServer.name`,
+ * Codex `rawInput {server, tool}` (its permission request has no title; the earlier call does), Grok `rawInput.tool_name`.
+ */
+export function toolNameOf(call: { title?: string | null; rawInput?: unknown; _meta?: unknown }): string | undefined {
+  const meta = (call._meta ?? {}) as { qoder?: { toolName?: unknown }; claudeCode?: { mcpServer?: { name?: unknown } } }
+  const raw = (call.rawInput ?? {}) as { server?: unknown; tool?: unknown; tool_name?: unknown }
+  const title = call.title?.trim()
+  if (typeof meta.qoder?.toolName === 'string') return meta.qoder.toolName
+  const server = meta.claudeCode?.mcpServer?.name
+  if (typeof server === 'string' && title) return `mcp__${server}__${title.replace(/^mcp__.+?__/, '')}`
+  if (typeof raw.server === 'string' && typeof raw.tool === 'string') return `mcp__${raw.server}__${raw.tool}`
+  if (typeof raw.tool_name === 'string') return raw.tool_name
+  const named = title && /^([A-Za-z0-9_]+) \(([A-Za-z0-9_-]+)(?: MCP Server)?\)$/.exec(title)
+  if (named) return `mcp__${named[2]}__${named[1]}`
+  return title || undefined
 }
 
 const TOOL_STATUS: Record<string, ToolStatus> = {
@@ -165,6 +228,8 @@ export class AcpBackend implements AgentBackend {
   private modelSelectors = new Map<string, ModelSelector>()
   /** Compactions already shown as a step. */
   private compactions = new Set<string>()
+  /** Recent tool calls by id: a permission request may name only the id (Codex). */
+  private calls = new Map<string, { title?: string | null; kind?: string | null; rawInput?: unknown; _meta?: unknown }>()
   /** Each session's non-model choices; `legacy` marks ACP session modes (set with session/set_mode). */
   private sessionOptions = new Map<string, (SessionOption & { legacy?: boolean; command?: boolean })[]>()
   /** Each model's context window, where the agent lists it (`_meta.totalContextTokens`). */
@@ -322,6 +387,10 @@ export class AcpBackend implements AgentBackend {
         // Even a replayed or quiet update says how full the context is now.
         this.metaContext(sessionId, _meta)
         if (this.replaying.has(sessionId) || this.quiet.has(sessionId)) return
+        if (update.sessionUpdate === 'tool_call') {
+          this.calls.set(`${sessionId}:${update.toolCallId}`, { title: update.title, kind: update.kind, rawInput: update.rawInput, _meta: update._meta })
+          if (this.calls.size > 200) this.calls.delete(this.calls.keys().next().value!)
+        }
         const ev = translateUpdate(update)
         if (ev) this.host.emit(sessionId, ev)
         if (update.sessionUpdate === 'available_commands_update') {
@@ -352,13 +421,20 @@ export class AcpBackend implements AgentBackend {
         }
       },
       requestPermission: async ({ sessionId, toolCall, options }) => {
+        // What the request leaves out, the call it is for said.
+        const earlier = this.calls.get(`${sessionId}:${toolCall.toolCallId}`)
+        const call = {
+          title: toolCall.title ?? earlier?.title,
+          kind: toolCall.kind ?? earlier?.kind,
+          rawInput: toolCall.rawInput ?? earlier?.rawInput,
+          _meta: toolCall._meta ?? earlier?._meta
+        }
         const decision = await this.host.requestPermission({
           sessionId,
-          title: toolCall.title ?? t('工具调用'),
-          detail: stringify(toolCall.rawInput),
-          // The app's own words, by kind: an agent's labels are in its language ("Allow Always").
-          options: options.map((o) => ({ id: o.optionId, label: OPTION_LABEL[o.kind] ? t(OPTION_LABEL[o.kind]) : o.name, kind: o.kind })),
-          toolKind: toolCall.kind ?? undefined,
+          ...permissionText(call),
+          options: optionLabels(options),
+          toolName: toolNameOf(call),
+          toolKind: call.kind ?? undefined,
           paths: toolCall.locations?.map((l) => l.path)
         })
         return decision
@@ -478,11 +554,11 @@ export class AcpBackend implements AgentBackend {
     const opened = this.quirks.sessionTracker?.begin(sessionId)
     try {
       if (this.caps?.sessionCapabilities?.resume) {
-        res = await this.conn!.resumeSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system) } as acp.ResumeSessionRequest)
+        res = await this.conn!.resumeSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system, cwd) } as acp.ResumeSessionRequest)
       } else if (this.caps?.loadSession) {
         this.replaying.add(sessionId)
         try {
-          res = await this.conn!.loadSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system) } as acp.LoadSessionRequest)
+          res = await this.conn!.loadSession({ sessionId, cwd, mcpServers, ...this.systemPrompt(system, cwd) } as acp.LoadSessionRequest)
         } finally {
           this.replaying.delete(sessionId)
         }
@@ -518,7 +594,9 @@ export class AcpBackend implements AgentBackend {
     return advertised ? path : []
   }
 
-  private systemPrompt(system?: string): Record<string, unknown> {
+  private systemPrompt(system: string | undefined, cwd: string): Record<string, unknown> {
+    const note = this.quirks.workingFolderNote?.(cwd)
+    if (note) system = system ? `${system}\n\n${note}` : note
     if (!this.takesSystemPrompt(system)) return {}
     const path = this.metaPromptPath()
     if (path.length) return { _meta: path.reduceRight<unknown>((inner, k) => ({ [k]: inner }), system) as Record<string, unknown> }
@@ -529,7 +607,7 @@ export class AcpBackend implements AgentBackend {
     await this.start()
     const mcpServers = this.mcpServers(tools)
     let res: acp.NewSessionResponse
-    const open = () => this.conn!.newSession({ cwd, mcpServers, ...this.systemPrompt(system) } as acp.NewSessionRequest)
+    const open = () => this.conn!.newSession({ cwd, mcpServers, ...this.systemPrompt(system, cwd) } as acp.NewSessionRequest)
     const opened = this.quirks.sessionTracker?.begin()
     try {
       res = await open().catch(async (err) => {

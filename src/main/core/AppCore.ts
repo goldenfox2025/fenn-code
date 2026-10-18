@@ -15,10 +15,11 @@ import type { Store } from '../store/Store'
 import type { ToolServer } from '../tools/ToolServer'
 import type { AccountStatus, BackendPlugin, BackendSummary, HostToolServer } from '../../shared/contract'
 import { prestartOn } from '../../shared/backendAvailability'
+import { perChatOption } from '../../shared/sessionOptions'
 import { ProjectFiles } from './ProjectFiles'
 import { addFile, changedFiles, createEntry, inside, listFolder, readPreview, removablePath, renameEntry, writeText, type LibraryRefusal } from './Library'
 import { Artifacts } from './Artifacts'
-import { ComputerControl, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
+import { ComputerControl, GRANT_IDLE_MS, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
 import { ChatService, excerpt, textOf } from './ChatService'
 import { AutoAssigner } from './AutoAssigner'
 import { folderSafeName, moveContents, uniqueDir } from './autoFolder'
@@ -37,8 +38,12 @@ import { getLang, localeTag, t } from '../../shared/i18n'
 import { MODEL_PROBE_TIMEOUT_MS, type BackendModelCatalog } from '../../shared/model'
 import { classifyError } from '../../shared/errors'
 
-/** An unanswered request to control the computer gives up after this long. */
-const ASK_TIMEOUT_MS = 3 * 60_000
+/**
+ * How long the computer-access card waits. computer_request_access returns before an agent's own tool deadline
+ * (ANSWER_WAIT_MS) and the card stays: an answer given later is kept for the agent's next request. Stopping
+ * the reply dismisses it; this is only the safety cap, as long as a grant lasts unused. Neither counts as declined.
+ */
+export const ACCESS_CARD_MS = GRANT_IDLE_MS
 // A model picked before a chat starts: its own choices are read once the user has stopped picking for this long.
 const PROBE_SETTLE_MS = 1500
 
@@ -62,7 +67,7 @@ export class AppCore {
     readonly platform: string,
     readonly tools: ToolServer,
     extras: {
-      computer?: Pick<ComputerDeps, 'screen' | 'input' | 'clipboard' | 'pasteChord' | 'onActive' | 'onAction' | 'onAsking' | 'isOwnApp'>
+      computer?: Pick<ComputerDeps, 'screen' | 'input' | 'clipboard' | 'pasteChord' | 'onActive' | 'onAction' | 'onAsking' | 'isOwnApp' | 'answerWaitMs'>
       /** Encrypts connector secrets at rest (the OS keychain in the app). */
       secrets?: { seal(v: string): string; unseal(v: string): string }
       /** backends.json couldn't be read at startup (see backendsConfigError). */
@@ -139,7 +144,7 @@ export class AppCore {
                 { id: 'deny', label: t('不允许'), kind: 'reject_once' }
               ]
             },
-            ASK_TIMEOUT_MS
+            ACCESS_CARD_MS
           )
           return parseAccessAnswer(answer)
         },
@@ -611,7 +616,7 @@ export class AppCore {
     await this.chat.setOption(conversationId, optionId, value)
     const conv = this.store.conversation(conversationId)
     const option = (conv?.sessionOptions ?? this.store.settings.backendModels?.[conv?.backendId ?? '']?.options)?.find((o) => o.id === optionId)
-    if (conv && option && option.category !== 'mode') await this.setOptionDefault(conv.backendId, optionId, value, conv.modelId)
+    if (conv && option && !perChatOption(option)) await this.setOptionDefault(conv.backendId, optionId, value, conv.modelId)
   }
 
   async setModelDefault(backendId: string, modelId: string): Promise<void> {
@@ -1591,8 +1596,10 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /** The answer to a computer-control access prompt: null when declined, else the tier picked per app ({} = the suggested ones). */
-export function parseAccessAnswer(answer: string | null): Record<string, TierChoice> | null {
-  if (!answer || !answer.startsWith('allow')) return null
+/** The access card's answer: the apps allowed, null when declined, undefined when nobody answered. */
+export function parseAccessAnswer(answer: string | null): Record<string, TierChoice> | null | undefined {
+  if (answer === null) return undefined
+  if (!answer.startsWith('allow')) return null
   if (answer === 'allow') return {}
   try {
     const raw = JSON.parse(answer.slice('allow:'.length)) as Record<string, unknown>

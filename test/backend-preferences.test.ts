@@ -130,6 +130,23 @@ describe('per-agent model and reasoning preferences', () => {
     } finally { await dispose() }
   })
 
+  it('keeps a role (Claude Code\'s Agent option) to its chat, and ignores one an earlier version saved (PC: claude-code-guide)', async () => {
+    const { core, store, dispose } = await makeCore(undefined, { MOCK_AGENT_OPTION: '1' })
+    try {
+      store.patchSettings({ backendOptionDefaults: { mock: { agent: 'claude-code-guide' } }, backendModelOptionDefaults: { mock: { 'mock-fast': { agent: 'claude-code-guide' } } } })
+      const c = await core.startChat({ backendId: 'mock', text: 'hello' })
+      await until(() => store.conversation(c.id)?.status === 'idle')
+      expect(store.conversation(c.id)?.sessionOptions?.find((o) => o.id === 'agent')?.current).toBe('default')
+      store.patchSettings({ backendOptionDefaults: {}, backendModelOptionDefaults: {} })
+      await core.setOption(c.id, 'agent', 'claude-code-guide')
+      expect(store.conversation(c.id)?.sessionOptions?.find((o) => o.id === 'agent')?.current).toBe('claude-code-guide')
+      expect(store.settings.backendOptionDefaults?.mock?.agent).toBeUndefined()
+      const next = await core.startChat({ backendId: 'mock', text: 'hello again' })
+      await until(() => store.conversation(next.id)?.status === 'idle')
+      expect(store.conversation(next.id)?.sessionOptions?.find((o) => o.id === 'agent')?.current).toBe('default')
+    } finally { await dispose() }
+  }, 40000)
+
   it('falls back when a remembered model or reasoning level is no longer offered', async () => {
     const { core, store, dispose } = await makeCore()
     try {

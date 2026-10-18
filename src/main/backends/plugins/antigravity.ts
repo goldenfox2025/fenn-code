@@ -316,6 +316,10 @@ const harnesses = process.platform === 'win32' ? new HarnessReaper(listWindowsPr
 
 const MISSING = tk('找不到 Antigravity 的 ACP 服务（agy_acp_server）。请在 设置 → Agent 后端 → Antigravity 里点「安装」，或填写它的路径，然后重试。')
 
+/** Names the chat's folder as the working directory (see quirks.workingFolderNote). */
+export const workingFolderNote = (cwd: string): string =>
+  `<fenn-workspace>本对话的工作文件夹是 ${cwd} 。这就是你的当前工作目录：新建、读取文件都放在这里，运行命令时 Cwd 用这个文件夹。.gemini 下的 skills 只是技能目录，不是工作目录。</fenn-workspace>`
+
 export default acpPlugin({
   id: 'antigravity',
   name: 'Antigravity',
@@ -364,6 +368,9 @@ export default acpPlugin({
     },
     // It advertises `_meta.antigravity.systemPrompt.append` in its capabilities; rules there outlive its compaction.
     systemPromptMeta: 'antigravity.systemPrompt.append',
+    // It lists its global skills folder first and tells the model that is the working directory; the chat's folder
+    // is named here so files and commands land in it (PC: without this agy wrote into ~/.gemini/antigravity-cli/skills).
+    workingFolderNote,
     // Each new server process asks for sign-in again: with a key, or the Google sign-in it stored.
     autoAuth: (config) => (config.GEMINI_API_KEY ? 'gemini-api-key' : existsSync(AGY_TOKEN) ? 'oauth-personal' : undefined)
   },

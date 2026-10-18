@@ -2,21 +2,25 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge, Minimize2 } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
-import { formatCost, formatTokens, headline, MIN_STREAM_MS, reportedInput, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
+import { formatCost, formatTokens, headline, inputRead, MIN_STREAM_MS, reportedInput, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
 import { useMenu, type MenuItem } from './Menu'
 import { api, useApp } from '../store'
 import { t } from '../i18n'
 import { tk } from '@shared/i18n'
 
 /**
- * "输入 13.7k · 输出 8 · $0.003" for one reply: input and output apart, so the context the reply
+ * "输入 13.7k · 输出 8 · $0.003" (or "输入 773k（缓存 773k）· …") for one reply: input and output apart, so the context the reply
  * read isn't taken for the size of the reply; a bare total only when the agent gave nothing finer.
  */
 export function usageLine(u: MessageUsage): string {
   const parts: string[] = []
   const total = headline(u)
-  const input = reportedInput(u)
-  if (input !== undefined && u.output !== undefined) parts.push(t('输入 {0}', formatTokens(input)), t('输出 {0}', formatTokens(u.output)))
+  const input = inputRead(u)
+  if (input !== undefined && u.output !== undefined)
+    parts.push(
+      input.cached ? t('输入 {0}（缓存 {1}）', formatTokens(input.total), formatTokens(input.cached)) : t('输入 {0}', formatTokens(input.total)),
+      t('输出 {0}', formatTokens(u.output))
+    )
   else if (u.output !== undefined && u.output > 0) parts.push(t('输出 {0}', formatTokens(u.output)))
   else if (total > 0) parts.push(t('{0} tokens', formatTokens(total)))
   // ACP reports a running cost; a reply that added nothing shows none rather than $0.0000.
@@ -27,7 +31,8 @@ export function usageLine(u: MessageUsage): string {
 function detailLines(u: MessageUsage | UsageTotals): string[] {
   const out: string[] = []
   const input = reportedInput(u)
-  if (input !== undefined) out.push(t('输入 {0}', formatTokens(input)))
+  // With the cache counted in the footer's input, the details say how much of it was new.
+  if (input !== undefined) out.push(u.cachedRead || u.cachedWrite ? t('新输入 {0}', formatTokens(input)) : t('输入 {0}', formatTokens(input)))
   if (u.output !== undefined) out.push(t('输出 {0}', formatTokens(u.output)))
   if (u.thought) out.push(t('思考 {0}', formatTokens(u.thought)))
   if (u.cachedRead) out.push(t('缓存读取 {0}', formatTokens(u.cachedRead)))
@@ -41,7 +46,8 @@ const NO_SPEED: Record<NonNullable<GenerationTiming['noSpeed']>, string> = {
   output: tk('没有速度：agent 没报告这条回复的输出 token 数'),
   short: tk('没有速度：回复几乎是一次到齐的，看不到它逐字输出的过程，测不出速度'),
   waited: tk('没有速度：回复中途等过确认或重试'),
-  stopped: tk('没有速度：回复没有正常结束')
+  stopped: tk('没有速度：回复没有正常结束'),
+  unstreamed: tk('没有速度：agent 报告的输出里有没逐字传来的部分（比如思考），按传来的文字算会虚高')
 }
 
 /** How fast a reply streamed, as the app saw it (not the provider's own timing), or why that isn't known. */

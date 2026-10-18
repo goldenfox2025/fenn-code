@@ -115,6 +115,8 @@ export interface PermissionRequest {
   /** An agent's tool call: its ACP kind (read, edit, execute, …) and the files it names, to judge whether asking is needed. */
   toolKind?: string
   paths?: string[]
+  /** The tool the call runs, as the agent names it (title, or mcp__server__tool from its input): matches the app's own tools. */
+  toolName?: string
 }
 
 /** null means the user dismissed the prompt (treated as cancelled). */

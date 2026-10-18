@@ -17,7 +17,7 @@ import type { Store } from '../store/Store'
 import { t, tk } from '../../shared/i18n'
 import { classifyError } from '../../shared/errors'
 import { TurnMeter } from './TurnMeter'
-import { sessionOptionDefaults } from '../../shared/sessionOptions'
+import { perChatOption, sessionOptionDefaults } from '../../shared/sessionOptions'
 
 export interface SendOptions {
   attachments?: Attachment[]
@@ -197,6 +197,8 @@ export class ChatService {
   private tags = new Map<string, string>()
   /** Called after every turn, visible or not, once the conversation is free again. */
   readonly turnEndListeners = new Set<(conversationId: string) => void>()
+  /** Called when a conversation starts or stops waiting on a card the user must answer (any permission prompt). */
+  readonly cardListeners = new Set<(conversationId: string, waiting: boolean) => void>()
   /** Called once a conversation is deleted, so every part of the app can drop what it kept for it. */
   /** Called when earlier messages leave the transcript or come back (an edit, a regenerated reply, another variant). */
   readonly rewrittenListeners = new Set<(conversationId: string) => void>()
@@ -813,10 +815,10 @@ export class ChatService {
     }
     // The conversation's own choices win; a new conversation starts with the backend's defaults.
     let options = this.store.conversation(conv.id)?.sessionOptions ?? info.options
-    // A mode is never a default for new chats (an earlier version could save one); other choices are.
+    // A mode or role is never a default for new chats (an earlier version could save one); other choices are.
     const defaults = sessionOptionDefaults(this.store.settings, conv.backendId, modelId ?? conv.modelId)
     for (const o of options ?? []) {
-      const v = wantOptions?.[o.id] ?? (o.category === 'mode' ? undefined : defaults[o.id])
+      const v = wantOptions?.[o.id] ?? (perChatOption(o) ? undefined : defaults[o.id])
       if (!v || v === o.current || !o.choices.some((c) => c.value === v)) continue
       try {
         options = (await this.backends.setOption(conv.backendId, info.sessionId, o.id, v)) ?? options?.map((x) => (x.id === o.id ? { ...x, current: v } : x))
@@ -831,8 +833,8 @@ export class ChatService {
       sessionOptions: options ?? [],
       sessionRef: live
     })
-    // A mode belongs to this conversation; new chats start in the agent's own mode.
-    const offered = options?.map((o) => (o.category === 'mode' ? { ...o, current: info.options?.find((x) => x.id === o.id)?.current ?? o.current } : o))
+    // A mode or role belongs to this conversation; new chats start with the agent's own.
+    const offered = options?.map((o) => (perChatOption(o) ? { ...o, current: info.options?.find((x) => x.id === o.id)?.current ?? o.current } : o))
     if (info.models?.length) this.rememberModels(conv.backendId, info.models, modelId, offered)
     return { live, fresh }
   }
@@ -949,7 +951,7 @@ export class ChatService {
       const defaults = sessionOptionDefaults(this.store.settings, conv.backendId, modelId)
       for (const option of conv.sessionOptions ?? []) {
         const value = defaults[option.id] ?? conv.optionValues?.[option.id]
-        if (option.category !== 'mode' && value && option.choices.some((c) => c.value === value)) {
+        if (!perChatOption(option) && value && option.choices.some((c) => c.value === value)) {
           if (value !== option.current) await this.setOption(conversationId, option.id, value)
           else if (conv.optionValues?.[option.id] !== value) this.patchConversation(conversationId, {
             optionValues: { ...this.store.conversation(conversationId)?.optionValues, [option.id]: value }
@@ -1202,9 +1204,12 @@ export class ChatService {
    * files inside the chat's own working folder, goes ahead; a run nobody watches (a scheduled task,
    * a board refresh) skips anything else and says so in its reply. The rest is asked inline, in its chat.
    */
-  /** A tool call titled as one of the app's own tools: `fenn_update_status`, `mcp__fenn__update_status`, `fenn/update_status`… */
+  /**
+   * A tool call named as one of the app's own tools: `fenn_update_status`, `mcp__fenn__update_status`,
+   * `fenn__computer_screenshot` (Grok), `mcp.fenn.computer_request_access` (Codex), `fenn/update_status`…
+   */
   private isOwnTool(conversationId: string, title: string): boolean {
-    const m = /^\s*(?:mcp__)?fenn\s*(?:__|[_.:/]|\s)\s*([A-Za-z0-9_]+)\b/.exec(title)
+    const m = /^\s*(?:mcp(?:__|\.))?fenn\s*(?:__|[_.:/]|\s)\s*([A-Za-z0-9_]+)\b/.exec(title)
     return !!m && !!this.hooks.ownTools?.(conversationId).includes(m[1])
   }
 
@@ -1216,7 +1221,7 @@ export class ChatService {
     const allow = pick('allow_once', 'allow_always')
     // The app's own tools (status, threads, asking for computer access…) are the app's to allow: an agent that
     // asks first (Antigravity) gets yes at once, and what needs the user (computer control) asks with its own card.
-    if (allow && !request.apps && this.isOwnTool(conversationId, request.title)) return { decision: pick('allow_always', 'allow_once')! }
+    if (allow && !request.apps && this.isOwnTool(conversationId, request.toolName ?? request.title)) return { decision: pick('allow_always', 'allow_once')! }
     if (allow && !request.apps && request.toolKind) {
       const kind = request.toolKind
       // Inside the chat's own folders, symlinks resolved, so a link can't lead an "inside" path elsewhere.
@@ -1237,7 +1242,14 @@ export class ChatService {
 
   private showPermission(conversationId: string | undefined, request: PermissionRequest): void {
     this.shownPermissions.set(request.requestId, { conversationId, request })
+    this.cardsChanged(conversationId)
     this.publish({ type: 'permission', conversationId, request })
+  }
+
+  private cardsChanged(conversationId: string | undefined): void {
+    if (!conversationId) return
+    const waiting = [...this.shownPermissions.values()].some((p) => p.conversationId === conversationId)
+    for (const l of this.cardListeners) l(conversationId, waiting)
   }
 
   /** The permission prompts still waiting for an answer, oldest first. */
@@ -1248,8 +1260,10 @@ export class ChatService {
   /** A backend dropped a permission prompt on its own (e.g. it crashed). */
   permissionDropped(requestId: string): void {
     this.pendingPermissions.delete(requestId)
+    const shown = this.shownPermissions.get(requestId)
     this.shownPermissions.delete(requestId)
     this.publish({ type: 'permission-resolved', requestId })
+    this.cardsChanged(shown?.conversationId)
   }
 
   /**
@@ -1285,8 +1299,10 @@ export class ChatService {
     this.hostWaiters.delete(requestId)
     if (host) host(decision)
     else this.backends.respondPermission(requestId, decision)
+    const shown = this.shownPermissions.get(requestId)
     this.shownPermissions.delete(requestId)
     this.publish({ type: 'permission-resolved', requestId })
+    this.cardsChanged(shown?.conversationId)
     const answered = conversationId && this.store.conversation(conversationId)?.needsUser?.kind === 'permission' && !this.awaitingPermission(conversationId)
     if (conversationId && this.running.has(conversationId)) this.patchConversation(conversationId, { status: 'working', ...(answered ? { needsUser: undefined } : {}) })
     else if (answered) this.patchConversation(conversationId, { needsUser: undefined })

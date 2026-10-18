@@ -4,7 +4,13 @@
 // permission when the prompt mentions "写" or "write". Used for demos and tests.
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
-import { existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+
+/** MOCK_SESSION_LOG with MOCK_META_PROMPT=1: records the prompt each session/new or session/resume appended (_meta.antigravity). */
+function logPrompt(method, cwd, meta) {
+  if (process.env.MOCK_SESSION_LOG && process.env.MOCK_META_PROMPT === "1")
+    appendFileSync(process.env.MOCK_SESSION_LOG, `${method} ${JSON.stringify({ cwd, append: meta?.antigravity?.systemPrompt?.append ?? null })}\n`);
+}
 import { join } from 'node:path';
 
 // MOCK_EXIT_AT_START=1: dies before answering anything, like an agent missing a dependency.
@@ -91,6 +97,7 @@ const handlers = {
     return {};
   },
   "session/new": ({ cwd, mcpServers, systemPrompt, _meta }) => {
+    logPrompt("new", cwd, _meta);
     if (process.env.MOCK_SESSION_FILE_ERROR === '1')
       throw Object.assign(new Error('Failed to read authentication state'), {
         code: -32603,
@@ -140,7 +147,8 @@ const handlers = {
       // Grok lists each model's window in its legacy model list.
       ...(process.env.MOCK_USAGE === "meta" ? { models: { currentModelId: FIRST_MODEL, availableModels: [{ modelId: FIRST_MODEL, name: FIRST_MODEL, _meta: { totalContextTokens: 500000 } }] } } : {}) };
   },
-  "session/resume": ({ sessionId, cwd }) => {
+  "session/resume": ({ sessionId, cwd, _meta }) => {
+    logPrompt("resume", cwd, _meta);
     // Sessions live only as long as this process; after a restart there is nothing to resume.
     if (!sessions.has(sessionId))
       throw { code: -32602, message: "unknown session id" };
@@ -159,6 +167,7 @@ const handlers = {
     if (configId === "model") s.model = value;
     else if (configId === "mode") s.mode = value;
     else if (configId === "effort") s.effort = value;
+    else if (configId === "agent" && process.env.MOCK_AGENT_OPTION === "1") s.agent = value;
     else throw { code: -32602, message: `Unknown config option: ${configId}` };
     return { configOptions: configOptions(s.model, s) };
   },
@@ -366,6 +375,14 @@ function configOptions(current, s = {}) {
         { value: "bypassPermissions", name: "Bypass Permissions", description: "Auto-approves all tools" },
       ],
     }]),
+    // MOCK_AGENT_OPTION=1: Claude Code's "Agent" option, the subagent the session runs as.
+    ...(process.env.MOCK_AGENT_OPTION === "1" ? [{
+      id: "agent",
+      name: "Agent",
+      type: "select",
+      currentValue: s.agent ?? "default",
+      options: [{ value: "default", name: "Default" }, { value: "claude-code-guide", name: "claude-code-guide" }],
+    }] : []),
     {
       id: "effort",
       name: "Reasoning Effort",
@@ -903,6 +920,26 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
   if (/写|write/i.test(text)) {
     // Like real agents, the session's mode decides whether edits need asking.
     // 「写三次」 asks three times in a row; 「同时写三个」 asks three at once.
+    // MOCK_ASK_CODEX=1: as codex-acp 2.2.2 asks before an MCP tool: the call first, then a request naming only its id.
+    if (process.env.MOCK_ASK_CODEX === "1") {
+      const toolCallId = `call_${s.turns}`;
+      notify(sessionId, { sessionUpdate: "tool_call", toolCallId, kind: "execute", status: "pending", title: `mcp.fenn.${process.env.MOCK_ASK_TOOL || "home_board"}`,
+        rawInput: { server: "fenn", tool: process.env.MOCK_ASK_TOOL || "home_board", arguments: {} }, _meta: { is_mcp_tool_call: true } });
+      await sleep(50);
+      const res = await requestClient("session/request_permission", {
+        sessionId,
+        toolCall: { toolCallId, kind: "execute", status: "pending" },
+        _meta: { is_mcp_tool_approval: true },
+        options: [
+          { optionId: "allow_once", name: "Allow", kind: "allow_once" },
+          { optionId: "allow_session", name: "Allow for this session", kind: "allow_always" },
+          { optionId: "allow_always", name: "Always allow", kind: "allow_always" },
+          { optionId: "cancel", name: "Cancel", kind: "reject_once" },
+        ],
+      });
+      const ok = res?.outcome?.outcome === "selected" && res.outcome.optionId !== "cancel";
+      await stream(sessionId, ok ? "已获得许可。\n\n" : "没有获得许可。\n\n", abort);
+    } else {
     const ask = (i) => s.mode === "acceptEdits" || s.mode === "bypassPermissions" ? { outcome: { outcome: "selected", optionId: "allow" } } : requestClient("session/request_permission", {
       sessionId,
       toolCall: {
@@ -936,6 +973,7 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
       ok ? "已获得许可（演示中不会真的写文件）。\n\n" : "好的，不写文件。\n\n",
       abort,
     );
+    }
   }
 
   const reply =

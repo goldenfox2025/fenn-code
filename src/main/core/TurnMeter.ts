@@ -1,6 +1,11 @@
 import type { AgentEvent, StopReason, TurnUsage } from '../../shared/contract'
 import { MIN_CHUNKS, MIN_STREAM_MS, type GenerationTiming } from '../../shared/usage'
 
+/** Even Chinese text, the densest, runs about one token a character; well past that, the count isn't this text's. */
+const MAX_TOKENS_PER_CHAR = 1.5
+/** Tokens a short reply spends besides its text (formatting, a stop token). */
+const TOKEN_SLACK = 50
+
 /**
  * Client-observed generation time. Chunks are not individual token timestamps.
  * The time tools run (and approvals they wait for) is left out, so a turn with
@@ -70,6 +75,9 @@ export class TurnMeter {
     else if (this.interrupted || this.open.size) timing.noSpeed = 'waited'
     else if (!tokens && this.chars <= 1) timing.noSpeed = 'output'
     else if (!measurable) timing.noSpeed = 'short'
+    // More output tokens than the streamed text could hold: the count includes output that never streamed
+    // (Antigravity counts its thinking in it), so tokens over this stream would read as thousands per second.
+    else if (tokens && output > this.chars * MAX_TOKENS_PER_CHAR + TOKEN_SLACK) timing.noSpeed = 'unstreamed'
     else if (tokens) {
       timing.streamMs = span
       timing.tpotMs = span / (output - 1)

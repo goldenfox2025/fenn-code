@@ -406,6 +406,11 @@ core = new AppCore(store, backends, publish, process.platform, tools, {
   backendsConfigError: backendsError,
 });
 core.reloadPlugins = () => (plugins = loadPlugins(backendsFile));
+// Any card in a conversation that controls the computer (an agent asking to run a command) is in the main window too.
+core.chat.cardListeners.add((conversationId, waiting) => {
+  controlWindow.setCard(conversationId, waiting);
+  if (waiting && controlWindow.fronts(conversationId)) publish({ type: "open-conversation", conversationId });
+});
 // Watch the directory so atomic editor saves (rename + replace) also take effect.
 let configReloadTimer: NodeJS.Timeout | undefined;
 let configReload = Promise.resolve();

@@ -13,12 +13,14 @@ export interface WindowLike {
 /**
  * Where the main window is while agents control the computer: out of the way (so an agent
  * doesn't act on it) while any conversation is in control, but back in front while one asks
- * the user for access, since that question is a card in the window. Once no conversation
- * asks, it steps aside again if control goes on, or comes back when control ends.
+ * the user for access, or a conversation in control waits on any other card (an agent's own
+ * permission prompt), since those are cards in the window. Once nothing asks, it steps aside
+ * again if control goes on, or comes back when control ends.
  */
 export class ControlWindow {
   private controlling = new Set<string>()
   private asking = new Set<string>()
+  private cards = new Set<string>()
   /** The window was moved out of the way for control (not by the user), so it comes back after. */
   private stepped = false
 
@@ -43,10 +45,22 @@ export class ControlWindow {
     this.apply()
   }
 
+  /** A conversation waits on some card (any permission prompt); it counts only while that conversation is in control. */
+  setCard(conversationId: string, waiting: boolean): void {
+    if (waiting) this.cards.add(conversationId)
+    else this.cards.delete(conversationId)
+    this.apply()
+  }
+
+  /** The window comes forward for this conversation's card. */
+  fronts(conversationId: string): boolean {
+    return this.asking.has(conversationId) || (this.cards.has(conversationId) && this.controlling.has(conversationId))
+  }
+
   private apply(): void {
     const w = this.win()
     if (!w) return
-    if (this.asking.size) {
+    if (this.asking.size || [...this.cards].some((id) => this.controlling.has(id))) {
       if (w.isMinimized()) w.restore()
       if (!w.isVisible()) w.show()
       w.focus()

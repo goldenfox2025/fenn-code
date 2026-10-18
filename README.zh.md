@@ -117,6 +117,8 @@ xattr -dr com.apple.quarantine "/Applications/Fenn Code.app"
 - Codex、Claude Code、Grok 和 Qoder 通过 npm 安装，电脑上需要有 Node.js。
 - Antigravity 在 Windows 上的服务程序是一个很大的 PyInstaller 单文件程序，每次启动都会往临时文件夹解压约 330 MB。设置 → Agent 后端 里它旁边的「加快启动」会把它一次性解到 `~/.agy-acp-server`，以后启动就不用再解压。
 - 是否已登录，只有在 agent 能报告时才会显示。
+- Fenn Code 会告诉 Antigravity 对话的文件夹就是它的工作目录，所以它的文件会放在那里；但它运行命令时如果没有指定工作目录，命令仍可能在它自己的技能文件夹（`~/.gemini/antigravity-cli/skills`）里运行。
+- Codex 默认的「Auto review」模式下，Codex 每次调用 Fenn Code 的工具前，都会先让它自己的审查模型看一遍，每次调用多花一次模型请求。
 - 自定义指令和项目指令在 agent 声明支持时放进系统提示词（Grok 和 Antigravity 支持；Claude Code 视其适配器是否声明），压缩上下文后仍然有效；其他 agent（如 Codex 和 Qoder）则在每个会话的第一条消息里带上，应用发现它压缩过上下文后会再带一次。
 
 ## 隐私

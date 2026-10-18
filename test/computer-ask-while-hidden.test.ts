@@ -3,6 +3,7 @@ import type { Conversation } from '../src/shared/model'
 import { ComputerControl, type TierChoice } from '../src/main/computer/ComputerControl'
 import { ControlWindow, type WindowLike } from '../src/main/computer/controlWindow'
 import type { AppRef, InputDriver } from '../src/main/computer/drivers'
+import { makeCore, until } from './helpers'
 
 const NOTEPAD: AppRef = { id: 'notepad', name: '记事本', pid: 10 }
 const PAINT: AppRef = { id: 'mspaint', name: '画图', pid: 12 }
@@ -123,4 +124,37 @@ describe('the main window around control', () => {
     p.setActive('a', false)
     expect(s.minimized).toBe(true)
   })
+})
+
+describe('any card while an agent is in control (PC: agy\'s command prompt sat in the hidden window)', () => {
+  for (const platform of ['linux', 'win32', 'darwin'] as const)
+    it(`comes forward for it and steps aside after the answer (${platform})`, () => {
+      const { w, shown } = fakeWindow()
+      const p = new ControlWindow(() => w, platform)
+      p.setActive('a', true)
+      expect(shown()).toBe(false)
+      p.setCard('a', true)
+      expect(shown()).toBe(true)
+      expect(p.fronts('a')).toBe(true)
+      p.setCard('a', false)
+      expect(shown()).toBe(false)
+      // A card in a chat that isn't in control leaves the window where it is.
+      p.setCard('b', true)
+      expect(shown()).toBe(false)
+      expect(p.fronts('b')).toBe(false)
+    })
+
+  it('hears of every card a conversation waits on, from the agent or the app', async () => {
+    const t = await makeCore(undefined, { MOCK_ASK_TITLE: 'rm -rf build', MOCK_ASK_KIND: 'execute' })
+    const seen: string[] = []
+    t.core.chat.cardListeners.add((id, waiting) => seen.push(`${waiting ? 'on' : 'off'} ${id}`))
+    t.answerWith((r) => r.options.find((o) => o.kind === 'reject_once')!.id)
+    try {
+      const conv = await t.core.startChat({ text: '写一个清理脚本', backendId: 'mock' })
+      await until(() => t.store.conversation(conv.id)?.status === 'idle' && seen.length >= 2)
+      expect(seen).toEqual([`on ${conv.id}`, `off ${conv.id}`])
+    } finally {
+      await t.dispose()
+    }
+  }, 40000)
 })

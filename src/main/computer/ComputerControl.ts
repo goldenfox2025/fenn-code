@@ -67,8 +67,11 @@ export interface ComputerDeps {
    */
   pasteChord?: string
   enabled(): boolean
-  /** Asks the user which apps to allow and how far; null when declined or unanswered. */
-  askAccess(conversationId: string, req: AccessRequest): Promise<Record<string, TierChoice> | null>
+  /**
+   * Asks the user which apps to allow and how far; null when declined, undefined when the card went
+   * unanswered (the safety cap, or the reply was stopped).
+   */
+  askAccess(conversationId: string, req: AccessRequest): Promise<Record<string, TierChoice> | null | undefined>
   /** Nobody is watching this turn (a scheduled task): never ask, just fail. */
   unattended?(conversationId: string): boolean
   /** Fenn Code's own windows, which the agent must never act on. */
@@ -123,10 +126,60 @@ export function norm(s: string): string {
     .replace(/\.(exe|app)$/, '')
 }
 
+const compact = (k: string): string => k.replace(/[\s_-]+/g, '')
+
+/**
+ * Names one common app goes by: localized and English names, executables, bundle ids, window classes. The user
+ * allows 「记事本」 and the system reports Notepad.exe; both are the same grant.
+ */
+const SAME_APP: string[][] = [
+  ['记事本', 'notepad'],
+  ['计算器', '計算機', 'calculator', 'calc', 'calculatorapp', 'win32calc', 'com.apple.calculator', 'gnome-calculator', 'kcalc'],
+  ['画图', 'paint', 'mspaint', 'pbrush'],
+  ['文件资源管理器', '资源管理器', 'file explorer', 'explorer'],
+  ['访达', 'finder', 'com.apple.finder', 'nautilus', 'org.gnome.nautilus', 'dolphin'],
+  ['文本编辑', 'textedit', 'com.apple.textedit', 'gedit', 'gnome-text-editor', 'org.gnome.texteditor'],
+  ['终端', 'terminal', 'com.apple.terminal', 'windows terminal', 'windowsterminal', 'wt', 'gnome-terminal', 'gnome-terminal-server'],
+  ['设置', '系统设置', 'settings', 'systemsettings', 'com.apple.systempreferences', 'gnome-control-center'],
+  ['截图工具', 'snipping tool', 'snippingtool'],
+  ['照片', 'photos', 'microsoft.photos', 'com.apple.photos'],
+  ['写字板', 'wordpad'],
+  ['google chrome', 'chrome', 'com.google.chrome', 'google-chrome'],
+  ['microsoft edge', 'edge', 'msedge', 'com.microsoft.edgemac', 'microsoft-edge'],
+  ['firefox', 'org.mozilla.firefox'],
+  ['safari', 'com.apple.safari'],
+  ['visual studio code', 'vscode', 'code', 'com.microsoft.vscode'],
+  ['microsoft word', 'word', 'winword', 'com.microsoft.word'],
+  ['microsoft excel', 'excel', 'com.microsoft.excel'],
+  ['microsoft powerpoint', 'powerpoint', 'powerpnt', 'com.microsoft.powerpoint'],
+  ['微信', 'wechat', 'weixin', 'com.tencent.xinwechat']
+]
+const SAME = new Map<string, string[]>()
+for (const group of SAME_APP) {
+  const keys = group.map((n) => compact(norm(n)))
+  for (const k of keys) SAME.set(k, keys)
+}
+
+/** Every key an app is known by, from any of its names: case, .exe/.app, spaces and dashes don't matter. */
+export function appKeys(...names: string[]): string[] {
+  const out = new Set<string>()
+  for (const n of names) {
+    const k = compact(norm(n))
+    if (!k) continue
+    out.add(k)
+    // A bundle id (com.apple.Calculator) is also known by its last part.
+    if (/^[a-z0-9]+(\.[a-z0-9]+){2,}$/.test(k)) out.add(k.slice(k.lastIndexOf('.') + 1))
+  }
+  for (const k of [...out]) for (const same of SAME.get(k) ?? []) out.add(same)
+  return [...out]
+}
+
 interface Grant {
   key: string
   name: string
   tier: Tier
+  /** Every name it goes by (appKeys). */
+  keys: string[]
 }
 
 interface Session {
@@ -517,16 +570,25 @@ export class ComputerControl {
     }
     const already = this.granted(id)
     const wanted: AccessRequest['apps'] = []
+    const known = new Map<string, string[]>()
     for (const n of names) {
       const q = norm(n)
-      const hit =
-        running.find((r) => norm(r.id) === q || norm(r.name) === q) ?? running.find((r) => norm(r.name).includes(q) || q.includes(norm(r.name)))
+      const asked = appKeys(n)
+      const same = (r: AppRef) => appKeys(r.id, r.name).some((k) => asked.includes(k))
+      const hit = running.find(same) ?? running.find((r) => norm(r.name).includes(q) || q.includes(norm(r.name)))
       const key = hit ? norm(hit.id) : q
       // Fenn Code itself is never controlled, so it isn't offered either.
       if (!hit && this.deps.isOwnApp?.({ id: q, name: n })) continue
-      if (wanted.some((w) => w.key === key)) continue
+      const keys = [...new Set([...asked, ...(hit ? appKeys(hit.id, hit.name) : [])])]
+      // Another name for an app already asked for, or already allowed: no second line, no new card.
+      const twin = wanted.find((w) => known.get(w.key)!.some((k) => keys.includes(k)))
+      if (twin) {
+        known.set(twin.key, [...new Set([...known.get(twin.key)!, ...keys])])
+        continue
+      }
       const name = hit?.name ?? n
-      if (already.some((g) => g.key === key)) continue
+      if (already.some((g) => g.keys.some((k) => keys.includes(k)))) continue
+      known.set(key, keys)
       wanted.push({ key, name, tier: defaultTier({ key, name }), running: !!hit })
     }
     if (!wanted.length) return this.grantSummary(id, '这些程序已经被允许。')
@@ -540,30 +602,39 @@ export class ComputerControl {
           this.deps.onAsking?.(id, false)
         })
         // Applied when the user answers, even after this call has returned (see below).
-        .then((answer) => this.applyAnswer(id, wanted, answer))
+        .then((answer) => this.applyAnswer(id, wanted, answer, known))
       settled.catch(() => {})
       this.asking.set(id, settled)
     }
     // Agents give a tool call a deadline (Antigravity: 3 minutes, counting the time the user takes), so the
     // call returns before it while the card stays up; asking again gets the answer.
     let timer: NodeJS.Timeout | undefined
+    const notYet = '用户还没有回答（卡片还在 Fenn Code 里等着）。稍等一会儿，再用同样的参数调用 computer_request_access 就能拿到结果；不要改用别的办法操控电脑。'
     const later = new Promise<string>((resolve) => {
-      timer = setTimeout(
-        () => resolve('用户还没有回答（卡片还在 Fenn Code 里等着）。稍等一会儿，再用同样的参数调用 computer_request_access 就能拿到结果；不要改用别的办法操控电脑。'),
-        this.deps.answerWaitMs ?? ANSWER_WAIT_MS
-      )
+      timer = setTimeout(() => resolve(notYet), this.deps.answerWaitMs ?? ANSWER_WAIT_MS)
     })
     try {
-      return await Promise.race([settled, later])
+      const result = await Promise.race([settled, later])
+      // Control starts for an agent that is here for the answer; one given after the call returned (maybe after
+      // the turn ended) is only kept, and its next request or action starts it.
+      if (result !== notYet) this.activate(id)
+      return result
     } finally {
       clearTimeout(timer)
     }
   }
 
-  private applyAnswer(id: string, wanted: AccessRequest['apps'], answer: Record<string, TierChoice> | null): string {
+  private applyAnswer(
+    id: string,
+    wanted: AccessRequest['apps'],
+    answer: Record<string, TierChoice> | null | undefined,
+    known: Map<string, string[]>
+  ): string {
+    // Not answered is not a refusal: a later request asks again.
+    if (answer === undefined) throw new Error('用户一直没有回答，卡片已经关闭。现在不要再试，告诉用户需要操控哪些程序、做什么。')
     if (!answer) {
       this.denied.add(id)
-      throw new Error('用户没有允许（或没有回应）操控电脑。不要再试，直接告诉用户需要什么。')
+      throw new Error('用户没有允许操控电脑。不要再试，直接告诉用户需要什么。')
     }
     const s = this.session(id)
     if (s.until <= Date.now()) s.grants = []
@@ -571,14 +642,13 @@ export class ComputerControl {
       const t = answer[w.key] ?? w.tier
       if (t === 'none') continue
       s.grants = s.grants.filter((g) => g.key !== w.key)
-      s.grants.push({ key: w.key, name: w.name, tier: t })
+      s.grants.push({ key: w.key, name: w.name, tier: t, keys: known.get(w.key) ?? appKeys(w.key, w.name) })
     }
     if (!s.grants.length) {
       this.denied.add(id)
       throw new Error('用户没有允许任何程序。不要再试，直接告诉用户需要什么。')
     }
     s.until = Date.now() + GRANT_IDLE_MS
-    this.activate(id)
     const refused = wanted.filter((w) => answer[w.key] === 'none').map((w) => w.name)
     return this.grantSummary(id, refused.length ? `用户没有允许：${refused.join('、')}。` : '')
   }
@@ -619,8 +689,8 @@ export class ComputerControl {
   }
 
   private findGrant(id: string, app: { id: string; name: string }): Grant | undefined {
-    const keys = [norm(app.id), norm(app.name)]
-    return this.granted(id).find((g) => keys.includes(g.key) || keys.includes(norm(g.name)))
+    const keys = appKeys(app.id, app.name)
+    return this.granted(id).find((g) => g.keys.some((k) => keys.includes(k)))
   }
 
   /** Checks the app under the point (clicks) or with focus (typing) allows `need`. */

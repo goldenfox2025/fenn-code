@@ -13,8 +13,8 @@ export interface GenerationTiming {
   outputTokens?: number
   /** When the agent reports no output tokens: the characters of text that streamed in streamMs (shown as 字/秒, never as tokens). */
   outputChars?: number
-  /** Why there is no speed for this reply: no output count, too short, a wait inside it, or it didn't end normally. */
-  noSpeed?: 'output' | 'short' | 'waited' | 'stopped'
+  /** Why there is no speed for this reply: no output count, too short, a wait inside it, it didn't end normally, or the count includes output that never streamed. */
+  noSpeed?: 'output' | 'short' | 'waited' | 'stopped' | 'unstreamed'
 }
 
 /**
@@ -151,4 +151,15 @@ export function formatCost(c: Cost): string {
 export function reportedInput(u: MessageUsage | UsageTotals): number | undefined {
   if (u.input === 0 && !u.cachedRead && !u.cachedWrite) return undefined
   return u.input
+}
+
+/**
+ * The input a reply read, cache included, as the footer shows it ("输入 773k（缓存 773k）"): agents report
+ * new input apart from what came from the cache, and a bare new-input 0 next to a large cache read reads as wrong.
+ */
+export function inputRead(u: MessageUsage | UsageTotals): { total: number; cached: number } | undefined {
+  const input = reportedInput(u)
+  if (input === undefined) return undefined
+  const cached = u.cachedRead ?? 0
+  return { total: input + cached + (u.cachedWrite ?? 0), cached }
 }
