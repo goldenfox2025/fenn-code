@@ -1,9 +1,9 @@
 /**
- * Secrets saved before the app was renamed (openclaude → Cove → Ancora).
+ * Secrets saved before the app was renamed (openclaude → Cove → Ancora → Fenn Code).
  *
  * Electron encrypts secrets with a key kept by the OS under the app's name.
  * On Windows that key lives in the data folder and moved with it. On macOS it
- * sits in the keychain as "<old name> Safe Storage", so Ancora can't decrypt the
+ * sits in the keychain as "<old name> Safe Storage", so Fenn Code can't decrypt the
  * old values with its own key; they are decrypted with an old key and saved
  * again. A value is removed only when both keys provably fail to open it;
  * when the old key can't be read (Linux keyrings, or the user refuses keychain
@@ -50,7 +50,7 @@ export function legacyMacKey(oldName: string): Buffer | undefined {
 }
 
 /** Names the app had before, newest first; their keychain keys may hold old secrets. */
-export const OLD_NAMES = ['Cove', 'openclaude']
+export const OLD_NAMES = ['Ancora', 'Cove', 'openclaude']
 
 /**
  * Re-encrypts what the old key can open, and drops what neither key opens.

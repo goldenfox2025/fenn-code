@@ -63,13 +63,13 @@ function adoptLoginShellPath(): void {
 }
 adoptLoginShellPath();
 
-// The app used to be called openclaude, then Cove: the newest of their data moves to the new
+// The app used to be called openclaude, then Cove, then Ancora: the newest of their data moves to the new
 // folder once. Electron may already have created the new folder, so entries move one by one
 // (never overwriting); if the data can't be moved (e.g. an old copy is still running), the old
 // folder is used where it is.
-if (!process.env.ANCORA_DATA_DIR) {
+if (!process.env.FENN_DATA_DIR) {
   const current = app.getPath("userData");
-  for (const oldName of ["Cove", "openclaude"]) {
+  for (const oldName of ["Ancora", "Cove", "openclaude"]) {
     const legacy = join(app.getPath("appData"), oldName);
     if (current.toLowerCase() === legacy.toLowerCase() || !existsSync(join(legacy, "data")) || existsSync(join(current, "data"))) continue;
     try {
@@ -87,7 +87,7 @@ if (!process.env.ANCORA_DATA_DIR) {
 
 let win: BrowserWindow | null = null;
 const dataDir =
-  process.env.ANCORA_DATA_DIR || join(app.getPath("userData"), "data");
+  process.env.FENN_DATA_DIR || join(app.getPath("userData"), "data");
 const resourcesDir = app.isPackaged
   ? process.resourcesPath
   : join(import.meta.dirname, "../../resources");
@@ -134,7 +134,7 @@ const store = new Store(dataDir);
 let core: AppCore;
 
 // backends.json sits next to the data folder; it can be edited and reloaded live.
-const configDir = process.env.ANCORA_DATA_DIR
+const configDir = process.env.FENN_DATA_DIR
   ? dataDir
   : app.getPath("userData");
 const backendsFile = join(configDir, "backends.json");
@@ -224,7 +224,7 @@ const screenSource: ScreenSource = {
     if (!src || src.thumbnail.isEmpty())
       throw new Error(
         process.platform === "darwin"
-          ? t("无法截屏：请在「系统设置 → 隐私与安全性 → 录屏与系统录音」里允许 Ancora。")
+          ? t("无法截屏：请在「系统设置 → 隐私与安全性 → 录屏与系统录音」里允许 Fenn Code。")
           : t("无法截屏。"),
       )
     let img = src.thumbnail
@@ -269,7 +269,7 @@ const coords: Coords =
           },
         }
       : { toDevice: (x, y) => [x, y], fromDevice: (x, y) => [x, y] }
-// While an agent controls the computer, Ancora gets out of the way (so the
+// While an agent controls the computer, Fenn Code gets out of the way (so the
 // agent doesn't act on its own window) and a small always-on-top bar offers Stop.
 const controlling = new Set<string>();
 let controlBar: BrowserWindow | null = null;
@@ -280,7 +280,7 @@ html,body{margin:0;height:100%;background:transparent;font:13px system-ui,-apple
 .dot{width:8px;height:8px;border-radius:50%;background:#d97757;animation:p 1.2s infinite}
 @keyframes p{50%{opacity:.35}}span{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;-webkit-app-region:drag}
 button{border:0;border-radius:8px;padding:6px 12px;background:#d97757;color:#fff;font:inherit;cursor:pointer}
-</style><div class="bar"><i class="dot"></i><span id="t">${t("Ancora 正在操控电脑")}</span><button onclick="location.href='oc-stop:now'">${t("停止")}</button></div>`;
+</style><div class="bar"><i class="dot"></i><span id="t">${t("Fenn Code 正在操控电脑")}</span><button onclick="location.href='oc-stop:now'">${t("停止")}</button></div>`;
 
 function showControlBar(): void {
   if (controlBar) return;
@@ -321,7 +321,7 @@ let controlLabel = "";
 function setControlLabel(label: string): void {
   controlLabel = label;
   if (!controlBar || controlBar.webContents.isLoading()) return;
-  const text = label ? t("Ancora 正在{0}", label) : t("Ancora 正在操控电脑");
+  const text = label ? t("Fenn Code 正在{0}", label) : t("Fenn Code 正在操控电脑");
   void controlBar.webContents
     .executeJavaScript(`document.getElementById('t').textContent=${JSON.stringify(text)}`)
     .catch(() => {});
@@ -357,9 +357,9 @@ const computer = {
   onAction: (_id: string, label: string) => setControlLabel(label),
   screen: screenSource,
   input: inputs,
-  // Ancora's windows belong to its main process.
+  // Fenn Code's windows belong to its main process.
   isOwnApp: (a: { pid?: number; id: string; name: string }) =>
-    a.pid === process.pid || (!a.pid && [a.id, a.name].some((n) => ["ancora", app.getName().toLowerCase()].includes(n.trim().toLowerCase()))),
+    a.pid === process.pid || (!a.pid && [a.id, a.name].some((n) => ["fenn", "fenncode", app.getName().toLowerCase()].includes(n.trim().toLowerCase()))),
   clipboard: {
     read: () => clipboard.readText(),
     write: (t: string) => clipboard.writeText(t),
@@ -386,8 +386,8 @@ const configWatcher = watch(configDir, (_event, filename) => {
 configWatcher.unref();
 core.openTerminal = openTerminal;
 // Test runs keep the folders made for chats inside their own data folder.
-core.documentsDir = process.env.ANCORA_DATA_DIR
-  ? join(process.env.ANCORA_DATA_DIR, "Documents")
+core.documentsDir = process.env.FENN_DATA_DIR
+  ? join(process.env.FENN_DATA_DIR, "Documents")
   : app.getPath("documents");
 core.shellOpen = async (path, reveal) => {
   if (reveal) {
@@ -420,7 +420,7 @@ core.info = {
   arch: process.arch,
   nativeGlass,
 };
-core.updateFeed = process.env.ANCORA_UPDATE_FEED || __OC_UPDATE_FEED__ || undefined;
+core.updateFeed = process.env.FENN_UPDATE_FEED || __OC_UPDATE_FEED__ || undefined;
 core.fetchJson = async (url) => {
   const res = await net.fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -428,7 +428,7 @@ core.fetchJson = async (url) => {
 };
 
 // Every API method is an AppCore method of the same name; the compiler checks each one's
-// parameters and result against AncoraApi, so adding a method means the list plus AppCore.
+// parameters and result against FennApi, so adding a method means the list plus AppCore.
 const handlers: { [K in ApiMethod]: (...a: Parameters<CoreApi[K]>) => ReturnType<CoreApi[K]> | Awaited<ReturnType<CoreApi[K]>> } = core;
 for (const name of API_METHODS) {
   ipcMain.handle(`oc:${name}`, (_e, ...args) =>
@@ -488,7 +488,7 @@ function createWindow(): void {
     minWidth: Math.min(860, width),
     minHeight: Math.min(560, height),
     show: false,
-    title: "Ancora",
+    title: "Fenn Code",
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#262624" : "#faf9f5",
     titleBarStyle: isMac ? "hiddenInset" : "hidden",
     trafficLightPosition: { x: 14, y: 14 },
@@ -544,10 +544,10 @@ function ensureTray(): void {
   tray = new Tray(
     appIcon().resize({ width: process.platform === "win32" ? 16 : 22 }),
   );
-  tray.setToolTip("Ancora");
+  tray.setToolTip("Fenn Code");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: t("打开 Ancora"), click: showWindow },
+      { label: t("打开 Fenn Code"), click: showWindow },
       { type: "separator" },
       { label: t("退出"), click: () => ((quitting = true), app.quit()) },
     ]),
@@ -569,7 +569,7 @@ app.on("second-instance", showWindow);
 /**
  * Programs the app starts (npm, curl, the agents) take a proxy from the environment, not from
  * the system's proxy settings. When the environment names none, pass on the system's, so
- * installs and agents work the same whether Ancora was started from a terminal or a shortcut.
+ * installs and agents work the same whether Fenn Code was started from a terminal or a shortcut.
  */
 async function adoptSystemProxy(): Promise<void> {
   if (["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"].some((k) => process.env[k])) return;
@@ -627,7 +627,7 @@ app.whenReady().then(async () => {
   }
   // Without GPU compositing, backdrop blur makes scrolling choppy; the glass theme then skips it.
   const compositing = String(app.getGPUFeatureStatus().gpu_compositing ?? "");
-  core.info.softwareRendering = !compositing.startsWith("enabled") && !process.env.ANCORA_FORCE_BLUR;
+  core.info.softwareRendering = !compositing.startsWith("enabled") && !process.env.FENN_FORCE_BLUR;
   createWindow();
   core.scheduler.start();
   core.resumeInterrupted();

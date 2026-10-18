@@ -1,7 +1,7 @@
 /**
  * macOS input through JavaScript for Automation: CoreGraphics events for the
  * mouse and keys, System Events and NSWorkspace for apps. Needs Accessibility
- * permission for Ancora. Coordinates are already points, so nothing to convert.
+ * permission for Fenn Code. Coordinates are already points, so nothing to convert.
  */
 import type { AppRef, InputDriver, MouseButton } from './drivers'
 import { parseChord, run, sleep } from './proc'
@@ -35,7 +35,7 @@ export class MacDriverImpl implements InputDriver {
       await this.jxa(`Application('System Events').processes.length`)
       return undefined
     } catch (e) {
-      return t('macOS 需要授权：在「系统设置 → 隐私与安全性 → 辅助功能」里允许 Ancora。（{0}）', e instanceof Error ? e.message : e)
+      return t('macOS 需要授权：在「系统设置 → 隐私与安全性 → 辅助功能」里允许 Fenn Code。（{0}）', e instanceof Error ? e.message : e)
     }
   }
 

@@ -1,4 +1,4 @@
-// Manual check against the real Qoder CLI (qodercli on PATH): ANCORA_QODER=1 npx vitest run test/qoder.manual.test.ts
+// Manual check against the real Qoder CLI (qodercli on PATH): FENN_QODER=1 npx vitest run test/qoder.manual.test.ts
 // Not signed in: checks the handshake, the status command and the sign-in message.
 // Signed in (qodercli login, or QODER_PERSONAL_ACCESS_TOKEN set): also runs a real turn with
 // a file read, a terminal command and a mode switch, and prints what Qoder offered.
@@ -10,7 +10,7 @@ import { BackendManager } from '../src/main/backends/BackendManager'
 import { loadPlugins } from '../src/main/backends/registry'
 import type { AgentEvent } from '../src/shared/contract'
 
-describe.runIf(process.env.ANCORA_QODER)('qoder (manual)', () => {
+describe.runIf(process.env.FENN_QODER)('qoder (manual)', () => {
   it('signs in, offers models and modes, and runs a turn with tools', async () => {
     const events: AgentEvent[] = []
     const permissions: string[] = []

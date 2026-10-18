@@ -16,7 +16,7 @@ mkdirSync(out, { recursive: true })
 const L = (en, zh) => (lang === 'en' ? en : zh)
 
 // ---- stand-in CLIs -----------------------------------------------------------
-const bin = mkdtempSync(join(tmpdir(), 'ancora-bin-'))
+const bin = mkdtempSync(join(tmpdir(), 'fenn-code-bin-'))
 const stub = (name, body) => {
   writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
   chmodSync(join(bin, name), 0o755)
@@ -29,7 +29,7 @@ stub('grok', `echo "grok 1.0.60"`)
 for (const a of ['claude-agent-acp', 'codex-acp']) stub(a, 'exec sleep 600')
 
 // ---- seeded data ------------------------------------------------------------
-const data = mkdtempSync(join(tmpdir(), 'ancora-demo-'))
+const data = mkdtempSync(join(tmpdir(), 'fenn-code-demo-'))
 mkdirSync(join(data, 'messages'), { recursive: true })
 const now = Date.now()
 const min = 60_000
@@ -284,10 +284,10 @@ for (const [cid, list] of Object.entries(messages)) writeFileSync(join(data, 'me
 
 // ---- screenshots --------------------------------------------------------------
 async function launch(extraEnv = {}) {
-  if (extraEnv.ANCORA_DEMO_AGENT === '1') declareTestAgent(data, false)
+  if (extraEnv.FENN_DEMO_AGENT === '1') declareTestAgent(data, false)
   const app = await electron.launch({
     args: ['.', '--no-sandbox'],
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GROK_HOME: join(bin, 'grok-home'), ANCORA_DATA_DIR: data, ...extraEnv },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, GROK_HOME: join(bin, 'grok-home'), FENN_DATA_DIR: data, ...extraEnv },
     colorScheme: 'light'
   })
   const page = await app.firstWindow()
@@ -300,7 +300,7 @@ async function launch(extraEnv = {}) {
 }
 const wait = (page, ms) => page.waitForTimeout(ms)
 const theme = async (page, th) => {
-  await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), th)
+  await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), th)
   await wait(page, 500)
 }
 const snap = (page, name, clip) => page.screenshot({ path: join(out, `${name}.png`), ...(clip ? { clip } : {}) })
@@ -362,10 +362,10 @@ const snap = (page, name, clip) => page.screenshot({ path: join(out, `${name}.pn
 
 {
   // Computer use: the demo agent asks for an app; the grant card is the app's own.
-  const { app, page } = await launch({ ANCORA_DEMO_AGENT: '1' })
+  const { app, page } = await launch({ FENN_DEMO_AGENT: '1' })
   await theme(page, 'light')
   const ask = L('Use the computer: write today’s standup notes in Notepad.', '操控电脑，用记事本，写今天的站会笔记。')
-  const c = await page.evaluate((t) => window.ancora.startChat({ text: t, backendId: 'mock' }), ask)
+  const c = await page.evaluate((t) => window.fenn.startChat({ text: t, backendId: 'mock' }), ask)
   void c
   await page.click(`.sidebar :text("${ask.slice(0, 10)}")`)
   await page.waitForSelector('.perm-app', { timeout: 20000 })

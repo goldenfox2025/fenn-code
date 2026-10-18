@@ -10,14 +10,16 @@ import { declareTestAgent } from './test-agent.mjs'
 const shots = process.argv[2]
 const app = await electron.launch({
   args: ['.', '--no-sandbox'],
-  env: { ...process.env, ANCORA_DATA_DIR: declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-e2e-'))) }
+  env: { ...process.env, FENN_DATA_DIR: declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-e2e-'))) }
 })
 const page = await app.firstWindow()
 await page.setViewportSize({ width: 1400, height: 900 })
 await page.waitForSelector('.sidebar')
 // The checks use Chinese labels, whatever the machine's language.
-await page.evaluate(() => {
+await page.evaluate(async () => {
   localStorage.setItem('oc-lang', 'zh')
+  // Settings keep the language too, and the app makes the two agree on load.
+  await window.fenn.updateSettings({ language: 'zh' })
   // Pane widths from an earlier run would move everything.
   for (const k of Object.keys(localStorage)) if (k.startsWith('oc-width-')) localStorage.removeItem(k)
 })
@@ -415,9 +417,9 @@ await check('the connector form has one 取消 and one 保存; settings close fr
   await page.fill('.settings-body input.input >> nth=0', 'E2E 名字')
   await page.keyboard.press('Escape')
   await page.waitForSelector('.overlay', { state: 'detached', timeout: 2000 })
-  const saved = await page.evaluate(() => window.ancora.snapshot().then((s) => s.settings.userName))
+  const saved = await page.evaluate(() => window.fenn.snapshot().then((s) => s.settings.userName))
   if (saved !== 'E2E 名字') throw new Error('name not saved on close: ' + saved)
-  await page.evaluate(() => window.ancora.updateSettings({ userName: '' }))
+  await page.evaluate(() => window.fenn.updateSettings({ userName: '' }))
   await page.click('.user-btn')
   await page.click('.settings-close')
   await page.waitForSelector('.overlay', { state: 'detached', timeout: 2000 })
@@ -536,12 +538,12 @@ await check('/ lists the commands; /子对话 hands the text to a new sub-chat w
   await page.keyboard.type('整理一下日志')
   await page.keyboard.press('Enter')
   await page.locator('.center .thread-card').last().waitFor({ timeout: 5000 })
-  const child = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.find((c) => c.parentId && c.handoff?.task === '整理一下日志'))
+  const child = await page.evaluate(async () => (await window.fenn.snapshot()).conversations.find((c) => c.parentId && c.handoff?.task === '整理一下日志'))
   if (!child) throw new Error('no sub-chat with that task')
   if (!child.handoff.context?.includes('计划.md')) throw new Error('the sub-chat got no context from this chat')
   if (!(await page.locator('.center .bubble .cmd-token:has-text("/子对话")').count())) throw new Error('the sent command is not shown as a token')
   await page.waitForTimeout(800)
-  const replies = await page.evaluate(async (id) => (await window.ancora.messages(id)).filter((m) => m.role === 'assistant').length, child.parentId)
+  const replies = await page.evaluate(async (id) => (await window.fenn.messages(id)).filter((m) => m.role === 'assistant').length, child.parentId)
   const turns = await page.locator('.center .turn').count()
   if (turns > before + 1) throw new Error(`this chat's agent answered too (${before} → ${turns} turns, ${replies} replies)`)
   // /子对话 with nothing after it says what's missing.
@@ -580,10 +582,10 @@ await check('a / command the agent does not list is held back once; Enter again 
   await page.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
 })
 await check('/rename renames the conversation too', async () => {
-  const id = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.find((c) => !c.parentId && !c.projectId)?.id)
+  const id = await page.evaluate(async () => (await window.fenn.snapshot()).conversations.find((c) => !c.parentId && !c.projectId)?.id)
   if (!id) throw new Error('no chat to rename')
-  await page.evaluate((id) => window.ancora.send(id, '/rename 发布清单'), id)
-  await page.waitForFunction(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.title === '发布清单', id, { timeout: 8000 })
+  await page.evaluate((id) => window.fenn.send(id, '/rename 发布清单'), id)
+  await page.waitForFunction(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.title === '发布清单', id, { timeout: 8000 })
 })
 
 
@@ -689,7 +691,7 @@ await check('the chats page groups chats by folder, and selects several to delet
   await page.click('.select-bar .btn:has-text("删除")')
   await page.click('.modal.confirm .btn.danger-solid')
   await page.waitForFunction((n) => document.querySelectorAll('.page .list-row').length === n - 2, before, { timeout: 3000 })
-  const inProjects = await page.evaluate(async () => (await window.ancora.snapshot()).conversations.filter((c) => c.kind === 'chat' && c.projectId).length)
+  const inProjects = await page.evaluate(async () => (await window.fenn.snapshot()).conversations.filter((c) => c.kind === 'chat' && c.projectId).length)
   if (inProjects) throw new Error(inProjects + ' chats inside projects')
 })
 
@@ -700,8 +702,8 @@ await check('a project keeps a progress board of milestones and tasks, edited by
   if (await page.locator('.menu .menu-item:has-text("里程碑")').count()) throw new Error('empty progress board offered')
   await page.keyboard.press('Escape')
   await page.evaluate(async () => {
-    const p = (await window.ancora.snapshot()).projects.find((x) => x.name.includes('端到端'))
-    await window.ancora.updateProgress(p.id, { title: '第一版上线' })
+    const p = (await window.fenn.snapshot()).projects.find((x) => x.name.includes('端到端'))
+    await window.fenn.updateProgress(p.id, { title: '第一版上线' })
   })
   await panelView('里程碑')
   if (!(await page.locator('.panel-head .tab.active:has-text("里程碑")').count())) throw new Error('the open view is not shown as a tab')
@@ -729,8 +731,8 @@ await check('a project’s 库 shows its folder, and files added there land in i
   await page.click('.sidebar .recent-projects .nav-item:has-text("端到端")')
   await page.click('.panel-head .tab[data-tab="library"]')
   await page.waitForSelector('.panel .files-pane .files-root')
-  const p = await page.evaluate(async () => (await window.ancora.snapshot()).projects.find((x) => x.name.includes('端到端')))
-  await page.evaluate((id) => window.ancora.addToLibrary(id, '', [{ name: '说明.md', data: btoa(unescape(encodeURIComponent('# 说明\n'))) }]), p.id)
+  const p = await page.evaluate(async () => (await window.fenn.snapshot()).projects.find((x) => x.name.includes('端到端')))
+  await page.evaluate((id) => window.fenn.addToLibrary(id, '', [{ name: '说明.md', data: btoa(unescape(encodeURIComponent('# 说明\n'))) }]), p.id)
   await page.click('.panel .files-head .icon-btn[aria-label="刷新"]')
   await page.locator('.panel .tree-row:has-text("说明.md")').waitFor({ timeout: 3000 })
   await page.click('.panel-head .tab[data-tab="threads"]')
@@ -888,10 +890,10 @@ await app.close()
 // First launch: whatever the user types goes into the guide, never into the chat behind it.
 {
   const dir = declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-e2e-first-')))
-  const launch = () => electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, ANCORA_DATA_DIR: dir } })
+  const launch = () => electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, FENN_DATA_DIR: dir } })
   let a = await launch()
   let p = await a.firstWindow()
-  await p.evaluate(() => localStorage.setItem('oc-lang', 'zh'))
+  await p.evaluate(async () => { localStorage.setItem('oc-lang', 'zh'); await window.fenn.updateSettings({ language: 'zh' }) })
   await p.reload()
   await check('on first launch, typing a name and pressing Enter stays in the guide', async () => {
     await p.waitForSelector('.onboarding input')
@@ -900,7 +902,7 @@ await app.close()
     await p.keyboard.type('小林')
     await p.keyboard.press('Enter')
     await p.waitForSelector('.onboarding h1:has-text("选择回答您的 AI")', { timeout: 3000 })
-    const chats = await p.evaluate(async () => (await window.ancora.snapshot()).conversations.length)
+    const chats = await p.evaluate(async () => (await window.fenn.snapshot()).conversations.length)
     if (chats) throw new Error(chats + ' chat(s) were started from the guide')
     for (let i = 0; i < 12; i++) await p.keyboard.press('Tab')
     if (!(await p.evaluate(() => !!document.activeElement?.closest('.onboarding')))) throw new Error('Tab left the guide')
@@ -938,9 +940,9 @@ await app.close()
     { id: 'a1', conversationId: 'cut', role: 'assistant', blocks: [{ type: 'text', text: '春眠不觉晓' }], createdAt: now, state: 'streaming' }
   ]))
   declareTestAgent(dir)
-  const app2 = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, ANCORA_DATA_DIR: dir } })
+  const app2 = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, FENN_DATA_DIR: dir } })
   const p2 = await app2.firstWindow()
-  await p2.evaluate(() => localStorage.setItem('oc-lang', 'zh'))
+  await p2.evaluate(async () => { localStorage.setItem('oc-lang', 'zh'); await window.fenn.updateSettings({ language: 'zh' }) })
   await p2.reload()
   await p2.waitForSelector('.sidebar')
   if (await p2.locator('.onboarding').count()) await p2.click('.onboarding .skip')

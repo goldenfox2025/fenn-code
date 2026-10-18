@@ -1,4 +1,4 @@
-/** Finding the programs backends run. Ancora never installs one unless the user asks in Settings. */
+/** Finding the programs backends run. Fenn Code never installs one unless the user asks in Settings. */
 import { statSync } from 'node:fs'
 import { delimiter, extname, join } from 'node:path'
 

@@ -70,7 +70,7 @@ export function Onboarding() {
 
         {step === 0 && (
           <>
-            <h1>{t('欢迎使用 Ancora')}</h1>
+            <h1>{t('欢迎使用 Fenn Code')}</h1>
             <p className="muted">{t('在桌面上和 AI 一起做事：')}</p>
             <ul className="onboarding-points">
               <li>
@@ -103,7 +103,7 @@ export function Onboarding() {
         {step === 1 && (
           <>
             <h1>{t('选择回答您的 AI')}</h1>
-            <p className="muted">{t('Ancora 本身不含模型，回答来自您选择的 agent。以后可以在 设置 → Agent 后端 里更换。')}</p>
+            <p className="muted">{t('Fenn Code 本身不含模型，回答来自您选择的 agent。以后可以在 设置 → Agent 后端 里更换。')}</p>
             <div className="choice-list">
               {backends.map((b) => (
                 <button key={b.id} className={'choice' + (b.id === backendId ? ' on' : '')} onClick={() => setBackendId(b.id)}>

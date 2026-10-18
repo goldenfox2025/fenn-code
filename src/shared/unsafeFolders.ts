@@ -1,6 +1,6 @@
 /**
  * Folders a conversation may never work in: the user's home folder and every
- * folder above it, a drive or filesystem root, and Ancora's own data folder.
+ * folder above it, a drive or filesystem root, and Fenn Code's own data folder.
  * An agent working there sees everything the user owns.
  */
 export function isUnsafeFolder(path: string, home: string, dataDir: string): boolean {

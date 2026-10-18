@@ -99,7 +99,7 @@ async function prompt({ sessionId, prompt: blocks }) {
     log(s, { type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted', compact_metadata: { trigger: 'auto', pre_tokens: s.context, post_tokens: 3000 } })
     s.context = 3000
   } else s.context += 1500
-  const rules = text.includes('<ancora-context') ? '有' : '无'
+  const rules = text.includes('<fenn-context') ? '有' : '无'
   const reply = text.includes('规则在哪') ? `本条消息：${rules}` : `好的，第 ${s.turns} 轮。`
   for (const piece of [reply.slice(0, 3), reply.slice(3)]) notify(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: piece } })
 

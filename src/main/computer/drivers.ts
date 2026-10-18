@@ -4,7 +4,7 @@
  *
  *   Windows  one long-lived PowerShell process calling user32 (SendInput)
  *   macOS    JavaScript for Automation (CoreGraphics events, System Events);
- *            needs Accessibility permission for Ancora
+ *            needs Accessibility permission for Fenn Code
  *   Linux    xdotool (X11; Wayland sessions don't allow synthetic input)
  *
  * Coordinates given to a driver are logical screen points (Electron's DIP

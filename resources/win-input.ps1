@@ -1,4 +1,4 @@
-﻿# Ancora's Windows input helper: stays running while computer control is in use.
+﻿# Fenn Code's Windows input helper: stays running while computer control is in use.
 # Reads one JSON request per line on stdin and writes one base64-encoded JSON
 # reply per line on stdout. See src/main/computer/win.ts.
 $ErrorActionPreference = 'Stop'
@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
-public static class AncoraInput {
+public static class FennInput {
   [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
   [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
   [StructLayout(LayoutKind.Explicit)] struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
@@ -47,7 +47,7 @@ public static class AncoraInput {
 
   static void Send(params INPUT[] ins) {
     if (SendInput((uint)ins.Length, ins, Marshal.SizeOf(typeof(INPUT))) != ins.Length)
-      throw new Exception("系统拒绝了模拟输入。目标窗口可能以管理员身份运行，Ancora 不能操作它。");
+      throw new Exception("系统拒绝了模拟输入。目标窗口可能以管理员身份运行，Fenn Code 不能操作它。");
   }
   static INPUT M(uint flags, int data) {
     INPUT i = new INPUT(); i.type = 0; i.u.mi.dwFlags = flags; i.u.mi.mouseData = unchecked((uint)data); return i;
@@ -176,14 +176,14 @@ public static class AncoraInput {
   }
 }
 '@
-[AncoraInput]::SetProcessDPIAware() | Out-Null
+[FennInput]::SetProcessDPIAware() | Out-Null
 $utf8 = New-Object System.Text.UTF8Encoding $false
 function S($b) { if ($b) { $utf8.GetString([Convert]::FromBase64String($b)) } else { '' } }
 function Reply($o) { [Console]::Out.WriteLine([Convert]::ToBase64String($utf8.GetBytes(($o | ConvertTo-Json -Compress -Depth 4)))); [Console]::Out.Flush() }
 function Open-App($q) {
-  $r = [AncoraInput]::Focus($q)
+  $r = [FennInput]::Focus($q)
   if ($r) { return $r }
-  $before = [AncoraInput]::Foreground()
+  $before = [FennInput]::Foreground()
   $apps = @(Get-StartApps)
   $app = $apps | Where-Object { $_.Name -ieq $q } | Select-Object -First 1
   if (-not $app) { $p = '*' + [WildcardPattern]::Escape($q) + '*'; $app = $apps | Where-Object { $_.Name -like $p } | Select-Object -First 1 }
@@ -193,10 +193,10 @@ function Open-App($q) {
   }
   for ($i = 0; $i -lt 40; $i++) {
     Start-Sleep -Milliseconds 250
-    $now = [AncoraInput]::Foreground()
+    $now = [FennInput]::Foreground()
     if ($now -and $now -ne $before) { return $now }
   }
-  return [AncoraInput]::Foreground()
+  return [FennInput]::Foreground()
 }
 Reply @{ id = 0; ok = $true; r = 'ready' }
 while ($null -ne ($line = [Console]::In.ReadLine())) {
@@ -204,20 +204,20 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
   try {
     $r = $null
     switch ($q.op) {
-      'move' { [AncoraInput]::Move($q.x, $q.y) }
+      'move' { [FennInput]::Move($q.x, $q.y) }
       'click' {
-        foreach ($m in @($q.mods)) { if ($m) { [AncoraInput]::KeyName($m, $false) } }
-        try { [AncoraInput]::Click($q.x, $q.y, $q.b, $q.n) }
-        finally { foreach ($m in @($q.mods)) { if ($m) { [AncoraInput]::KeyName($m, $true) } } }
+        foreach ($m in @($q.mods)) { if ($m) { [FennInput]::KeyName($m, $false) } }
+        try { [FennInput]::Click($q.x, $q.y, $q.b, $q.n) }
+        finally { foreach ($m in @($q.mods)) { if ($m) { [FennInput]::KeyName($m, $true) } } }
       }
-      'drag' { [AncoraInput]::Drag($q.x, $q.y, $q.x2, $q.y2) }
-      'scroll' { [AncoraInput]::Move($q.x, $q.y); [AncoraInput]::Wheel($q.dx, $q.dy) }
-      'type' { [AncoraInput]::TypeText((S $q.s)) }
-      'key' { [AncoraInput]::Chord([string[]]@($q.keys), $q.n, $q.hold) }
-      'cursor' { $r = [AncoraInput]::Cursor() }
-      'front' { $r = [AncoraInput]::Foreground() }
-      'at' { $r = [AncoraInput]::AppAt($q.x, $q.y) }
-      'apps' { $r = [AncoraInput]::Apps() }
+      'drag' { [FennInput]::Drag($q.x, $q.y, $q.x2, $q.y2) }
+      'scroll' { [FennInput]::Move($q.x, $q.y); [FennInput]::Wheel($q.dx, $q.dy) }
+      'type' { [FennInput]::TypeText((S $q.s)) }
+      'key' { [FennInput]::Chord([string[]]@($q.keys), $q.n, $q.hold) }
+      'cursor' { $r = [FennInput]::Cursor() }
+      'front' { $r = [FennInput]::Foreground() }
+      'at' { $r = [FennInput]::AppAt($q.x, $q.y) }
+      'apps' { $r = [FennInput]::Apps() }
       'open' { $r = Open-App (S $q.s) }
       default { throw ('unknown op ' + $q.op) }
     }

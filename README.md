@@ -1,16 +1,16 @@
-# Ancora
+# Fenn Code
 
 **A desktop workspace for the AI agents you already use.** Chats, projects that split work into threads, scheduled tasks and computer use, on top of Codex, Claude Code, Grok, Qoder or any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com).
 
 [简体中文](README.zh.md) · [Download](../../releases) · [Build from source](#build-from-source)
 
-![Ancora: a project chat with its threads, and one thread asking which headline to use](docs/screenshots/en/hero.webp)
+![Fenn Code: a project chat with its threads, and one thread asking which headline to use](docs/screenshots/en/hero.webp)
 
-> **Unofficial.** Ancora is an independent open-source project. It is not affiliated with, endorsed by or sponsored by Anthropic. "Claude" is a trademark of Anthropic. Ancora does not include or call Claude by itself; it borrows the look and workflow of the Claude desktop app and runs whichever agent you connect.
+> **Unofficial.** Fenn Code is an independent open-source project. It is not affiliated with, endorsed by or sponsored by Anthropic. "Claude" is a trademark of Anthropic. Fenn Code does not include or call Claude by itself; it borrows the look and workflow of the Claude desktop app and runs whichever agent you connect.
 
-## Why Ancora
+## Why Fenn Code
 
-Command-line agents are good at the work but leave you with a terminal per task. Ancora gives them the structure of a desktop app: one place to ask, threads that keep long work apart, a record of what was decided and what was produced, and tasks that run on a schedule. The agent stays your choice, and switching agents doesn't lose the project.
+Command-line agents are good at the work but leave you with a terminal per task. Fenn Code gives them the structure of a desktop app: one place to ask, threads that keep long work apart, a record of what was decided and what was produced, and tasks that run on a schedule. The agent stays your choice, and switching agents doesn't lose the project.
 
 ## Features
 
@@ -27,7 +27,7 @@ Project memory, files and progress belong to the project, not to an agent sessio
 
 ### Computer use
 
-With computer use switched on, an agent whose model can read images works in your other apps: it takes screenshots, clicks, types, scrolls and opens programs. It has to ask for each app first, and you choose **full control**, **click only** or **view only** per app. Clicks are checked against the app under the pointer, Ancora steps aside while it works, and a bar at the top of the screen shows what it is doing and stops it.
+With computer use switched on, an agent whose model can read images works in your other apps: it takes screenshots, clicks, types, scrolls and opens programs. It has to ask for each app first, and you choose **full control**, **click only** or **view only** per app. Clicks are checked against the app under the pointer, Fenn Code steps aside while it works, and a bar at the top of the screen shows what it is doing and stops it.
 
 ![The permission card: the agent asks to control Notepad and explains why](docs/screenshots/en/computer.webp)
 
@@ -35,7 +35,7 @@ With computer use switched on, an agent whose model can read images works in you
 
 Codex, Claude Code, Grok and Qoder are built in, and Codex is the suggested default when it is installed. Settings shows whether each one is installed and, where the agent reports it, signed in. It checks for updates and upgrades only when you ask. Any other ACP agent is one entry in `backends.json`.
 
-Ancora never installs an agent on its own. The install and upgrade buttons show the exact command and wait for you to confirm, and the model picker only lists agents that are ready to use. It loads an agent's models as soon as you open it, so you can pick a model and thinking level before the first message, and an idle chat can switch to another agent, which receives the conversation so far.
+Fenn Code never installs an agent on its own. The install and upgrade buttons show the exact command and wait for you to confirm, and the model picker only lists agents that are ready to use. It loads an agent's models as soon as you open it, so you can pick a model and thinking level before the first message, and an idle chat can switch to another agent, which receives the conversation so far.
 
 If a CLI isn't on `PATH` (a shell alias, or bundled inside another app), set its path under Settings → Agent backends: Codex takes the CLI and the `codex-acp` adapter, Qoder the CLI and, for its JS entry, Node. With Qoder, the usage button shows your account's credits instead of tokens.
 
@@ -63,7 +63,7 @@ Also included: attachments, editing and regenerating with version history, token
 
 ## Quick start
 
-1. From [Releases](../../releases), download the installer (`Ancora-Setup-0.1.2.exe`) or the portable `Ancora-0.1.2-win.zip` (unzip it anywhere and run `Ancora.exe`). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
+1. From [Releases](../../releases), download the installer (`Fenn-Code-Setup-0.1.2.exe`) or the portable `Fenn-Code-0.1.2-win.zip` (unzip it anywhere and run `FennCode.exe`). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
 2. Install and sign in to at least one agent, in a terminal or from Settings → Agent backends:
 
    | Agent | Install | Sign in | Status |
@@ -93,13 +93,13 @@ You need [Node.js](https://nodejs.org) 22 or newer and git. Clone this repositor
 | Windows | `.\build.cmd -Run` (double-clicking `build.cmd` builds without starting the app) |
 | macOS / Linux | `./build.sh --run` |
 
-The script checks Node.js, installs dependencies, builds the app and prints where it is (`release/win-unpacked/Ancora.exe`, `release/mac*/Ancora.app` or `release/linux-unpacked/ancora-desktop` on x64; other architectures get their own folder). Add `-Installer` (Windows) or `--installer` (macOS / Linux) to also build an installer. Behind a proxy, set `HTTPS_PROXY` first and the scripts pass it on to Node's own downloads.
+The script checks Node.js, installs dependencies, builds the app and prints where it is (`release/win-unpacked/FennCode.exe`, `release/mac*/Fenn Code.app` or `release/linux-unpacked/fenn-code` on x64; other architectures get their own folder). Add `-Installer` (Windows) or `--installer` (macOS / Linux) to also build an installer. Behind a proxy, set `HTTPS_PROXY` first and the scripts pass it on to Node's own downloads.
 
 On macOS, an app you built yourself opens with right-click → **Open** the first time.
 
 ## Adding a backend
 
-Without code, add the agent to `backends.json` in the app's data folder (`%APPDATA%\Ancora` on Windows, `~/Library/Application Support/Ancora` on macOS, `~/.config/Ancora` on Linux), or open it from Settings → Agent backends → Advanced:
+Without code, add the agent to `backends.json` in the app's data folder (`%APPDATA%\Fenn Code` on Windows, `~/Library/Application Support/Fenn Code` on macOS, `~/.config/Fenn Code` on Linux), or open it from Settings → Agent backends → Advanced:
 
 ```json
 [
@@ -162,4 +162,4 @@ Translations live in [`src/shared/i18n`](src/shared/i18n/README.md); adding a la
 
 ## License
 
-[MIT](LICENSE). Ancora is not affiliated with Anthropic, OpenAI, xAI or Qoder; product names belong to their owners.
+[MIT](LICENSE). Fenn Code is not affiliated with Anthropic, OpenAI, xAI or Qoder; product names belong to their owners.

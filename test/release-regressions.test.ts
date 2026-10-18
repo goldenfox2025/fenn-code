@@ -14,7 +14,7 @@ import codex, { codexAccount } from '../src/main/backends/plugins/codex'
 import { textOf } from '../src/main/core/ChatService'
 
 function startup(availability: Record<string, boolean>, saved = '') {
-  const store = new Store(mkdtempSync(join(tmpdir(), 'ancora-default-')))
+  const store = new Store(mkdtempSync(join(tmpdir(), 'fenn-code-default-')))
   store.patchSettings({ defaultBackendId: saved })
   const account = vi.fn(async () => ({}))
   const plugins: BackendPlugin[] = Object.entries(availability).map(([id, installed]) => ({
@@ -41,11 +41,11 @@ describe('first-run backend selection', () => {
     expect(startup({ codex: true, qoder: false }, 'qoder').store.settings.defaultBackendId).toBe('codex')
   })
   it('requires the ACP adapter as well as the CLI', () => {
-    const program = join(mkdtempSync(join(tmpdir(), 'ancora-program-')), 'agent')
+    const program = join(mkdtempSync(join(tmpdir(), 'fenn-code-program-')), 'agent')
     writeFileSync(program, '')
     const plugin = acpPlugin({ id: 'test', name: 'Test',
       launch: () => ({ command: program, args: [] }),
-      account: () => ({ command: program, requires: ['missing-ancora-adapter'], parse: () => ({}) }) })
+      account: () => ({ command: program, requires: ['missing-fenn-code-adapter'], parse: () => ({}) }) })
     expect(plugin.isInstalled?.({})).toBe(false)
   })
 })
@@ -92,7 +92,7 @@ describe('local file denial versus sign-in', () => {
 
 describe('configured Codex programs and live configuration', () => {
   it('uses the configured CLI and adapter for detection and the same CLI for terminal login', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ancora programs '))
+    const dir = mkdtempSync(join(tmpdir(), 'fenn programs '))
     const cli = join(dir, 'Codex CLI')
     const adapter = join(dir, 'Codex ACP')
     writeFileSync(cli, '')

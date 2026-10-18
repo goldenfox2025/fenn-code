@@ -9,18 +9,18 @@ import assert from 'node:assert/strict'
 
 const release = resolve('release')
 const candidates = process.platform === 'darwin'
-  ? ['mac-universal/Ancora.app', `mac-${process.arch}/Ancora.app`, 'mac/Ancora.app']
+  ? ['mac-universal/Fenn Code.app', `mac-${process.arch}/Fenn Code.app`, 'mac/Fenn Code.app']
   : process.platform === 'win32' ? ['win-unpacked'] : ['linux-unpacked']
 const source = candidates.map((p) => join(release, p)).find(existsSync)
 assert(source, 'Build an unpacked app with npm run dist first')
-const temp = mkdtempSync(join(tmpdir(), 'ancora-package-smoke-'))
-const staged = join(temp, process.platform === 'darwin' ? 'Ancora.app' : 'app')
+const temp = mkdtempSync(join(tmpdir(), 'fenn-code-package-smoke-'))
+const staged = join(temp, process.platform === 'darwin' ? 'Fenn Code.app' : 'app')
 const shots = join(release, 'package-smoke')
 mkdirSync(shots, { recursive: true })
 cpSync(source, staged, { recursive: true, verbatimSymlinks: true })
 const executablePath = process.platform === 'darwin'
-  ? join(staged, 'Contents/MacOS/Ancora')
-  : join(staged, process.platform === 'win32' ? 'Ancora.exe' : 'ancora-desktop')
+  ? join(staged, 'Contents/MacOS/FennCode')
+  : join(staged, process.platform === 'win32' ? 'FennCode.exe' : 'fenn-code')
 const packagedResources = process.platform === 'darwin' ? join(staged, 'Contents/Resources') : join(staged, 'resources')
 assert(!existsSync(join(packagedResources, 'mock-agent.mjs')), 'Release must not ship the demo agent script')
 // Fixtures live outside the installed application, declared only in isolated test data.
@@ -46,11 +46,11 @@ writeFileSync(join(data, 'backends.json'), JSON.stringify([{
   id: 'package-smoke', name: 'Package smoke agent', command: process.execPath,
   upgrade: {
     // Never executed: the test opens this confirmation and cancels it.
-    run: { command: 'ancora-test-do-not-run', args: ['install', '-g', '@qoder-ai/qodercli@latest', 'a-long-command-argument-'.repeat(12)] },
+    run: { command: 'fenn-code-test-do-not-run', args: ['install', '-g', '@qoder-ai/qodercli@latest', 'a-long-command-argument-'.repeat(12)] },
     latest: { command: process.execPath, args: ['--version'] }
   }
 }]))
-const env = { ...process.env, ANCORA_DEMO_AGENT: '1', ANCORA_DATA_DIR: data, NODE_PATH: '', MOCK_DYNAMIC_EFFORT: '1' }
+const env = { ...process.env, FENN_DEMO_AGENT: '1', FENN_DATA_DIR: data, NODE_PATH: '', MOCK_DYNAMIC_EFFORT: '1' }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.NODE_OPTIONS
 let app
@@ -67,10 +67,10 @@ try {
   // Even the former development switch must not enable a built-in demo in a release.
   app = await electron.launch({ executablePath, cwd: temp,
     args: [`--user-data-dir=${join(temp, 'production-profile')}`, ...(process.platform === 'linux' ? ['--no-sandbox'] : [])],
-    env: { ...env, ANCORA_DATA_DIR: join(temp, 'production-data') }, timeout: 45_000 })
+    env: { ...env, FENN_DATA_DIR: join(temp, 'production-data') }, timeout: 45_000 })
   page = await app.firstWindow({ timeout: 30_000 })
   await page.waitForSelector('.sidebar', { timeout: 30_000 })
-  const production = await page.evaluate(() => window.ancora.snapshot())
+  const production = await page.evaluate(() => window.fenn.snapshot())
   assert(!production.backends.some((b) => b.id === 'mock'), 'Release must not offer a demo backend')
   assert.notEqual(production.settings.defaultBackendId, 'mock')
   await app.close()
@@ -121,11 +121,11 @@ try {
 
   // Pick a model before sending any message; no chat or generated usage exists.
   await choose(/^Mock Smart/)
-  assert.equal(await page.evaluate(async () => (await window.ancora.snapshot()).conversations.length), 0)
+  assert.equal(await page.evaluate(async () => (await window.fenn.snapshot()).conversations.length), 0)
   await picker().filter({ hasText: 'Mock Smart' }).waitFor()
-  await waitState(async () => (await window.ancora.snapshot()).settings.backendModelDefaults?.mock === 'mock-smart')
+  await waitState(async () => (await window.fenn.snapshot()).settings.backendModelDefaults?.mock === 'mock-smart')
   await chooseEffort(NONE)
-  await waitState(async () => (await window.ancora.snapshot()).settings.backendOptionDefaults?.mock?.effort === 'none')
+  await waitState(async () => (await window.fenn.snapshot()).settings.backendOptionDefaults?.mock?.effort === 'none')
   console.log('Model selection before the first message passed')
 
   // The picker keeps a gap from its button and fits the viewport, including
@@ -148,7 +148,7 @@ try {
   const declared = JSON.parse(readFileSync(configFile, 'utf8'))
   declared.push({ id: 'hot-reloaded', name: 'Hot-reloaded agent', command: process.execPath })
   writeFileSync(configFile, JSON.stringify(declared))
-  await waitState(async () => (await window.ancora.snapshot()).backends.some((b) => b.id === 'hot-reloaded'))
+  await waitState(async () => (await window.fenn.snapshot()).backends.some((b) => b.id === 'hot-reloaded'))
   console.log('External backend configuration hot reload passed')
 
   await page.locator('.user-btn').click()
@@ -157,7 +157,7 @@ try {
   await card.getByRole('button', { name: '检查更新', exact: true }).click()
   await card.getByRole('button', { name: '升级', exact: true }).waitFor()
   for (const [theme, width, height] of [['glass', 1200, 800], ['glass', 860, 560], ['light', 860, 560], ['dark', 860, 560]]) {
-    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
+    await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     await page.setViewportSize({ width, height })
     await card.getByRole('button', { name: '升级', exact: true }).click()
     const modal = page.locator('.modal.confirm')
@@ -188,15 +188,15 @@ try {
   const chats = await page.evaluate(async () => {
     const result = []
     for (const title of ['打包测试待删除', '打包测试保留']) {
-      const chat = await window.ancora.startChat({ backendId: 'mock', text: '你好' })
-      await window.ancora.updateConversation(chat.id, { title })
+      const chat = await window.fenn.startChat({ backendId: 'mock', text: '你好' })
+      await window.fenn.updateConversation(chat.id, { title })
       result.push(chat.id)
     }
     return result
   })
-  await waitState(async (ids) => (await window.ancora.snapshot()).conversations.filter((c) => ids.includes(c.id)).every((c) => c.status === 'idle'), chats)
+  await waitState(async (ids) => (await window.fenn.snapshot()).conversations.filter((c) => ids.includes(c.id)).every((c) => c.status === 'idle'), chats)
   await page.locator('.sidebar').getByRole('button', { name: '对话', exact: true }).click()
-  await page.evaluate(() => window.ancora.updateSettings({ theme: 'light', glass: false }))
+  await page.evaluate(() => window.fenn.updateSettings({ theme: 'light', glass: false }))
   const remove = page.getByRole('button', { name: '删除对话「打包测试待删除」', exact: true })
   await remove.click()
   await page.locator('.confirm-cancel').click()
@@ -205,7 +205,7 @@ try {
   await remove.click()
   await page.locator('.modal.confirm .danger-solid').click()
   await remove.waitFor({ state: 'detached' })
-  assert(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.some((c) => c.id === id), chats[1]))
+  assert(await page.evaluate(async (id) => (await window.fenn.snapshot()).conversations.some((c) => c.id === id), chats[1]))
   console.log('Chats-page single deletion and cancellation passed')
 
   // Configure the built-in Qoder card through the UI. This JS fixture uses the
@@ -219,7 +219,7 @@ try {
     } else if (process.argv[2] === '--acp') {
       await import(${JSON.stringify(pathToFileURL(agentFixture).href)})
     } else if (process.argv[2] === '--print') {
-      if (process.env.QODER_AGENT_SDK_ENTRYPOINT !== 'ancora-usage') process.exit(8)
+      if (process.env.QODER_AGENT_SDK_ENTRYPOINT !== 'fenn-code-usage') process.exit(8)
       const { createInterface } = await import('node:readline')
       createInterface({ input: process.stdin }).on('line', (line) => {
         const request = JSON.parse(line)
@@ -244,20 +244,20 @@ try {
     await page.waitForTimeout(800)
     assert.deepEqual(await field.boundingBox(), editing, 'Saving backend settings must preserve field geometry')
   }
-  assert.deepEqual(await page.evaluate(() => window.ancora.backendAccount('qoder')), {
+  assert.deepEqual(await page.evaluate(() => window.fenn.backendAccount('qoder')), {
     installed: true, signedIn: true, version: 'packaged-fixture', detail: 'qodercli packaged-fixture'
   })
   await page.screenshot({ path: join(shots, 'qoder-path-settings.png') })
   await page.keyboard.press('Escape')
-  const qoderChat = await page.evaluate(async () => (await window.ancora.startChat({ backendId: 'qoder', text: 'hello configured Qoder' })).id)
+  const qoderChat = await page.evaluate(async () => (await window.fenn.startChat({ backendId: 'qoder', text: 'hello configured Qoder' })).id)
   await waitState(async (id) => {
-    const messages = await window.ancora.messages(id)
-    return (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle' && messages.some((m) => m.role === 'assistant' && m.state === 'done')
+    const messages = await window.fenn.messages(id)
+    return (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle' && messages.some((m) => m.role === 'assistant' && m.state === 'done')
   }, qoderChat)
-  assert.equal(await page.evaluate(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id).backendId, qoderChat), 'qoder')
+  assert.equal(await page.evaluate(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id).backendId, qoderChat), 'qoder')
   console.log('Qoder path settings, account check and packaged ACP reply passed')
 
-  await page.evaluate((id) => window.ancora.updateConversation(id, { title: 'Qoder Credits smoke' }), qoderChat)
+  await page.evaluate((id) => window.fenn.updateConversation(id, { title: 'Qoder Credits smoke' }), qoderChat)
   await page.locator('.sidebar .nav-item').filter({ hasText: 'Qoder Credits smoke' }).click()
   await page.locator('.chat-header .usage-btn').filter({ hasText: '12.5 / 100 credits' }).waitFor()
   assert.equal(await page.locator('.msg-usage').count(), 0, 'Qoder does not present token counts as billing')
@@ -269,7 +269,7 @@ try {
     })
   }))
   for (const theme of ['light', 'dark', 'glass']) {
-    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
+    await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     for (const selector of ['.chat-header .usage-btn', '.chat-header button[aria-label="更多对话操作"]']) {
       await page.locator('.center > .scroll').evaluate((el) => {
         el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - 24)
@@ -304,12 +304,12 @@ try {
   await page.keyboard.press('Escape')
   console.log('Other agents retain reported tokens and costs, without an invented account quota')
 
-  const metricsChat = await page.evaluate(async () => (await window.ancora.startChat({ backendId: 'plain-metrics', text: 'stream timing' })).id)
-  await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle', metricsChat)
-  await page.evaluate((id) => window.ancora.updateConversation(id, { title: 'Observed timing smoke' }), metricsChat)
+  const metricsChat = await page.evaluate(async () => (await window.fenn.startChat({ backendId: 'plain-metrics', text: 'stream timing' })).id)
+  await waitState(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle', metricsChat)
+  await page.evaluate((id) => window.fenn.updateConversation(id, { title: 'Observed timing smoke' }), metricsChat)
   await page.locator('.sidebar .nav-item').filter({ hasText: 'Observed timing smoke' }).click()
   for (const theme of ['light', 'dark', 'glass']) {
-    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
+    await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     const trigger = page.locator('.composer .context-ring')
     const before = await geometry()
     await trigger.click()
@@ -340,11 +340,11 @@ try {
   assert(await effortIs(NONE))
   await choose(/^Qoder/)
   await choose(/^Mock Smart/)
-  await waitState(async () => (await window.ancora.snapshot()).settings.backendModelDefaults?.qoder === 'mock-smart')
+  await waitState(async () => (await window.fenn.snapshot()).settings.backendModelDefaults?.qoder === 'mock-smart')
   assert(!(await effortStops()).some((x) => NONE.test(x)), 'Qoder does not expose none')
   await page.keyboard.press('Escape')
   await chooseEffort(LOW)
-  await waitState(async () => (await window.ancora.snapshot()).settings.backendOptionDefaults?.qoder?.effort === 'low')
+  await waitState(async () => (await window.fenn.snapshot()).settings.backendOptionDefaults?.qoder?.effort === 'low')
   await choose(/^演示 Agent/)
   await page.waitForFunction(() => /^不启用推理/.test(document.querySelector('.composer .effort-chip')?.textContent ?? ''))
   await choose(/^Qoder/)
@@ -353,7 +353,7 @@ try {
 
   // An idle chat can change agent; the new agent's models load without sending anything.
   await page.locator('.sidebar .nav-item').filter({ hasText: 'Qoder Credits smoke' }).click()
-  const beforeCold = await page.evaluate((id) => window.ancora.messages(id), qoderChat)
+  const beforeCold = await page.evaluate((id) => window.fenn.messages(id), qoderChat)
   await choose(/^Cold catalog/)
   await openPicker()
   await page.locator('.menu').getByText('正在加载模型…', { exact: true }).waitFor()
@@ -365,12 +365,12 @@ try {
     return r && r.top >= 7 && r.bottom <= innerHeight - 7
   })
   await page.getByRole('menuitemradio', { name: /^Mock Smart/ }).click()
-  await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.modelId === 'mock-smart', qoderChat)
+  await waitState(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.modelId === 'mock-smart', qoderChat)
   await chooseEffort(LOW)
-  await waitState(async (id) => (await window.ancora.snapshot()).conversations.find((c) => c.id === id)?.optionValues?.effort === 'low', qoderChat)
-  assert.deepEqual(await page.evaluate((id) => window.ancora.messages(id), qoderChat), beforeCold)
+  await waitState(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.optionValues?.effort === 'low', qoderChat)
+  assert.deepEqual(await page.evaluate((id) => window.fenn.messages(id), qoderChat), beforeCold)
   for (const theme of ['light', 'dark', 'glass']) {
-    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
+    await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     assert(await effortIs(LOW))
     await page.locator('.composer .effort-chip').click()
     await page.screenshot({ path: join(shots, `effort-${theme}.png`) })
@@ -386,7 +386,7 @@ try {
   // Project and routine choices use the same availability policy as the composer.
   await page.locator('.sidebar').getByRole('button', { name: '项目', exact: true }).first().click()
   for (const [theme, width, height] of [['light', 1200, 800], ['dark', 860, 560], ['glass', 860, 560]]) {
-    await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
+    await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), theme)
     await page.setViewportSize({ width, height })
     await page.getByRole('button', { name: '新建项目', exact: true }).click()
     const modal = page.locator('.modal').filter({ has: page.getByRole('heading', { name: '新建项目', exact: true }) })

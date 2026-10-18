@@ -1,9 +1,9 @@
 {
-  "name": "ancora-desktop",
-  "productName": "Ancora",
+  "name": "fenn-code",
+  "productName": "Fenn Code",
   "version": "0.1.2",
-  "description": "Ancora: an unofficial, Claude-style desktop app for ACP agents (chats, projects, threads, scheduled tasks). Not affiliated with Anthropic.",
-  "author": "Ancora contributors",
+  "description": "Fenn Code: an unofficial, Claude-style desktop app for ACP agents (chats, projects, threads, scheduled tasks). Not affiliated with Anthropic.",
+  "author": "Fenn Code contributors",
   "keywords": [
     "acp",
     "agent-client-protocol",

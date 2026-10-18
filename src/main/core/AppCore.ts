@@ -1,5 +1,5 @@
 /**
- * The application service behind window.ancora. Electron-free so it can
+ * The application service behind window.fenn. Electron-free so it can
  * be driven from tests; main/index.ts only wires it to IPC.
  */
 import { randomUUID } from 'node:crypto'
@@ -119,7 +119,7 @@ export class AppCore {
               title: t('允许 agent 操控这些程序？'),
               detail:
                 (req.reason ? t('用途：{0}', req.reason) + '\n' : '') +
-                t('agent 会看到整个屏幕的截图，但只能在下面允许的程序里点击和输入。操控期间 Ancora 会最小化，屏幕上方有「停止」按钮；闲置 30 分钟后需要重新允许。'),
+                t('agent 会看到整个屏幕的截图，但只能在下面允许的程序里点击和输入。操控期间 Fenn Code 会最小化，屏幕上方有「停止」按钮；闲置 30 分钟后需要重新允许。'),
               apps: req.apps,
               options: [
                 { id: 'allow', label: t('允许'), kind: 'allow_always' },
@@ -160,13 +160,13 @@ export class AppCore {
     }
   }
 
-  /** Home, a drive root or Ancora's own data: never a working folder (see isUnsafeFolder). */
+  /** Home, a drive root or Fenn Code's own data: never a working folder (see isUnsafeFolder). */
   unsafeFolder(path: string | undefined): boolean {
     return !!path && isUnsafeFolder(path, homedir(), this.store.dir)
   }
 
   private refuseFolder(path: string | undefined): void {
-    if (this.unsafeFolder(path)) throw new Error(t('不能在 {0} 里工作：这里是主目录、磁盘根目录或 Ancora 的数据目录。请选一个具体的文件夹。', path!))
+    if (this.unsafeFolder(path)) throw new Error(t('不能在 {0} 里工作：这里是主目录、磁盘根目录或 Fenn Code 的数据目录。请选一个具体的文件夹。', path!))
   }
 
   /** Set by the Electron shell: the user's Documents folder. */
@@ -188,7 +188,14 @@ export class AppCore {
 
   /** Where chats that made files get their own folder (Settings → 通用). */
   autoFolderRoot(): string {
-    return this.store.settings.autoFolderRoot || join(this.documentsDir, 'Ancora')
+    return this.store.settings.autoFolderRoot || this.defaultFolder()
+  }
+
+  /** Documents/Fenn Code, or Documents/Ancora where the app made that before it was renamed (chats point into it). */
+  private defaultFolder(): string {
+    const legacy = join(this.documentsDir, 'Ancora')
+    const current = join(this.documentsDir, 'Fenn Code')
+    return !existsSync(current) && existsSync(legacy) ? legacy : current
   }
 
   /**
@@ -1113,7 +1120,7 @@ export class AppCore {
     const prev = this.store.connectors.find((c) => c.id === input.id)
     const name = input.name.trim()
     if (!name) throw new Error(t('请填写名称'))
-    if (name.toLowerCase() === 'ancora') throw new Error(t('ancora 是应用自己的工具名，请换一个名称'))
+    if (name.toLowerCase() === 'fenn') throw new Error(t('fenn 是应用自己的工具名，请换一个名称'))
     if (input.kind === 'http' && !/^https?:\/\//.test(input.url ?? '')) throw new Error(t('请填写 http(s) 开头的地址'))
     if (input.kind === 'command' && !input.command?.trim()) throw new Error(t('请填写要运行的命令'))
     const secrets = { ...(prev?.secrets ?? {}) }
@@ -1281,7 +1288,7 @@ export class AppCore {
   }
 
   /** Filled in by the Electron entry point (version, commit, runtime versions). */
-  info: AppInfo = { name: 'Ancora', version: '0.0.0', platform: process.platform, arch: process.arch }
+  info: AppInfo = { name: 'Fenn Code', version: '0.0.0', platform: process.platform, arch: process.arch }
   /**
    * Where to look for a newer version: a JSON document like
    * {"version":"0.2.0","url":"https://…","notes":"…"}. Unset until the app has a release channel.
@@ -1298,7 +1305,7 @@ export class AppCore {
   }
 
   appInfo(): AppInfo {
-    return this.info
+    return { ...this.info, defaultFolder: this.defaultFolder() }
   }
 
   async checkForUpdates(): Promise<UpdateCheck> {

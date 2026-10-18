@@ -82,8 +82,8 @@ export class Orchestrator {
     const parts: string[] = []
     if (conv.kind === 'project' && project) {
       parts.push(
-        `<ancora-context role="coordinator">`,
-        `你是 Ancora 应用里项目「${project.name}」的协调者。${userName || '用户'}在这个主对话里提需求。`,
+        `<fenn-context role="coordinator">`,
+        `你是 Fenn Code 应用里项目「${project.name}」的协调者。${userName || '用户'}在这个主对话里提需求。`,
         `规则（请照做）：`,
         `1. 简单问题（项目现状、某个讨论串在做什么）直接回答，一两句。`,
         `2. 要花功夫的工作（写代码、调研、写文档、多步骤任务）不要自己在这里做完。先对照下面的讨论串列表：同一件事（包括已解决的）用 message_thread 发过去，已解决的会自动重新打开；只有新的目标才调用 start_thread 开新讨论串。讨论串卡片本身就是回执，开完不用再写字。`,
@@ -99,12 +99,12 @@ export class Orchestrator {
         project.instructions ? `项目指令（必须遵守）：\n${project.instructions}` : '',
         project.cwd ? `项目工作目录：${project.cwd}` : '',
         this.memorySection(project.id),
-        `</ancora-context>`
+        `</fenn-context>`
       )
     } else if (conv.kind === 'thread' && project) {
       parts.push(
-        `<ancora-context role="thread">`,
-        `你在 Ancora 项目「${project.name}」里负责讨论串「${conv.title}」：一项定义明确的任务，静默做完。`,
+        `<fenn-context role="thread">`,
+        `你在 Fenn Code 项目「${project.name}」里负责讨论串「${conv.title}」：一项定义明确的任务，静默做完。`,
         `1. 只在有结果、卡住了、需要用户拍板时回复；拍板用 ask_decision 并推荐一项，能继续就按推荐继续。没说清的分叉自己选合理的默认值，在结果里写明。`,
         `2. 进度只写在顶部计划卡：开始时用 update_status 写 3 到 6 个里程碑，每完成一步更新一次。卡在难点上时用 set_blocker 写一句。`,
         `3. 回复开头就是结果和用户要做的事，不复述过程，不写“收到”“我先……”这类话。成果是文件或链接时用 project_file_write 或 attach_output 附上。`,
@@ -112,19 +112,19 @@ export class Orchestrator {
         project.instructions ? `项目指令（必须遵守）：\n${project.instructions}` : '',
         project.cwd ? `项目工作目录：${project.cwd}` : '',
         this.memorySection(project.id),
-        `</ancora-context>`
+        `</fenn-context>`
       )
     } else if (project) {
       parts.push(
-        `<ancora-context>`,
+        `<fenn-context>`,
         `这个对话属于项目「${project.name}」。`,
         PLAN_HINT,
         QUIET,
         project.instructions ? `项目指令（必须遵守）：\n${project.instructions}` : '',
         this.memorySection(project.id),
-        `</ancora-context>`
+        `</fenn-context>`
       )
-    } else if (conv.kind === 'chat') parts.push(`<ancora-context>`, PLAN_HINT, QUIET, `</ancora-context>`)
+    } else if (conv.kind === 'chat') parts.push(`<fenn-context>`, PLAN_HINT, QUIET, `</fenn-context>`)
     // The notes above are in Chinese; an English UI should still get English replies.
     if (getLang() === 'en' && parts.length)
       parts.splice(1, 0, `The user's app is set to English. Always reply in the language the user writes in (English when unsure), even though these notes are in Chinese.`)
@@ -203,7 +203,7 @@ export class Orchestrator {
     const load = this.chat.sessionLoad(conv.id)
     if (!load || (load.chars < this.handoffChars && load.turns < this.handoffTurns)) return
     const job = (async () => {
-      await this.summarize(conv.id).catch((e) => console.warn('[ancora] 交接前整理摘要失败：', e?.message ?? e))
+      await this.summarize(conv.id).catch((e) => console.warn('[fenn] 交接前整理摘要失败：', e?.message ?? e))
       await this.chat.send(
         conv.id,
         '（系统）这个会话的上下文快满了，接下来会换一个新会话接手。请现在把还没记下、以后仍然需要的信息用 memory_write 存进项目记忆（用户偏好、已做的决定、项目事实、进行中工作的要点）。完成后只回复“好了”。',
@@ -1005,7 +1005,7 @@ const PLAN_HINT =
 function summaryPrompt(projectName: string, previous: string, conversation: string): string {
   return [
     `<<summarize>>`,
-    `你是 Ancora 应用的后台整理助手，不和用户对话，也不调用任何工具。下面是项目「${projectName}」里的一段对话，和此前已经整理好的事实摘要。`,
+    `你是 Fenn Code 应用的后台整理助手，不和用户对话，也不调用任何工具。下面是项目「${projectName}」里的一段对话，和此前已经整理好的事实摘要。`,
     `请输出合并后的完整事实摘要，供以后接手的 agent 使用。要求：`,
     `- 分成这几节：人物与称呼、偏好与要求、决定、项目事实、未完成事项。每条一行，以“- ”开头。`,
     `- 只写对话里明确说过、以后仍然成立的事实：谁是谁（人名、客户名、项目的各种叫法）、用户的偏好和对回复方式的要求（原文是英文的保留英文原句）、做过的决定（包括否定的选项）、名字、数字、日期、链接。`,

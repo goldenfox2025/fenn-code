@@ -1,13 +1,13 @@
 // Bridges an MCP client speaking stdio (newline-delimited JSON-RPC) to the
 // app's MCP server over HTTP. Used for agents that only support stdio MCP
 // servers. Usage: node mcp-bridge.mjs <url>; extra request headers come as
-// JSON in ANCORA_BRIDGE_HEADERS.
+// JSON in FENN_BRIDGE_HEADERS.
 import { createInterface } from 'node:readline'
 
 const url = process.argv[2]
 let extra = {}
 try {
-  extra = JSON.parse(process.env.ANCORA_BRIDGE_HEADERS || '{}')
+  extra = JSON.parse(process.env.FENN_BRIDGE_HEADERS || '{}')
 } catch {}
 let session
 

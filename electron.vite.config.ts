@@ -20,7 +20,7 @@ export default defineConfig({
       __OC_COMMIT__: JSON.stringify(process.env.OC_COMMIT ?? commit),
       __OC_BUILT_AT__: JSON.stringify(new Date().toISOString().slice(0, 10)),
       // Release channel for "check for updates" (a JSON {version, url, notes}); empty until there is one.
-      __OC_UPDATE_FEED__: JSON.stringify(pkg.ancora?.updateFeed ?? '')
+      __OC_UPDATE_FEED__: JSON.stringify(pkg.fenn?.updateFeed ?? '')
     }
   },
   preload: {

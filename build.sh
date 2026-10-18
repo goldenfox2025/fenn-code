@@ -45,8 +45,8 @@ else
 fi
 
 case "$(uname -s)" in
-  Darwin) app=$(ls -d release/mac*/Ancora.app 2>/dev/null | head -1) ;;
-  *) app=$(ls -d release/linux*-unpacked/ancora-desktop 2>/dev/null | head -1) ;;
+  Darwin) app=$(ls -d release/mac*/"Fenn Code.app" 2>/dev/null | head -1) ;;
+  *) app=$(ls -d release/linux*-unpacked/fenn-code 2>/dev/null | head -1) ;;
 esac
 
 printf '\nDone.\n'
@@ -57,6 +57,6 @@ if [ "$installer" = 1 ]; then
 fi
 
 if [ "$run" = 1 ] && [ -n "${app:-}" ]; then
-  step "Starting Ancora"
+  step "Starting Fenn Code"
   if [ "$(uname -s)" = Darwin ]; then open "$app"; else "./$app" >/dev/null 2>&1 & fi
 fi

@@ -10,7 +10,7 @@ import { declareTestAgent } from './test-agent.mjs'
 
 const out = process.argv[2] ?? 'shots'
 const scenario = process.argv[3] ?? 'basic'
-const dataDir = process.env.ANCORA_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'oc-'))
+const dataDir = process.env.FENN_DATA_DIR ?? mkdtempSync(join(tmpdir(), 'oc-'))
 // MANY_BACKENDS=12 declares that many extra agents (copies of the demo one), to see long lists.
 if (process.env.MANY_BACKENDS) {
   const names = ['Gemini CLI', 'Qwen Code', 'Kimi CLI', 'OpenCode', 'Goose', 'Cline', 'Augment', 'Cursor Agent', 'Aider', 'Amp', 'Crush', 'Junie', 'Warp', 'Devin', 'Roo']
@@ -39,7 +39,7 @@ if (scenario.includes('heatmap')) {
 }
 const app = await electron.launch({
   ...(process.env.APP_PATH ? { executablePath: process.env.APP_PATH, args: ['--no-sandbox'] } : { args: ['.', '--no-sandbox'] }),
-  env: { ...process.env, ANCORA_DATA_DIR: dataDir },
+  env: { ...process.env, FENN_DATA_DIR: dataDir },
   colorScheme: process.env.THEME ?? 'light'
 })
 const page = await app.firstWindow()
@@ -49,7 +49,7 @@ await page.waitForSelector('.sidebar')
 {
   await page.evaluate(async (l) => {
     localStorage.setItem('oc-lang', l)
-    await window.ancora.updateSettings({ language: l })
+    await window.fenn.updateSettings({ language: l })
   }, process.env.UI_LANG || 'zh')
   await page.reload()
   await page.waitForSelector('.sidebar')
@@ -61,7 +61,7 @@ if (!process.env.KEEP_ONBOARDING && (await page.locator('.onboarding').count()))
 }
 // UI_THEME=glass|light|dark sets the app's own theme setting.
 if (process.env.UI_THEME) {
-  await page.evaluate((x) => window.ancora.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), process.env.UI_THEME)
+  await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), process.env.UI_THEME)
   await page.waitForTimeout(300)
 }
 /** Opens one of the project panel's views under 「…」 (成果, 项目资料, 项目记忆, 定时任务, 里程碑). */
@@ -153,8 +153,8 @@ const scenarios = {
     const base = mkdtempSync(join(tmpdir(), 'work-'))
     const dirs = ['web-shop', 'text-adventure'].map((n) => join(base, n))
     for (const d of dirs) mkdirSync(d, { recursive: true })
-    const p = await page.evaluate(() => window.ancora.createProject({ name: 'Ancora', backendId: 'mock' }))
-    await page.evaluate((id) => window.ancora.updateProject(id, { pinned: true }), p.id)
+    const p = await page.evaluate(() => window.fenn.createProject({ name: 'Fenn Code', backendId: 'mock' }))
+    await page.evaluate((id) => window.fenn.updateProject(id, { pinned: true }), p.id)
     const chats = [
       ['网站首页改版', dirs[0]],
       ['把图片压缩脚本的 CPU 降下来', dirs[0]],
@@ -163,7 +163,7 @@ const scenarios = {
       ['帮我起草一封邮件', undefined]
     ]
     for (const [text, cwd] of chats) {
-      await page.evaluate(([text, cwd]) => window.ancora.startChat({ text, backendId: 'mock', cwd }), [text, cwd])
+      await page.evaluate(([text, cwd]) => window.fenn.startChat({ text, backendId: 'mock', cwd }), [text, cwd])
       await wait(400)
     }
     await wait(2500)
@@ -178,9 +178,9 @@ const scenarios = {
   async subchat() {
     const dir = join(mkdtempSync(join(tmpdir(), 'work-')), 'web-shop')
     mkdirSync(dir, { recursive: true })
-    await page.evaluate((cwd) => window.ancora.startChat({ text: '网站首页改版', backendId: 'mock', cwd }), dir)
+    await page.evaluate((cwd) => window.fenn.startChat({ text: '网站首页改版', backendId: 'mock', cwd }), dir)
     await wait(1500)
-    const parent = await page.evaluate((cwd) => window.ancora.startChat({ text: '开子对话 降低图片压缩脚本的CPU占用', backendId: 'mock', cwd }), dir)
+    const parent = await page.evaluate((cwd) => window.fenn.startChat({ text: '开子对话 降低图片压缩脚本的CPU占用', backendId: 'mock', cwd }), dir)
     await wait(3000)
     await page.click(`.sidebar .nav-item:has-text("开子对话")`)
     await wait(800)
@@ -193,7 +193,7 @@ const scenarios = {
   },
   // A Codex-style turn: its opening line stays above the steps; inside, reasoning reads as markdown and searches by what they looked up.
   async news() {
-    await page.evaluate(() => window.ancora.startChat({ text: '#搜新闻 最近有什么新闻', backendId: 'mock' }))
+    await page.evaluate(() => window.fenn.startChat({ text: '#搜新闻 最近有什么新闻', backendId: 'mock' }))
     await page.click('.sidebar .nav-item >> text=/搜新闻/')
     await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
     await wait(400)
@@ -205,7 +205,7 @@ const scenarios = {
   },
   // One turn: steps line, answer, a card and the action row; then the working mark mid-turn.
   async turn() {
-    const c = await page.evaluate(() => window.ancora.startChat({ text: '#啰嗦 开子对话 看板上能看到这个讨论串吗？', backendId: 'mock' }))
+    const c = await page.evaluate(() => window.fenn.startChat({ text: '#啰嗦 开子对话 看板上能看到这个讨论串吗？', backendId: 'mock' }))
     await page.click('.sidebar .nav-item >> text=/啰嗦/')
     await page.waitForSelector('.thread-card', { timeout: 20000 })
     await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
@@ -295,9 +295,9 @@ const scenarios = {
     await shot('131-versions-1of2')
   },
   async outputs() {
-    const p = await page.evaluate(() => window.ancora.createProject({ name: '竞品调研', backendId: 'mock' }))
-    await page.evaluate((id) => window.ancora.startChat({ text: '交付文件 竞品定价.md', backendId: 'mock', projectId: id }), p.id)
-    await page.evaluate((id) => window.ancora.startChat({ text: '附上链接 https://example.com/spec', backendId: 'mock', projectId: id }), p.id)
+    const p = await page.evaluate(() => window.fenn.createProject({ name: '竞品调研', backendId: 'mock' }))
+    await page.evaluate((id) => window.fenn.startChat({ text: '交付文件 竞品定价.md', backendId: 'mock', projectId: id }), p.id)
+    await page.evaluate((id) => window.fenn.startChat({ text: '附上链接 https://example.com/spec', backendId: 'mock', projectId: id }), p.id)
     await wait(2500)
     await page.click('.sidebar :text("交付文件")')
     await wait(800)
@@ -310,8 +310,8 @@ const scenarios = {
     await shot('121-outputs-library')
   },
   async computer() {
-    await page.evaluate(() => window.ancora.updateSettings({ computerUse: true }))
-    await page.evaluate(() => window.ancora.startChat({ text: '操控电脑，用 记事本', backendId: 'mock' }))
+    await page.evaluate(() => window.fenn.updateSettings({ computerUse: true }))
+    await page.evaluate(() => window.fenn.startChat({ text: '操控电脑，用 记事本', backendId: 'mock' }))
     await page.click('.sidebar :text("操控电脑")')
     await page.waitForSelector('.perm-app', { timeout: 20000 })
     await page.locator('.perm-app .seg-control button:has-text("仅点击")').click()
@@ -330,7 +330,7 @@ const scenarios = {
     await shot('111-computer-done')
   },
   async lists() {
-    for (const text of ['你好', '帮我写个周报', '看看这个报错']) await page.evaluate((t) => window.ancora.startChat({ text: t, backendId: 'mock' }), text)
+    for (const text of ['你好', '帮我写个周报', '看看这个报错']) await page.evaluate((t) => window.fenn.startChat({ text: t, backendId: 'mock' }), text)
     await wait(3000)
     await page.click('.sidebar .nav-item:has-text("对话")')
     await wait(300)
@@ -408,8 +408,8 @@ const scenarios = {
   },
   async progress() {
     const id = await page.evaluate(async () => {
-      const api = window.ancora
-      const p = await api.createProject({ name: '发布 Ancora', description: '桌面端', backendId: 'mock' })
+      const api = window.fenn
+      const p = await api.createProject({ name: '发布 Fenn Code', description: '桌面端', backendId: 'mock' })
       const m1 = await api.updateProgress(p.id, { title: '第一版可用', due: '2026-10-20' })
       await api.updateProgress(p.id, { parentId: m1.id, title: '菜单定位修复', status: 'done' })
       await api.updateProgress(p.id, { parentId: m1.id, title: '对话维护', status: 'done' })
@@ -421,7 +421,7 @@ const scenarios = {
       await api.updateProgress(p.id, { id: s.id, suggested: true })
       return p.id
     })
-    await page.click(`.sidebar .nav-item:has-text("发布 Ancora")`)
+    await page.click(`.sidebar .nav-item:has-text("发布 Fenn Code")`)
     await panelView('里程碑')
     await wait(300)
     await shot('90-progress')
@@ -604,7 +604,7 @@ const scenarios = {
   },
   // A message sent while the reply runs waits in view; 停止 puts it back in the composer.
   async queued() {
-    await page.evaluate(() => window.ancora.startChat({ text: '#啰嗦慢', backendId: 'mock' }))
+    await page.evaluate(() => window.fenn.startChat({ text: '#啰嗦慢', backendId: 'mock' }))
     await page.click('.sidebar :text("#啰嗦慢")')
     await page.waitForSelector('.send-btn.stop', { timeout: 15000 })
     await page.fill('.composer textarea', '顺便把结论整理成表格')
@@ -619,7 +619,7 @@ const scenarios = {
   },
   // The reaction row under a reply, a reaction pill, and a / command in a sent message.
   async reactions() {
-    await page.evaluate(() => window.ancora.startChat({ text: '你好', backendId: 'mock' }))
+    await page.evaluate(() => window.fenn.startChat({ text: '你好', backendId: 'mock' }))
     await page.click('.sidebar :text("你好")')
     await page.waitForSelector('.msg-assistant .msg-actions', { timeout: 15000 })
     await page.hover('.msg-assistant')
@@ -639,7 +639,7 @@ const scenarios = {
   async project() {
     await page.click('.nav-item:has-text("项目")')
     await page.click('.page-head .btn')
-    await page.fill('.modal input', 'Ancora')
+    await page.fill('.modal input', 'Fenn Code')
     await page.fill('.modal input >> nth=1', '跨平台的 Claude 风格桌面应用')
     await page.click('.modal-actions .btn.primary')
     await page.waitForSelector('.panel')
@@ -667,12 +667,12 @@ const scenarios = {
   },
   async bubbles() {
     await page.setViewportSize({ width: 1200, height: 800 })
-    const c = await page.evaluate(() => window.ancora.startChat({ text: '你好', backendId: 'mock' }))
+    const c = await page.evaluate(() => window.fenn.startChat({ text: '你好', backendId: 'mock' }))
     await wait(1500)
     await page.click(`.sidebar .nav-item:has-text("你好")`)
-    await page.evaluate((id) => window.ancora.send(id, '/always-approve'), c.id)
+    await page.evaluate((id) => window.fenn.send(id, '/always-approve'), c.id)
     await wait(1200)
-    await page.evaluate((id) => window.ancora.send(id, '生成一个测试文件'), c.id)
+    await page.evaluate((id) => window.fenn.send(id, '生成一个测试文件'), c.id)
     await wait(1500)
     const users = page.locator('.msg.msg-user')
     await users.nth((await users.count()) - 1).hover()
@@ -687,11 +687,11 @@ const scenarios = {
     writeFileSync(join(dir, 'README.md'), '# Text adventure\n\nA small engine for branching stories.\n\n- Scenes are plain Markdown\n- Choices link scenes\n')
     writeFileSync(join(dir, 'src', 'engine.ts'), 'export function next(scene: string, choice: number): string {\n  return `${scene}.${choice}`\n}\n')
     writeFileSync(join(dir, 'pyproject.toml'), '[project]\nname = "text-adventure"\n')
-    const c = await page.evaluate((cwd) => window.ancora.startChat({ text: '写文件 计划.md', backendId: 'mock', cwd }), dir)
+    const c = await page.evaluate((cwd) => window.fenn.startChat({ text: '写文件 计划.md', backendId: 'mock', cwd }), dir)
     await wait(1500)
     await page.click(`.sidebar .nav-item:has-text("写文件")`)
     await page.waitForSelector('.side-pane-toggle')
-    await page.evaluate((id) => window.ancora.send(id, '后台运行 echo 正在启动开发服务器; echo 监听 http://localhost:5173; sleep 60'), c.id)
+    await page.evaluate((id) => window.fenn.send(id, '后台运行 echo 正在启动开发服务器; echo 监听 http://localhost:5173; sleep 60'), c.id)
     await wait(1200)
     await page.click('.side-pane-toggle')
     await page.waitForSelector('.side-pane')

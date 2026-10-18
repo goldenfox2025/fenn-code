@@ -173,7 +173,7 @@ export interface UpgradeSpec {
   latest?: CommandSpec
   /** Runs after `run` succeeds, e.g. a setup step npm may have skipped. */
   after?: CommandSpec & { label: string; labelArgs?: unknown[] }
-  /** It installs the one version this Ancora release was made for: offered while missing, never as an update. */
+  /** It installs the one version this Fenn Code release was made for: offered while missing, never as an update. */
   installOnly?: boolean
   /** Runs first, once the backend's own process is stopped: e.g. ending copies of it a crash left behind, which lock its files. */
   before?: () => Promise<void>

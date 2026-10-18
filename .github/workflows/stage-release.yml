@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           # Releases carry Windows builds only; macOS and Linux build from source.
-          gh run download "$BUILD_RUN" --name ancora-windows-latest --dir installers/windows-latest
+          gh run download "$BUILD_RUN" --name fenn-code-windows-latest --dir installers/windows-latest
       - name: Check assets and generate checksums
         shell: bash
         run: |

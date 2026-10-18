@@ -17,7 +17,7 @@ if (process.platform !== 'win32') {
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const dir = mkdtempSync(join(tmpdir(), 'ancora-smoke-'))
+const dir = mkdtempSync(join(tmpdir(), 'fenn-code-smoke-'))
 const outFile = join(dir, 'text.txt')
 const formScript = join(dir, 'form.ps1')
 writeFileSync(
@@ -28,7 +28,7 @@ Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static cl
 [D]::SetProcessDPIAware() | Out-Null
 $out = $args[0]
 $f = New-Object System.Windows.Forms.Form
-$f.Text = 'Ancora 输入测试'
+$f.Text = 'Fenn Code 输入测试'
 $f.StartPosition = 'Manual'
 $f.Location = New-Object System.Drawing.Point(200, 200)
 $f.Size = New-Object System.Drawing.Size(600, 300)
@@ -112,12 +112,12 @@ try {
   await sleep(300)
   const front = await call({ op: 'front' })
   check('focused app is the test window', front.ok && String(front.r).split('\t')[0] === String(form.pid), String(front.r ?? front.e))
-  await call({ op: 'type', s: b64('Hello Ancora 你好') })
+  await call({ op: 'type', s: b64('Hello Fenn Code 你好') })
   await sleep(500)
-  check('type with Chinese', text() === 'Hello Ancora 你好', JSON.stringify(text()))
+  check('type with Chinese', text() === 'Hello Fenn Code 你好', JSON.stringify(text()))
   await call({ op: 'key', keys: ['backspace'], n: 2, hold: 0 })
   await sleep(300)
-  check('key with repeat', text() === 'Hello Ancora ', JSON.stringify(text()))
+  check('key with repeat', text() === 'Hello Fenn Code ', JSON.stringify(text()))
   await call({ op: 'key', keys: ['ctrl', 'a'], n: 1, hold: 0 })
   await call({ op: 'type', s: b64('x') })
   await sleep(300)

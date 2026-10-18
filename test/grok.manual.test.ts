@@ -1,10 +1,10 @@
-// Manual check against the real Grok CLI: ANCORA_GROK=1 npx vitest run test/grok.manual.test.ts
+// Manual check against the real Grok CLI: FENN_GROK=1 npx vitest run test/grok.manual.test.ts
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { BackendManager } from '../src/main/backends/BackendManager'
 import { loadPlugins } from '../src/main/backends/registry'
 
-describe.runIf(process.env.ANCORA_GROK)('grok (manual)', () => {
+describe.runIf(process.env.FENN_GROK)('grok (manual)', () => {
   it('creates a session and runs a turn', async () => {
     const text: string[] = []
     const mgr = new BackendManager({

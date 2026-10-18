@@ -127,7 +127,7 @@ function CommandEntry({ command: b, owner }: { command: BackgroundCommand; owner
         ) : (
           <code className="title">{b.command}</code>
         )}
-        {/* The agent's own background tasks are its to stop; Ancora can only stop what runs in its terminal. */}
+        {/* The agent's own background tasks are its to stop; Fenn Code can only stop what runs in its terminal. */}
         {running && b.managed ? (
           <span className="status-chip">{b.monitor ? t('监视中') : t('运行中')}</span>
         ) : running ? (

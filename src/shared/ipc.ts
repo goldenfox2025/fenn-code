@@ -1,6 +1,6 @@
-import type { AncoraApi } from './model'
+import type { FennApi } from './model'
 
-/** Methods of AncoraApi that map 1:1 onto AppCore and travel over IPC as `oc:<name>`. */
+/** Methods of FennApi that map 1:1 onto AppCore and travel over IPC as `oc:<name>`. */
 export const API_METHODS = [
   'snapshot', 'messages', 'startChat', 'send', 'regenerate', 'editMessage', 'switchVariant', 'cancel', 'setModel',
   'updateConversation', 'deleteConversation', 'react', 'createProject', 'updateProject', 'deleteProject',
@@ -10,8 +10,8 @@ export const API_METHODS = [
   'pickFolder', 'exportConversation', 'openConfigFolder'
 ] as const satisfies readonly (keyof CoreApi)[]
 
-/** What the core answers over IPC: everything in AncoraApi but what the preload provides itself. */
-export type CoreApi = Omit<AncoraApi, 'onEvent' | 'platform' | 'windowControl'>
+/** What the core answers over IPC: everything in FennApi but what the preload provides itself. */
+export type CoreApi = Omit<FennApi, 'onEvent' | 'platform' | 'windowControl'>
 export type ApiMethod = (typeof API_METHODS)[number]
 
 // Every CoreApi method is in the list (a missing one fails here, naming it).

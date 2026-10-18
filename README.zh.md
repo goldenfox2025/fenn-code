@@ -1,16 +1,16 @@
-# Ancora
+# Fenn Code
 
 **为您已经在用的 AI agent 准备的桌面工作台。** 对话、能把工作拆成讨论串的项目、定时任务和电脑操控，背后可以是 Codex、Claude Code、Grok、Qoder，或任何支持 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）的 agent。
 
 [English](README.md) · [下载](../../releases) · [从源码编译](#从源码编译)
 
-![Ancora：项目主对话和它的讨论串，其中一个在问用哪个标题](docs/screenshots/zh/hero.webp)
+![Fenn Code：项目主对话和它的讨论串，其中一个在问用哪个标题](docs/screenshots/zh/hero.webp)
 
-> **非官方项目。** Ancora 是独立的开源项目，与 Anthropic 没有任何关系，也没有得到 Anthropic 的认可或赞助。「Claude」是 Anthropic 的商标。Ancora 本身不包含也不调用 Claude，它参照了 Claude 桌面版的外观和用法，运行的是您接入的 agent。
+> **非官方项目。** Fenn Code 是独立的开源项目，与 Anthropic 没有任何关系，也没有得到 Anthropic 的认可或赞助。「Claude」是 Anthropic 的商标。Fenn Code 本身不包含也不调用 Claude，它参照了 Claude 桌面版的外观和用法，运行的是您接入的 agent。
 
-## 为什么做 Ancora
+## 为什么做 Fenn Code
 
-命令行 agent 干活很强，但每件事都得开一个终端。Ancora 给它们一个桌面应用该有的结构：一个地方提需求，长任务各自放在讨论串里，做过的决定和交付的成果都有记录，需要反复做的事按时自动运行。用哪个 agent 由您决定，换一个 agent，项目也不会丢。
+命令行 agent 干活很强，但每件事都得开一个终端。Fenn Code 给它们一个桌面应用该有的结构：一个地方提需求，长任务各自放在讨论串里，做过的决定和交付的成果都有记录，需要反复做的事按时自动运行。用哪个 agent 由您决定，换一个 agent，项目也不会丢。
 
 ## 功能
 
@@ -27,7 +27,7 @@
 
 ### 操控电脑
 
-打开电脑操控后，模型能看图的 agent 可以在您的其他程序里干活：截屏、点击、输入、滚动、打开程序。它必须先申请要用的程序，您可以给每个程序选**完全控制**、**仅点击**或**仅查看**。点击前会核对指针下是不是被允许的程序；操控期间 Ancora 会自动让开，屏幕上方的横条显示它在做什么，随时可以停止。
+打开电脑操控后，模型能看图的 agent 可以在您的其他程序里干活：截屏、点击、输入、滚动、打开程序。它必须先申请要用的程序，您可以给每个程序选**完全控制**、**仅点击**或**仅查看**。点击前会核对指针下是不是被允许的程序；操控期间 Fenn Code 会自动让开，屏幕上方的横条显示它在做什么，随时可以停止。
 
 ![权限卡片：agent 申请操控记事本，并说明了用途](docs/screenshots/zh/computer.webp)
 
@@ -35,7 +35,7 @@
 
 内置 Codex、Claude Code、Grok 和 Qoder，装了 Codex 时默认推荐它。设置里能看到每个 agent 是否已安装，以及在 agent 能报告时是否已登录。只有您点了才会检查更新和升级。其他 ACP agent 在 `backends.json` 里加一项即可。
 
-Ancora 从不自行安装 agent。安装和升级按钮会先显示要运行的确切命令，等您确认后才执行；选择模型时也只列出已经可用的 agent。打开模型菜单时就会读取 agent 提供的模型，所以第一条消息之前就能选模型和思考强度；空闲的对话也可以换成另一个 agent，新的 agent 会拿到之前的对话内容。
+Fenn Code 从不自行安装 agent。安装和升级按钮会先显示要运行的确切命令，等您确认后才执行；选择模型时也只列出已经可用的 agent。打开模型菜单时就会读取 agent 提供的模型，所以第一条消息之前就能选模型和思考强度；空闲的对话也可以换成另一个 agent，新的 agent 会拿到之前的对话内容。
 
 如果命令行程序不在 `PATH` 里（比如是 shell 别名，或装在别的应用里），可以在 设置 → Agent 后端 里填路径：Codex 可以填 CLI 和 `codex-acp` 适配器，Qoder 可以填 CLI，以及运行其 JS 入口用的 Node。用 Qoder 时，用量按钮显示的是账户 Credits，而不是 token。
 
@@ -63,7 +63,7 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 
 ## 快速开始
 
-1. 从 [Releases](../../releases) 下载安装包 `Ancora-Setup-0.1.2.exe`，或免安装的 `Ancora-0.1.2-win.zip`（解压到任意位置，运行 `Ancora.exe`）。程序没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
+1. 从 [Releases](../../releases) 下载安装包 `Fenn-Code-Setup-0.1.2.exe`，或免安装的 `Fenn-Code-0.1.2-win.zip`（解压到任意位置，运行 `FennCode.exe`）。程序没有代码签名，Windows SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」即可。
 2. 至少安装并登录一个 agent，在终端里做，或者在 设置 → Agent 后端 里点按钮：
 
    | Agent | 安装 | 登录 | 状态 |
@@ -93,13 +93,13 @@ agent 交付的文件或链接会显示成回复下方的卡片，同时汇总�
 | Windows | `.\build.cmd -Run`（双击 `build.cmd` 只编译，不会启动程序） |
 | macOS / Linux | `./build.sh --run` |
 
-脚本会检查 Node.js、安装依赖、编译，最后打印程序位置（`release\win-unpacked\Ancora.exe`、`release/mac*/Ancora.app` 或 x64 上的 `release/linux-unpacked/ancora-desktop`，其他架构会有各自的目录）。要同时生成安装包，加 `-Installer`（Windows）或 `--installer`（macOS / Linux）。需要代理时，先设好 `HTTPS_PROXY`，脚本会让 Node 自己的下载也走代理。
+脚本会检查 Node.js、安装依赖、编译，最后打印程序位置（`release\win-unpacked\FennCode.exe`、`release/mac*/Fenn Code.app` 或 x64 上的 `release/linux-unpacked/fenn-code`，其他架构会有各自的目录）。要同时生成安装包，加 `-Installer`（Windows）或 `--installer`（macOS / Linux）。需要代理时，先设好 `HTTPS_PROXY`，脚本会让 Node 自己的下载也走代理。
 
 在 macOS 上，自己编译的程序第一次打开时请右键点它，选「打开」。
 
 ## 接入新的后端
 
-不写代码：在应用数据目录（Windows 是 `%APPDATA%\Ancora`，macOS 是 `~/Library/Application Support/Ancora`，Linux 是 `~/.config/Ancora`）的 `backends.json` 里加一项，也可以从 设置 → Agent 后端 → 高级 打开它：
+不写代码：在应用数据目录（Windows 是 `%APPDATA%\Fenn Code`，macOS 是 `~/Library/Application Support/Fenn Code`，Linux 是 `~/.config/Fenn Code`）的 `backends.json` 里加一项，也可以从 设置 → Agent 后端 → 高级 打开它：
 
 ```json
 [
@@ -162,4 +162,4 @@ npm run dist         # 打包当前系统的版本到 release/
 
 ## 许可
 
-[MIT](LICENSE)。Ancora 与 Anthropic、OpenAI、xAI、Qoder 均无关联，相关产品名称归各自所有者。
+[MIT](LICENSE)。Fenn Code 与 Anthropic、OpenAI、xAI、Qoder 均无关联，相关产品名称归各自所有者。

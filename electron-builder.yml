@@ -1,6 +1,8 @@
-appId: dev.ancora.desktop
-productName: Ancora
-copyright: Copyright © 2026 Ancora contributors
+appId: dev.fenncode.desktop
+productName: Fenn Code
+# Windows and macOS program file; the window, shortcuts and installer say Fenn Code.
+executableName: FennCode
+copyright: Copyright © 2026 Fenn Code contributors
 directories:
   output: release
   buildResources: build
@@ -18,11 +20,13 @@ mac:
   target: [dmg, zip]
 win:
   target: [nsis, zip]
+  artifactName: Fenn-Code-${version}-win.${ext}
 nsis:
-  artifactName: ${productName}-Setup-${version}.${ext}
+  artifactName: Fenn-Code-Setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
   category: Utility
+  executableName: fenn-code
   target: [AppImage, deb]
-  maintainer: Ancora contributors
+  maintainer: Fenn Code contributors

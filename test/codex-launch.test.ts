@@ -9,7 +9,7 @@ const TRIPLE: Record<string, string> = { 'linux-x64': 'x86_64-unknown-linux-musl
 describe('starting Codex', () => {
   it('runs codex-acp as node <script> past the npm shim, and Codex itself directly', () => {
     // A global npm install as on Windows: npm/codex-acp.cmd beside npm/node_modules.
-    const npm = mkdtempSync(join(tmpdir(), 'ancora-npm-'))
+    const npm = mkdtempSync(join(tmpdir(), 'fenn-code-npm-'))
     const pkg = (dir: string, name: string) => {
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version: '1.0.0' }))

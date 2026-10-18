@@ -1,6 +1,6 @@
-# How Ancora is put together
+# How Fenn Code is put together
 
-Ancora is an Electron app. Its main process owns all state and talks to agent backends over ACP. The renderer (React) only shows that state and calls the core.
+Fenn Code is an Electron app. Its main process owns all state and talks to agent backends over ACP. The renderer (React) only shows that state and calls the core.
 
 ```mermaid
 flowchart LR
@@ -8,7 +8,7 @@ flowchart LR
     V["views/ + components/"] --> ST["store.ts<br/>(zustand)"]
     V --> ACT["actions.ts / routes.ts"]
   end
-  PRE["preload<br/>window.ancora"]
+  PRE["preload<br/>window.fenn"]
   subgraph M["Main process"]
     CORE["AppCore<br/>(API facade)"]
     CHAT["ChatService<br/>turns · sessions · queue"]
@@ -68,7 +68,7 @@ flowchart TB
 
 | Area | Place | Notes |
 |---|---|---|
-| API between renderer and core | `src/shared/model.ts` (`AncoraApi`), `src/shared/ipc.ts` (`API_METHODS`) | See "Adding an API method" |
+| API between renderer and core | `src/shared/model.ts` (`FennApi`), `src/shared/ipc.ts` (`API_METHODS`) | See "Adding an API method" |
 | Core facade | `src/main/core/AppCore.ts` | Every API method is an AppCore method of the same name |
 | Turns, sessions, streaming | `src/main/core/ChatService.ts` | One conversation's agent session, queue, permissions |
 | Prompts and app tools | `src/main/core/Orchestrator.ts`, `src/main/core/tools/*` | Tool families are plain functions of their deps |
@@ -82,7 +82,7 @@ flowchart TB
 
 ## Adding an API method
 
-1. Declare it on `AncoraApi` in `src/shared/model.ts`.
+1. Declare it on `FennApi` in `src/shared/model.ts`.
 2. Add its name to `API_METHODS` in `src/shared/ipc.ts`.
 3. Write the AppCore method with the same name.
 
@@ -111,7 +111,7 @@ A thread's tool list counts against `test/prompt-size.test.ts`. That test measur
 
 ## Working folders
 
-A chat with no folder works in a private scratch folder (`ChatService.scratchPath`), where the agent reads, writes and runs commands freely. Anything outside the working folder goes through a permission prompt (`backends/workspace.ts`); in a chat with no folder of its own, that prompt also offers 「设为工作文件夹」 for the folder involved (its nearest `.git` project, when there is one). Choosing it sets the chat's folder; the next turn's session starts there and the scratch files move in without replacing the user's. A mode that trusts the agent (bypassPermissions, full-access) is not asked. A chat that only made files in scratch gets `Documents/Ancora/<title>` after its turn (`AppCore.placeChat`).
+A chat with no folder works in a private scratch folder (`ChatService.scratchPath`), where the agent reads, writes and runs commands freely. Anything outside the working folder goes through a permission prompt (`backends/workspace.ts`); in a chat with no folder of its own, that prompt also offers 「设为工作文件夹」 for the folder involved (its nearest `.git` project, when there is one). Choosing it sets the chat's folder; the next turn's session starts there and the scratch files move in without replacing the user's. A mode that trusts the agent (bypassPermissions, full-access) is not asked. A chat that only made files in scratch gets `Documents/Fenn Code/<title>` after its turn (`AppCore.placeChat`).
 
 ## Per-conversation state
 

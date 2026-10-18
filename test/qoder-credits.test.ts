@@ -22,14 +22,14 @@ describe('Qoder account Credits', () => {
   })
 
   it('sends only SDK control requests and reads real quota fields without generating a prompt', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ancora credits '))
+    const dir = mkdtempSync(join(tmpdir(), 'fenn credits '))
     const entry = join(dir, 'qoder fixture.mjs')
     const capture = join(dir, 'requests.jsonl')
     const authPath = join(dir, 'auth-path.txt')
     writeFileSync(entry, `
       import { createInterface } from 'node:readline';
       import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
-      if (process.env.QODER_AGENT_SDK_ENTRYPOINT !== 'ancora-usage') process.exit(8);
+      if (process.env.QODER_AGENT_SDK_ENTRYPOINT !== 'fenn-code-usage') process.exit(8);
       const auth = JSON.parse(readFileSync(process.env.QODER_SDK_AUTH_PAYLOAD_FILE, 'utf8'));
       if (auth.type !== 'accessToken' || auth.accessToken !== 'test-only-token') process.exit(7);
       writeFileSync(${JSON.stringify(authPath)}, process.env.QODER_SDK_AUTH_PAYLOAD_FILE);
@@ -51,10 +51,10 @@ describe('Qoder account Credits', () => {
   })
 
   it('returns unavailable for an unsupported or missing CLI instead of inventing zero Credits', async () => {
-    expect(await readQoderCredits({ QODER_CLI_PATH: 'ancora-missing-qoder-cli' }, 1000)).toBeUndefined()
+    expect(await readQoderCredits({ QODER_CLI_PATH: 'fenn-code-missing-qoder-cli' }, 1000)).toBeUndefined()
   })
 
-  it.skipIf(process.env.ANCORA_QODER_USAGE_PROBE !== '1')('performs a read-only control handshake with the installed Qoder CLI', async () => {
+  it.skipIf(process.env.FENN_QODER_USAGE_PROBE !== '1')('performs a read-only control handshake with the installed Qoder CLI', async () => {
     const quota = await readQoderCredits({}, 15_000)
     console.log('Native Qoder account quota available:', !!quota)
     if (quota) expect(quota.buckets.every((b) => b.unit === 'credits')).toBe(true)

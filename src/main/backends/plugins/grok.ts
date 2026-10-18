@@ -11,7 +11,7 @@ const EXE = process.platform === 'win32' ? '.exe' : ''
 
 /**
  * Where the Grok program is: the copy Grok's own installer keeps in
- * ~/.grok/bin, or a `grok` on PATH. Ancora never downloads it by itself; when
+ * ~/.grok/bin, or a `grok` on PATH. Fenn Code never downloads it by itself; when
  * neither exists Grok shows as not installed, and Settings offers to install it.
  */
 function grokHome(env = process.env): string {

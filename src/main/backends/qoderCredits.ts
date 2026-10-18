@@ -33,7 +33,7 @@ export function qoderQuota(response: unknown): CreditQuota | undefined {
 export function readQoderCredits(config: Record<string, string>, timeoutMs = 20_000): Promise<CreditQuota | undefined> {
   // The CLI requires the same private auth payload used by qodercliAuth() /
   // accessToken() in the official SDK. Never send credentials through argv.
-  const authDir = mkdtempSync(join(tmpdir(), 'ancora-qoder-usage-'))
+  const authDir = mkdtempSync(join(tmpdir(), 'fenn-code-qoder-usage-'))
   const authFile = join(authDir, 'payload.json')
   const token = config.QODER_PERSONAL_ACCESS_TOKEN || process.env.QODER_PERSONAL_ACCESS_TOKEN
   try {
@@ -46,7 +46,7 @@ export function readQoderCredits(config: Record<string, string>, timeoutMs = 20_
   const safe = windowsSafe(spec.command, spec.args)
   return new Promise((resolve) => {
     const proc = spawn(safe.command, safe.args, { shell: safe.shell, windowsHide: true, cwd: tmpdir(),
-      env: { ...process.env, QODER_AGENT_SDK_ENTRYPOINT: 'ancora-usage', QODER_SDK_AUTH_PAYLOAD_FILE: authFile,
+      env: { ...process.env, QODER_AGENT_SDK_ENTRYPOINT: 'fenn-code-usage', QODER_SDK_AUTH_PAYLOAD_FILE: authFile,
         ...(config.QODER_PERSONAL_ACCESS_TOKEN ? { QODER_PERSONAL_ACCESS_TOKEN: config.QODER_PERSONAL_ACCESS_TOKEN } : {}) },
       stdio: ['pipe', 'pipe', 'pipe'] })
     let done = false
@@ -73,9 +73,9 @@ export function readQoderCredits(config: Record<string, string>, timeoutMs = 20_
       if (message.type !== 'control_response') return
       const response = message.response
       if (response?.subtype !== 'success') return finish()
-      if (response.request_id === 'ancora-init') send('ancora-quota', 'get_usage_info')
-      else if (response.request_id === 'ancora-quota') finish(qoderQuota(response.response))
+      if (response.request_id === 'fenn-code-init') send('fenn-code-quota', 'get_usage_info')
+      else if (response.request_id === 'fenn-code-quota') finish(qoderQuota(response.response))
     })
-    send('ancora-init', 'initialize')
+    send('fenn-code-init', 'initialize')
   })
 }

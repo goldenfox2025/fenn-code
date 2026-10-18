@@ -24,7 +24,7 @@ describe('a turn shows what happened, in order: thinking folded, tools on their 
   })
 
   it('leaves out the app’s own tools, which show as cards', () => {
-    expect(shape([text('我开一个讨论串给你看。'), tool('s', 'ancora/start_thread'), { type: 'thread-card', threadId: 't' }])).toEqual(['text', 'thread-card'])
+    expect(shape([text('我开一个讨论串给你看。'), tool('s', 'fenn/start_thread'), { type: 'thread-card', threadId: 't' }])).toEqual(['text', 'thread-card'])
   })
 
   it('keeps an answer the agent thinks again after', () => {

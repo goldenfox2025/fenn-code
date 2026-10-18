@@ -6,13 +6,13 @@ import { makeCore } from './helpers'
 
 describe('folders a chat may never work in', () => {
   it('home, everything above it, drive roots and the data folder', () => {
-    const home = 'C:\\Users\\me', data = 'C:\\Users\\me\\AppData\\Roaming\\Ancora'
+    const home = 'C:\\Users\\me', data = 'C:\\Users\\me\\AppData\\Roaming\\Fenn Code'
     for (const p of ['C:\\Users\\me', 'c:/users/me/', 'C:\\Users', 'C:\\', 'D:', '/', data, data + '\\workspaces\\x'])
       expect(isUnsafeFolder(p, home, data), p).toBe(true)
-    for (const p of ['C:\\Users\\me\\code', 'D:\\code', 'C:\\Users\\me\\Documents\\Ancora\\标题'])
+    for (const p of ['C:\\Users\\me\\code', 'D:\\code', 'C:\\Users\\me\\Documents\\Fenn Code\\标题'])
       expect(isUnsafeFolder(p, home, data), p).toBe(false)
-    expect(isUnsafeFolder('/home/me', '/home/me', '/home/me/.config/Ancora')).toBe(true)
-    expect(isUnsafeFolder('/home/me/src', '/home/me', '/home/me/.config/Ancora')).toBe(false)
+    expect(isUnsafeFolder('/home/me', '/home/me', '/home/me/.config/Fenn Code')).toBe(true)
+    expect(isUnsafeFolder('/home/me/src', '/home/me', '/home/me/.config/Fenn Code')).toBe(false)
   })
 
   it('refuses them, and moves chats an older version filed there back to no folder', async () => {

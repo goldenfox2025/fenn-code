@@ -6,7 +6,7 @@
  * - The agent first asks for the apps it needs (computer_request_access). The
  *   user grants each app a tier: full control, click only, or view only.
  *   Clicks are checked against the app under the pointer, typing and keys
- *   against the app that has focus; Ancora's own windows are never touched.
+ *   against the app that has focus; Fenn Code's own windows are never touched.
  * - A grant lasts while the agent keeps working and ends when the user presses
  *   Stop or after GRANT_IDLE_MS without actions.
  * - Every agent gets the tools; a model that can't look at images is told by
@@ -71,7 +71,7 @@ export interface ComputerDeps {
   askAccess(conversationId: string, req: AccessRequest): Promise<Record<string, TierChoice> | null>
   /** Nobody is watching this turn (a scheduled task): never ask, just fail. */
   unattended?(conversationId: string): boolean
-  /** Ancora's own windows, which the agent must never act on. */
+  /** Fenn Code's own windows, which the agent must never act on. */
   isOwnApp?(app: AppRef): boolean
   /**
    * Control starts or stops in a conversation. The app gets out of the way
@@ -515,7 +515,7 @@ export class ComputerControl {
       const hit =
         running.find((r) => norm(r.id) === q || norm(r.name) === q) ?? running.find((r) => norm(r.name).includes(q) || q.includes(norm(r.name)))
       const key = hit ? norm(hit.id) : q
-      // Ancora itself is never controlled, so it isn't offered either.
+      // Fenn Code itself is never controlled, so it isn't offered either.
       if (!hit && this.deps.isOwnApp?.({ id: q, name: n })) continue
       if (wanted.some((w) => w.key === key)) continue
       const name = hit?.name ?? n
@@ -606,7 +606,7 @@ export class ComputerControl {
           ? '无法确认这个位置是哪个程序，为安全起见没有操作。可以先用 computer_open_application 把程序切到前台。'
           : '无法确认哪个程序在前台，为安全起见没有输入。先用 computer_open_application 或点击把要输入的程序切到前台。'
       )
-    if (this.deps.isOwnApp?.(app)) throw new Error('这是 Ancora 自己的窗口，不能操作。')
+    if (this.deps.isOwnApp?.(app)) throw new Error('这是 Fenn Code 自己的窗口，不能操作。')
     const g = this.match(id, app)
     if (!g)
       throw new Error(

@@ -167,7 +167,7 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
         <div className="usage-section">
           <div className="usage-head">{t('最近一次回复')}</div>
           <Row label={t('首个回复')} value={seconds(timing.firstResponseMs)} />
-          {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Ancora 看到的输出时间计算，不含工具运行的时间')} />}
+          {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Fenn Code 看到的输出时间计算，不含工具运行的时间')} />}
           {speed !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs!)} tip={t('输出时平均每个 token 的间隔（TPOT）')} />}
           {speed === undefined && timing.noSpeed && <div className="usage-foot">{t(NO_SPEED[timing.noSpeed])}</div>}
         </div>

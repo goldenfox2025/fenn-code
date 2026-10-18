@@ -4,15 +4,15 @@ import type { AccountStatus, BackendSummary, PermissionRequest } from '@shared/c
 import { backendAvailable } from '@shared/backendAvailability'
 import { errorText } from '@shared/errors'
 import { routeFor } from './routes'
-import type { AppEvent, AppSettings, Conversation, Message, AncoraApi, PeerMessage, Project, Routine } from '@shared/model'
+import type { AppEvent, AppSettings, Conversation, Message, FennApi, PeerMessage, Project, Routine } from '@shared/model'
 
 declare global {
   interface Window {
-    ancora: AncoraApi
+    fenn: FennApi
   }
 }
 
-export const api = (): AncoraApi => window.ancora
+export const api = (): FennApi => window.fenn
 
 export type Route =
   | { view: 'home'; folder?: string }

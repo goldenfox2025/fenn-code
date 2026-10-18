@@ -257,7 +257,7 @@ export class AcpBackend implements AgentBackend {
         protocolVersion: acp.PROTOCOL_VERSION,
         // compaction: the agent says when it compacted, so the app can hand its notes over again.
         clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true, session: { compaction: {} } } as acp.ClientCapabilities,
-        clientInfo: { name: 'ancora', version: '0.1.0' }
+        clientInfo: { name: 'fenn', version: '0.1.0' }
       }),
       exited
     ])
@@ -366,7 +366,7 @@ export class AcpBackend implements AgentBackend {
           name: t.name,
           command: this.host.nodeCommand.command,
           args: [join(this.host.resourcesDir, 'mcp-bridge.mjs'), t.url],
-          env: env({ ...this.host.nodeCommand.env, ANCORA_BRIDGE_HEADERS: JSON.stringify(t.headers ?? {}) })
+          env: env({ ...this.host.nodeCommand.env, FENN_BRIDGE_HEADERS: JSON.stringify(t.headers ?? {}) })
         }
       ]
     })
@@ -736,9 +736,9 @@ export function windowsSafe(command: string, args: string[]): { command: string;
 }
 
 /**
- * Answers to requests Ancora never sent. Grok, for one, writes the replies to
+ * Answers to requests Fenn Code never sent. Grok, for one, writes the replies to
  * its own internal requests (id "skills-reload") to stdout; the SDK would log
- * each as an error. Ancora numbers its requests, so a reply with any other id
+ * each as an error. Fenn Code numbers its requests, so a reply with any other id
  * is not for it. Requests and notifications pass untouched.
  */
 export function dropStrayResponses<T>(): TransformStream<T, T> {
@@ -814,7 +814,7 @@ function toolOutput(content: acp.ToolCallContent[] | null | undefined): string |
 }
 
 /**
- * A command the agent ran itself, shown as a terminal it never asked Ancora to open (Qoder,
+ * A command the agent ran itself, shown as a terminal it never asked Fenn Code to open (Qoder,
  * Claude Code's adapter): its output arrives as `_meta.terminal_output`.
  */
 function terminalOutput(meta: unknown): string | undefined {

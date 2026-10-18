@@ -63,7 +63,7 @@ const handlers = {
         // MOCK_META_PROMPT=1: appends a client prompt given at _meta.antigravity.systemPrompt.append (as Antigravity advertises).
         ...(process.env.MOCK_META_PROMPT === "1" ? { _meta: { antigravity: { systemPrompt: { append: true } } } } : {}),
       },
-      agentInfo: { name: "ancora-mock", version: "0.1.0" },
+      agentInfo: { name: "fenn-code-mock", version: "0.1.0" },
       authMethods: signedIn
         ? []
         : [
@@ -96,7 +96,7 @@ const handlers = {
     const usable = (mcpServers ?? []).filter((m) =>
       STDIO_ONLY ? m.command : true,
     );
-    const mcp = usable.find((m) => m.name === "ancora");
+    const mcp = usable.find((m) => m.name === "fenn");
     // Other servers are the user's connectors; each gets its own client state.
     const connectors = usable
       .filter((m) => m !== mcp)
@@ -182,7 +182,7 @@ const handlers = {
     }
     // "规则在哪": says where the app's notes reached it.
     if (raw.includes("规则在哪")) {
-      await stream(sessionId, `系统提示：${s.system.includes("<ancora-context") ? "有" : "无"}；本条消息：${raw.includes("<ancora-context") ? "有" : "无"}`, abort);
+      await stream(sessionId, `系统提示：${s.system.includes("<fenn-context") ? "有" : "无"}；本条消息：${raw.includes("<fenn-context") ? "有" : "无"}`, abort);
       return { stopReason: "end_turn" };
     }
     // "#难点 …" reports an obstacle through the app's tool ("#难点" alone clears it).
@@ -419,7 +419,7 @@ async function callTool(sessionId, s, name, args) {
   notify(sessionId, {
     sessionUpdate: "tool_call",
     toolCallId: id,
-    title: `ancora/${name}`,
+    title: `fenn/${name}`,
     kind: "other",
     status: "in_progress",
     rawInput: args,
@@ -448,7 +448,7 @@ async function callTool(sessionId, s, name, args) {
 /** Strips the app's context blocks so the mock reacts to what the user typed. */
 function userText(raw) {
   let t = raw
-    .replace(/<ancora-context[\s\S]*?<\/ancora-context>/g, "")
+    .replace(/<fenn-context[\s\S]*?<\/fenn-context>/g, "")
     .replace(/<thread-updates>[\s\S]*?<\/thread-updates>/g, "")
     .replace(/<threads>[\s\S]*?<\/threads>/g, "")
     .replace(/以下是此前的对话记录[\s\S]*?<\/history>/g, "");
@@ -800,7 +800,7 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     }
     const seen = await callTool(sessionId, s, "computer_screenshot", {});
     const clicked = await callTool(sessionId, s, "computer_left_click", { coordinate: [200, 150] });
-    const typed = await callTool(sessionId, s, "computer_type", { text: "hello from Ancora" });
+    const typed = await callTool(sessionId, s, "computer_type", { text: "hello from Fenn Code" });
     await stream(
       sessionId,
       `我看了屏幕（${String(seen).slice(0, 60)}）。点击：${String(clicked).slice(0, 80)}。输入：${String(typed).slice(0, 80)}`,
@@ -874,7 +874,7 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
 
   const reply =
     (s.turns === 1
-      ? "您好！我是**演示 Agent**，用来让您先看看 Ancora 怎么用。我的回复是预设的，并不会真正理解您的问题。\n\n"
+      ? "您好！我是**演示 Agent**，用来让您先看看 Fenn Code 怎么用。我的回复是预设的，并不会真正理解您的问题。\n\n"
       : `这是演示 Agent 的第 ${s.turns} 次回复。\n\n`) +
     `您刚才说：\n\n> ${text.replace(/\n/g, "\n> ")}\n\n` +
     "想让 AI 真正帮您做事，请在 设置 → Agent 后端 里装好并登录 Claude Code、Codex、Grok 或 Qoder。\n\n" +

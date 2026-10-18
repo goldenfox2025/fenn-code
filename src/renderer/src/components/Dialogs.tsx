@@ -305,7 +305,7 @@ function ReenterSecrets() {
   return (
     <div className="reenter-banner">
       <div>
-        {t('改名为 Ancora 后，系统钥匙串里的旧密钥打不开了，下面这些需要重新填写：')}
+        {t('改名为 Fenn Code 后，系统钥匙串里的旧密钥打不开了，下面这些需要重新填写：')}
         <ul>
           {list.map((x) => (
             <li key={x}>{x}</li>
@@ -327,6 +327,8 @@ function useSaveOnLeave(value: string, save: (v: string) => unknown) {
 }
 
 function GeneralSettings() {
+  const [defaultFolder, setDefaultFolder] = useState<string>()
+  useEffect(() => void api().appInfo().then((i) => setDefaultFolder(i.defaultFolder)), [])
   const settings = useApp((s) => s.settings)
   const [name, setName] = useState(settings.userName)
   // Saved on blur, and also when Settings closes with the field still focused (Esc or ✕).
@@ -341,7 +343,7 @@ function GeneralSettings() {
       <div className="field">
         <label>{t('默认文件夹')}</label>
         <div className="field-row">
-          <input className="input" value={settings.autoFolderRoot ?? ''} readOnly placeholder={t('文档/Ancora')} />
+          <input className="input" value={settings.autoFolderRoot ?? ''} readOnly placeholder={defaultFolder ?? t('文档/Fenn Code')} />
           <button
             className="btn"
             onClick={async () => {
@@ -390,7 +392,7 @@ function GeneralSettings() {
           <div>
             <label>{t('允许操控电脑')}</label>
             <div className="help">
-              {t('打开后，agent 能看到屏幕截图，并在您允许的程序里移动鼠标、点击和输入。它每次都要先列出要用的程序，由您逐个选择「完全控制」「仅点击」或「仅查看」。操控时 Ancora 会最小化，屏幕上方有「停止」按钮。macOS 需要在系统设置里授予「辅助功能」和「录屏」权限；Linux 需要 X11 和 xdotool。')}</div>
+              {t('打开后，agent 能看到屏幕截图，并在您允许的程序里移动鼠标、点击和输入。它每次都要先列出要用的程序，由您逐个选择「完全控制」「仅点击」或「仅查看」。操控时 Fenn Code 会最小化，屏幕上方有「停止」按钮。macOS 需要在系统设置里授予「辅助功能」和「录屏」权限；Linux 需要 X11 和 xdotool。')}</div>
           </div>
           <button
             className={'switch' + (settings.computerUse ? ' on' : '')}
@@ -422,7 +424,7 @@ function AboutSettings() {
       <div className="about-head">
         <div className="about-logo">Co</div>
         <div>
-          <div className="title">Ancora</div>
+          <div className="title">Fenn Code</div>
           <div className="small muted">{t('桌面上的 AI 工作台：对话、项目和定时任务，背后的 agent 可以随时更换。')}</div>
           <div className="small muted">{t('非官方开源项目（MIT 许可），与 Anthropic 无关。')}</div>
         </div>
@@ -770,7 +772,7 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
         setLog(null)
       } else if (r.notFound) {
         setFailed('notFound')
-        toast(t('{0} 已经装好，但 Ancora 还找不到它', name), 'error')
+        toast(t('{0} 已经装好，但 Fenn Code 还找不到它', name), 'error')
       } else {
         setFailed('failed')
         toast(installing ? t('{0} 安装失败，原因见设置里的详情', name) : t('{0} 升级失败，原因见设置里的详情', name), 'error')
@@ -831,8 +833,8 @@ export function AccountLine({ backendId, configKey, upgrade, name }: { backendId
         <div className="help small upgrade-help">
           {failed === 'notFound'
             ? commands.some((c) => /^npm\b/.test(c))
-              ? t('安装命令已经顺利完成，但 Ancora 还是找不到 {0} 的程序，通常是因为它装进的文件夹不在 Ancora 能看到的 PATH 里。请完全退出 Ancora 再打开；如果还是「未安装」，在终端运行 npm prefix -g，确认它显示的文件夹（macOS/Linux 是其中的 bin）在系统的 PATH 里。', name)
-              : t('安装命令已经顺利完成，但 Ancora 还是找不到 {0} 的程序。请完全退出 Ancora 再打开；如果还是「未安装」，可以在设置里填写它的路径。', name)
+              ? t('安装命令已经顺利完成，但 Fenn Code 还是找不到 {0} 的程序，通常是因为它装进的文件夹不在 Fenn Code 能看到的 PATH 里。请完全退出 Fenn Code 再打开；如果还是「未安装」，在终端运行 npm prefix -g，确认它显示的文件夹（macOS/Linux 是其中的 bin）在系统的 PATH 里。', name)
+              : t('安装命令已经顺利完成，但 Fenn Code 还是找不到 {0} 的程序。请完全退出 Fenn Code 再打开；如果还是「未安装」，可以在设置里填写它的路径。', name)
             : commands.some((c) => /^npm\b/.test(c))
               ? t('没装好时，可以在终端里自己运行详情里的第一行命令看看。npm 在 macOS/Linux 上有时需要管理员权限；要走代理时先设好 HTTPS_PROXY。')
               : t('没装好时，可以在终端里自己运行详情里的第一行命令看看。要走代理时先设好 HTTPS_PROXY。')}

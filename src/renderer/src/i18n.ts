@@ -30,7 +30,7 @@ export async function setLanguage(l: LangSetting): Promise<void> {
   } catch {
     /* private storage: stays for this session only */
   }
-  await window.ancora.updateSettings({ language: l }).catch(() => {})
+  await window.fenn.updateSettings({ language: l }).catch(() => {})
   location.reload()
 }
 

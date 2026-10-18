@@ -586,7 +586,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             {commands.map((c, i) => (
               <Fragment key={c.key}>
                 {(i === 0 || !!commands[i - 1].app !== !!c.app) && (
-                  <div className="slash-group">{c.app ? 'Ancora' : (currentBackend?.name ?? 'Agent')}</div>
+                  <div className="slash-group">{c.app ? 'Fenn Code' : (currentBackend?.name ?? 'Agent')}</div>
                 )}
                 <button
                   role="option"
@@ -844,7 +844,7 @@ export function AttachmentChip({ a, onRemove }: { a: Attachment; onRemove?: () =
 }
 
 async function readAttachment(f: File): Promise<Attachment> {
-  const path = (window as unknown as { ancoraFilePath?: (f: File) => string }).ancoraFilePath?.(f)
+  const path = (window as unknown as { fennFilePath?: (f: File) => string }).fennFilePath?.(f)
   if (f.type.startsWith('image/')) {
     if (f.size > MAX_IMAGE) throw new Error(t('{0} 太大（图片上限 8 MB）', f.name))
     const buf = new Uint8Array(await f.arrayBuffer())

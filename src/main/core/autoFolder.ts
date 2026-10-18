@@ -4,7 +4,7 @@ import { join } from 'node:path'
 const RESERVED = /^(con|prn|aux|nul|com\d|lpt\d)$/i
 
 /** A folder name from a conversation title that works on Windows, macOS and Linux. */
-export function folderSafeName(title: string, fallback = 'Ancora'): string {
+export function folderSafeName(title: string, fallback = 'Fenn Code'): string {
   const name = title
     .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, ' ')
     .replace(/\s+/g, ' ')

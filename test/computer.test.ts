@@ -6,7 +6,7 @@ import { ToolContent } from '../src/main/tools/ToolServer'
 
 const NOTEPAD: AppRef = { id: 'notepad', name: '记事本', pid: 10 }
 const TERM: AppRef = { id: 'windowsterminal', name: 'Terminal', pid: 11 }
-const COVE: AppRef = { id: 'ancora', name: 'Ancora', pid: 1 }
+const COVE: AppRef = { id: 'fenn', name: 'Fenn Code', pid: 1 }
 
 interface Opts {
   enabled?: boolean
@@ -35,7 +35,7 @@ function setup(opts: Opts = {}) {
     holdKey: async (k, ms) => void calls.push(`hold ${k} ${ms}`),
     cursor: async () => ({ x: 1000, y: 500 }),
     frontmost: async () => front,
-    // Left half of the 2560-wide screen is Notepad, the right half a terminal, the top-left corner Ancora.
+    // Left half of the 2560-wide screen is Notepad, the right half a terminal, the top-left corner Fenn Code.
     appAt: async (x, y) => (x < 20 && y < 20 ? COVE : x < 1280 ? NOTEPAD : TERM),
     apps: async () => [NOTEPAD, TERM, COVE],
     open: async (name) => {
@@ -67,7 +67,7 @@ function setup(opts: Opts = {}) {
       return a === 'defaults' ? {} : a
     },
     unattended: () => !!opts.unattended,
-    isOwnApp: (a) => a.pid === 1 || (!a.pid && a.name.toLowerCase() === 'ancora'),
+    isOwnApp: (a) => a.pid === 1 || (!a.pid && a.name.toLowerCase() === 'fenn'),
     onActive: (_id, on) => void active.push(on),
     onAction: (_id, label) => void actions.push(label)
   })
@@ -113,7 +113,7 @@ describe('computer control', () => {
     setFront(TERM)
     await expect(call('computer_type', { text: 'rm -rf /' })).rejects.toThrow('只允许点击')
     await expect(call('computer_key', { text: 'enter' })).rejects.toThrow('只允许点击')
-    await expect(call('computer_left_click', { coordinate: [5, 5] })).rejects.toThrow('Ancora 自己的窗口')
+    await expect(call('computer_left_click', { coordinate: [5, 5] })).rejects.toThrow('Fenn Code 自己的窗口')
     setFront({ id: 'chrome', name: 'Chrome' })
     await expect(call('computer_type', { text: 'x' })).rejects.toThrow('不在允许的程序里')
     expect(calls).toEqual(['click 1800,200 left 1'])
@@ -238,7 +238,7 @@ describe('computer control', () => {
     expect(String(await call('computer_read_clipboard'))).toBe('old')
   }, 20000)
 
-  it('keeps the clipboard away from view-only apps, and never offers Ancora itself', async () => {
+  it('keeps the clipboard away from view-only apps, and never offers Fenn Code itself', async () => {
     const viewOnly = setup({ answer: { notepad: 'click', keepass: 'view' } })
     await viewOnly.call('computer_request_access', { apps: ['记事本', 'KeePass'] })
     await expect(viewOnly.call('computer_read_clipboard')).rejects.toThrow('完全控制')
@@ -250,7 +250,7 @@ describe('computer control', () => {
     expect(String(await mixed.call('computer_write_clipboard', { text: 'x' }))).toBe('已写入剪贴板。')
 
     const own = setup()
-    await own.call('computer_request_access', { apps: ['记事本', 'ancora'] })
+    await own.call('computer_request_access', { apps: ['记事本', 'fenn'] })
     expect(own.requests[0].apps.map((a) => a.key)).toEqual(['notepad'])
   })
 

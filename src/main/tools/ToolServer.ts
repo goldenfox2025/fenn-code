@@ -119,7 +119,7 @@ export class ToolServer {
   endpoint(conversationId: string, tools: () => ToolDef[]): Extract<HostToolServer, { url: string }> {
     const token = randomBytes(12).toString('hex')
     this.tokens.set(token, { conversationId, tools })
-    return { name: 'ancora', url: `http://127.0.0.1:${this.port}/mcp/${token}` }
+    return { name: 'fenn', url: `http://127.0.0.1:${this.port}/mcp/${token}` }
   }
 
   revoke(conversationId: string): void {
@@ -165,8 +165,8 @@ export class ToolServer {
           result: {
             protocolVersion: v,
             capabilities: { tools: { listChanged: false } },
-            serverInfo: { name: 'ancora', version: '0.1.0' },
-            instructions: 'Tools for working inside the Ancora app: threads, status, reactions.'
+            serverInfo: { name: 'fenn', version: '0.1.0' },
+            instructions: 'Tools for working inside the Fenn Code app: threads, status, reactions.'
           }
         }
       }

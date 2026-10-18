@@ -38,7 +38,7 @@ if ($Installer) {
   Run-Native 'npx.cmd' @('electron-builder', '--win', '--dir', '--x64', '--publish', 'never') 'packaging failed (see above).'
 }
 
-$exe = Join-Path $PSScriptRoot 'release\win-unpacked\Ancora.exe'
+$exe = Join-Path $PSScriptRoot 'release\win-unpacked\FennCode.exe'
 Write-Host "`nDone." -ForegroundColor Green
 if (Test-Path $exe) { Write-Host "App: $exe" }
 if ($Installer) {
@@ -46,6 +46,6 @@ if ($Installer) {
   Get-ChildItem (Join-Path $PSScriptRoot 'release') -File | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object { Write-Host "  $($_.FullName)" }
 }
 if ($Run -and (Test-Path $exe)) {
-  Step 'Starting Ancora'
+  Step 'Starting Fenn Code'
   Start-Process $exe
 }

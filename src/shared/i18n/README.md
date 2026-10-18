@@ -1,6 +1,6 @@
 # Translations
 
-Every user-facing string in Ancora lives in this folder.
+Every user-facing string in Fenn Code lives in this folder.
 
 - The source language is Simplified Chinese, and the Chinese text itself is the
   key: code calls `t('已完成：{0}', name)`. `{0}`, `{1}`… are filled from the

@@ -11,7 +11,7 @@ import type { HostEvent } from '../src/shared/contract'
 
 const temporary: string[] = []
 function temp() {
-  const dir = mkdtempSync(join(tmpdir(), 'ancora qoder paths '))
+  const dir = mkdtempSync(join(tmpdir(), 'fenn qoder paths '))
   temporary.push(dir)
   return dir
 }

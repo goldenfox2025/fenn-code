@@ -1,6 +1,6 @@
 // Manual check against the real Claude Code and Codex adapters, kept as small as possible
 // (one handshake and, when signed in, one tiny prompt each):
-//   ANCORA_AGENTS=claude-code,codex npx vitest run test/agents.manual.test.ts
+//   FENN_AGENTS=claude-code,codex npx vitest run test/agents.manual.test.ts
 // Needs claude + claude-agent-acp and codex + codex-acp on PATH (the 安装 button installs them).
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
@@ -8,7 +8,7 @@ import { BackendManager } from '../src/main/backends/BackendManager'
 import { loadPlugins } from '../src/main/backends/registry'
 import type { AgentEvent } from '../src/shared/contract'
 
-const ids = (process.env.ANCORA_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+const ids = (process.env.FENN_AGENTS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
 
 describe.runIf(ids.length)('Claude Code and Codex (manual)', () => {
   it.each(ids)('%s: detects, connects and answers one tiny prompt', async (id) => {

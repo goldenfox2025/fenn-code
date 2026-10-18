@@ -59,7 +59,7 @@ const plugin = acpPlugin({
   },
   quirks: {
     hideNoneReasoning: true,
-    missingHint: tk('请在 设置 → Agent 后端 → Qoder 里点「安装」，或在终端运行 npm install -g @qoder-ai/qodercli，然后重试；如果还是找不到，请完全退出 Ancora 再打开。')
+    missingHint: tk('请在 设置 → Agent 后端 → Qoder 里点「安装」，或在终端运行 npm install -g @qoder-ai/qodercli，然后重试；如果还是找不到，请完全退出 Fenn Code 再打开。')
   },
   launch: ({ config }) => ({
     ...qoderCommand(config, ['--acp']),

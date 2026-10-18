@@ -7,9 +7,21 @@ import { textOf } from '../src/main/core/ChatService'
 import { makeCore, until } from './helpers'
 
 describe('folders for chats', () => {
+  it('go in Documents/Fenn Code, or in the Documents/Ancora an older version made, since chats point into it', async () => {
+    const { core, dispose } = await makeCore()
+    try {
+      expect(core.autoFolderRoot()).toBe(join(core.documentsDir, 'Fenn Code'))
+      mkdirSync(join(core.documentsDir, 'Ancora'), { recursive: true })
+      expect(core.autoFolderRoot()).toBe(join(core.documentsDir, 'Ancora'))
+      expect(core.appInfo().defaultFolder).toBe(join(core.documentsDir, 'Ancora'))
+      mkdirSync(join(core.documentsDir, 'Fenn Code'))
+      expect(core.autoFolderRoot()).toBe(join(core.documentsDir, 'Fenn Code'))
+    } finally { await dispose() }
+  })
+
   it('names folders safely on every system', () => {
     expect(folderSafeName('整理 发票: 2026/10?')).toBe('整理 发票 2026 10')
-    expect(folderSafeName('CON')).toBe('Ancora')
+    expect(folderSafeName('CON')).toBe('Fenn Code')
     expect(folderSafeName('  ...  ', '新对话')).toBe('新对话')
     expect(folderSafeName('a'.repeat(100))).toHaveLength(60)
   })
@@ -19,7 +31,7 @@ describe('folders for chats', () => {
     const c = await core.startChat({ text: '写文件 notes.md', backendId: 'mock' })
     await until(() => store.conversation(c.id)?.autoFolder)
     const conv = store.conversation(c.id)!
-    expect(conv.cwd!.startsWith(join(dir, 'Documents', 'Ancora'))).toBe(true)
+    expect(conv.cwd!.startsWith(join(dir, 'Documents', 'Fenn Code'))).toBe(true)
     expect(existsSync(join(conv.cwd!, 'notes.md'))).toBe(true)
     expect(existsSync(core.chat.scratchPath(c.id))).toBe(false)
     // Not offered as a folder the user chose.
@@ -80,13 +92,13 @@ describe('folders for chats', () => {
     await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).length >= 2)
     await new Promise((r) => setTimeout(r, 1500))
     expect(store.conversation(c.id)?.cwd).toBeUndefined()
-    expect(existsSync(join(dir, 'Documents', 'Ancora')) ? readdirSync(join(dir, 'Documents', 'Ancora')) : []).toEqual([])
+    expect(existsSync(join(dir, 'Documents', 'Fenn Code')) ? readdirSync(join(dir, 'Documents', 'Fenn Code')) : []).toEqual([])
     await dispose()
   }, 30000)
 
   it('never takes the place of a folder the user picked, and picking one clears the mark', async () => {
     const { core, store, dispose } = await makeCore()
-    // Outside Ancora's data folder, which is never a working folder.
+    // Outside Fenn Code's data folder, which is never a working folder.
     const mine = join(mkdtempSync(join(tmpdir(), 'oc-mine-')), 'mine')
     mkdirSync(mine)
     const c = await core.startChat({ text: '写文件 a.txt', backendId: 'mock', cwd: mine })
@@ -121,7 +133,7 @@ describe('one default folder', () => {
     const { core, store, dir, dispose } = await makeCore()
     try {
       const p = await core.createProject({ name: '竞品/定价', backendId: 'mock' })
-      expect(p.cwd).toBe(join(dir, 'Documents', 'Ancora', folderSafeName('竞品/定价', '')))
+      expect(p.cwd).toBe(join(dir, 'Documents', 'Fenn Code', folderSafeName('竞品/定价', '')))
       expect(existsSync(p.cwd!)).toBe(true)
       const q = await core.createProject({ name: '竞品/定价', backendId: 'mock' })
       expect(q.cwd).not.toBe(p.cwd)
@@ -149,7 +161,7 @@ describe('one default folder', () => {
       const c = await core.startChat({ text: '给我讲讲番茄怎么种', backendId: 'mock' })
       await until(() => store.conversation(c.id)?.status === 'idle' && store.messagesOf(c.id).length >= 2)
       const path = await core.makeDefaultFolder(c.id)
-      expect(path.startsWith(join(dir, 'Documents', 'Ancora'))).toBe(true)
+      expect(path.startsWith(join(dir, 'Documents', 'Fenn Code'))).toBe(true)
       expect(existsSync(path)).toBe(true)
       expect(store.conversation(c.id)).toMatchObject({ cwd: path, autoFolder: true })
       expect(await core.makeDefaultFolder(c.id)).toBe(path)

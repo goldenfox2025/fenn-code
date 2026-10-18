@@ -142,7 +142,7 @@ describe('export', () => {
     const md = core.markdownOf(p.conversationId)
     expect(md).toContain('# ')
     expect(md).toContain('帮我调研导出格式')
-    expect(md).not.toContain('ancora-context')
+    expect(md).not.toContain('fenn-context')
     await dispose()
   }, 30000)
 })

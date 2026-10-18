@@ -49,7 +49,7 @@ describe('secrets saved before the rename', () => {
   it('removes only what neither key opens, asking for the old key only once', () => {
     const s = store()
     let asked = 0
-    const lost = repairSecrets(s, codec, label, () => (asked++, [macKeyFromPassword('a'), macKeyFromPassword('b')]))
+    const lost = repairSecrets(s, codec, label, () => (asked++, [macKeyFromPassword('a'), macKeyFromPassword('b'), macKeyFromPassword('c')]))
     expect(asked).toBe(1)
     expect(lost).toEqual(['qoder/QODER_PERSONAL_ACCESS_TOKEN', '连接器「github」的 Authorization'])
     expect(s.backendSettings('qoder')).toEqual({ MODEL: 'plain' })

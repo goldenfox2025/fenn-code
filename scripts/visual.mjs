@@ -17,18 +17,18 @@ let failed = 0
 
 for (const [name, look] of Object.entries(looks)) {
   const data = declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-visual-')))
-  const app = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, ANCORA_DATA_DIR: data } })
+  const app = await electron.launch({ args: ['.', '--no-sandbox'], env: { ...process.env, FENN_DATA_DIR: data } })
   const page = await app.firstWindow()
   await page.setViewportSize({ width: 1400, height: 900 })
   await page.waitForSelector('.sidebar')
   await page.evaluate(async (l) => {
     localStorage.setItem('oc-lang', 'zh')
-    await window.ancora.updateSettings({ language: 'zh', ...l, onboarded: true })
+    await window.fenn.updateSettings({ language: 'zh', ...l, onboarded: true })
   }, look)
   await page.reload()
   await page.waitForSelector('.sidebar')
   if (await page.locator('.onboarding').count()) await page.click('.onboarding .skip')
-  await page.evaluate(() => window.ancora.startChat({ text: '#啰嗦 开子对话 看板上能看到这个讨论串吗？', backendId: 'mock' }))
+  await page.evaluate(() => window.fenn.startChat({ text: '#啰嗦 开子对话 看板上能看到这个讨论串吗？', backendId: 'mock' }))
   await page.click('.sidebar .nav-item >> text=/啰嗦/')
   await page.waitForSelector('.turn .thread-card', { timeout: 20000 })
   await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })

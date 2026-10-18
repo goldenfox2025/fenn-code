@@ -136,7 +136,7 @@ describe('a broken backends.json', () => {
 })
 
 describe('stray replies from the agent', () => {
-  it('drops replies to requests Ancora never sent (Grok\'s "skills-reload"), keeps everything else', async () => {
+  it('drops replies to requests Fenn Code never sent (Grok\'s "skills-reload"), keeps everything else', async () => {
     const { dropStrayResponses } = await import('../src/main/backends/acp/AcpBackend')
     const input = [
       { jsonrpc: '2.0', id: 'skills-reload', result: {} },
@@ -214,7 +214,7 @@ describe('an agent that signs in again in each process and takes rules in its ow
       emit: (e) => events.push(e)
     })
     try {
-      const s = await mgr.newSession('meta-auth', { system: '<ancora-context>规则</ancora-context>' })
+      const s = await mgr.newSession('meta-auth', { system: '<fenn-context>规则</fenn-context>' })
       expect(s.systemApplied).toBe(true)
       await mgr.prompt('meta-auth', s.sessionId, [{ type: 'text', text: '规则在哪' }])
       const said = events.map((e) => (e.type === 'agent' && e.event.kind === 'message.delta' ? e.event.text : '')).join('')
@@ -263,7 +263,7 @@ describe('what an agent reports beyond ACP usage (Grok) and what background chor
   it('removes a background chore session from the agent\'s own history', async () => {
     const { mkdtempSync, readFileSync, existsSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')
-    const log = join(mkdtempSync(join(tmpdir(), 'ancora-del-')), 'sessions.log')
+    const log = join(mkdtempSync(join(tmpdir(), 'fenn-code-del-')), 'sessions.log')
     const { mgr } = await managerFor('chore', { MOCK_SESSION_LOG: log })
     try {
       await mgr.ask('chore', '你好')

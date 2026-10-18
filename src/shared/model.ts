@@ -440,7 +440,7 @@ export interface AppSettings {
   backendModelOptionDefaults?: Record<string, Record<string, Record<string, string>>>
   /** Working folders the user chose, newest first. */
   recentFolders?: string[]
-  /** Where a chat that makes files gets its own folder; Documents/Ancora when unset. */
+  /** Where a chat that makes files gets its own folder; Documents/Fenn Code when unset. */
   autoFolderRoot?: string
   /** The widgets on the new-conversation page by id, in order; unset shows the built-in set. */
   homeWidgets?: string[]
@@ -459,6 +459,8 @@ export interface AppInfo {
   arch: string
   /** The window can blur the desktop behind it (macOS vibrancy, Windows 11 acrylic). */
   nativeGlass?: boolean
+  /** Where chats' folders go when Settings names none. */
+  defaultFolder?: string
   /** No GPU compositing: expensive effects like backdrop blur are skipped. */
   softwareRendering?: boolean
 }
@@ -546,8 +548,8 @@ export interface NewChatOptions {
   attachments?: Attachment[]
 }
 
-/** The API the renderer sees as window.ancora. */
-export interface AncoraApi {
+/** The API the renderer sees as window.fenn. */
+export interface FennApi {
   snapshot(): Promise<AppSnapshot>
   messages(conversationId: string): Promise<Message[]>
   onEvent(listener: (e: AppEvent) => void): () => void

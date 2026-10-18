@@ -43,7 +43,7 @@ describe.each(['1.1.72', '1.1.73'])('Qoder %s, signed in (replayed)', (version) 
 
       // TodoWrite's plan becomes the plan card.
       expect(c.checklist).toMatch(/✓ 读代码[\s\S]*✱ 改实现[\s\S]*○ 跑测试/)
-      // The command it ran shows its output, not a placeholder for a terminal Ancora never opened.
+      // The command it ran shows its output, not a placeholder for a terminal Fenn Code never opened.
       const bash = reply.blocks.find((b: any) => b.type === 'tool' && b.title === 'echo hello-from-terminal')
       expect(bash).toMatchObject({ status: 'completed', output: 'hello-from-terminal\n' })
       // Usage from the prompt result; context from its own log (it sends no usage_update).

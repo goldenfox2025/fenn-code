@@ -1,5 +1,5 @@
 /**
- * Every user-facing string in Ancora, in one place.
+ * Every user-facing string in Fenn Code, in one place.
  *
  * Source strings are the Simplified Chinese text itself (written with 您): code
  * calls t('中文 {0}', arg), and each other language is one file in this folder

@@ -1,4 +1,4 @@
-# Contributing to Ancora
+# Contributing to Fenn Code
 
 Thanks for helping. Issues and pull requests are welcome in English or Chinese.
 

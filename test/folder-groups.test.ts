@@ -15,13 +15,13 @@ describe('sidebar folder groups', () => {
   it('gives a folder the app chose for a chat its own header, which later chats in that folder join', () => {
     const groups = groupByFolder([
       chat('plain', 3),
-      chat('auto', 2, { cwd: 'C:/Users/me/Documents/Ancora/Notes', autoFolder: true }),
-      chat('same', 1, { cwd: 'C:/Users/me/Documents/Ancora/notes' })
+      chat('auto', 2, { cwd: 'C:/Users/me/Documents/Fenn Code/Notes', autoFolder: true }),
+      chat('same', 1, { cwd: 'C:/Users/me/Documents/Fenn Code/notes' })
     ])
     expect(groups.map((g) => [g.name, g.chats.map((c) => c.id)])).toEqual([
       [expect.any(String), ['plain']],
       ['Notes', ['auto', 'same']]
     ])
-    expect(groups[1].folder).toBe('C:/Users/me/Documents/Ancora/Notes')
+    expect(groups[1].folder).toBe('C:/Users/me/Documents/Fenn Code/Notes')
   })
 })
