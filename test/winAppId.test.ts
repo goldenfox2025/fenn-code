@@ -1,21 +1,30 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 const home = mkdtempSync(join(tmpdir(), 'oc-appid-'))
+let appData = join(home, 'AppData')
+process.env.ProgramData = join(home, 'ProgramData')
 const links = new Map<string, string>()
 const written: { path: string; op: string; opts: Record<string, unknown> }[] = []
 vi.mock('electron', () => ({
-  app: { isPackaged: true, getPath: () => join(home, 'AppData'), getAppPath: () => join(home, 'checkout'), setToastActivatorCLSID: () => undefined },
+  app: { isPackaged: true, getPath: () => appData, getAppPath: () => join(home, 'checkout'), setToastActivatorCLSID: () => undefined },
   shell: {
     readShortcutLink: (p: string) => ({ target: links.get(p) ?? '' }),
-    writeShortcutLink: (path: string, op: string, opts: Record<string, unknown>) => (written.push({ path, op, opts }), true)
+    // As on Windows: 'replace' does nothing when there is no file yet, 'create' writes one either way.
+    writeShortcutLink: (path: string, op: string, opts: Record<string, unknown>) => {
+      if (op === 'replace' && !existsSync(path)) return false
+      writeFileSync(path, '')
+      written.push({ path, op, opts })
+      return true
+    }
   }
 }))
 const { notificationsWouldTakeShortcut, prepareSourceShortcut, winAppId, winCopy } = await import('../src/main/winAppId')
 
-const lnk = join(home, 'AppData', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Fenn Code.lnk')
+const programs = (root: string) => join(root, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+const lnk = join(programs(join(home, 'AppData')), 'Fenn Code.lnk')
 const copyAt = (dir: string, installed: boolean) => {
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'FennCode.exe'), '')
@@ -57,15 +66,30 @@ describe('Windows app ids', () => {
     expect(notificationsWouldTakeShortcut('portable', 'Fenn Code', portable)).toBe(false)
   })
 
-  it('writes the source run’s shortcut even where none exists yet, opening this checkout with the fox icon', () => {
-    const fresh = mkdtempSync(join(tmpdir(), 'oc-appid-fresh-'))
-    const before = home
-    void before
-    prepareSourceShortcut('C:/fenn/resources/icon.ico')
+  it('also keeps the zip from adding a second entry next to an all-users install', () => {
+    const machine = join(programs(join(home, 'ProgramData')), 'Fenn Code.lnk')
+    mkdirSync(join(machine, '..'), { recursive: true })
+    writeFileSync(machine, '')
+    links.set(machine, copyAt(join(home, 'Program Files', 'Fenn Code'), true))
+    expect(notificationsWouldTakeShortcut('portable', 'Fenn Code', portable)).toBe(true)
+    links.set(machine, portable)
+    expect(notificationsWouldTakeShortcut('portable', 'Fenn Code', portable)).toBe(false)
+  })
+
+  it('writes the source run’s shortcut once there is a build, even where no Start Menu folder exists yet', () => {
+    appData = mkdtempSync(join(tmpdir(), 'oc-appid-fresh-'))
+    const electronLnk = join(programs(appData), 'Electron.lnk')
+    // `npm run dev` alone builds nothing: the checkout would open blank, so Electron keeps its own shortcut.
+    expect(prepareSourceShortcut('C:/fenn/resources/icon.ico')).toBe(false)
+    expect(existsSync(programs(appData))).toBe(false)
+    for (const f of ['main/index.js', 'renderer/index.html']) {
+      mkdirSync(join(home, 'checkout', 'out', f, '..'), { recursive: true })
+      writeFileSync(join(home, 'checkout', 'out', f), '')
+    }
+    expect(prepareSourceShortcut('C:/fenn/resources/icon.ico')).toBe(true)
+    expect(existsSync(electronLnk)).toBe(true)
     const w = written.at(-1)!
-    // 'replace' would fail on a missing file and leave Electron to write its own.
-    expect(w.op).toBe('create')
-    expect(w.path.endsWith(join('Start Menu', 'Programs', 'Electron.lnk'))).toBe(true)
+    expect(w.path).toBe(electronLnk)
     expect(w.opts).toMatchObject({
       target: process.execPath,
       args: `"${join(home, 'checkout')}"`,
@@ -73,6 +97,5 @@ describe('Windows app ids', () => {
       icon: 'C:/fenn/resources/icon.ico'
     })
     expect(w.opts.toastActivatorClsid).toMatch(/^\{[0-9A-F-]{36}\}$/)
-    void fresh
   })
 })

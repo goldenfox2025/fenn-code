@@ -41,9 +41,10 @@
   --border-strong: rgba(31, 30, 29, 0.18);
   --accent: #07789e;
   --accent-rgb: 7, 120, 158;
-  /* The background dot grid (外观 → 点阵背景): the dots' color and resting strength. */
+  /* The background dot grid (外观 → 点阵背景): the dots' color and resting strength, and how much the trail is lifted (dark looks need more to read). */
   --dot-rgb: 31, 30, 29;
   --dot-alpha: 0.11;
+  --dot-trail: 1;
   --accent-fg: #ffffff;
   --accent-hover: #06627f;
   --accent-soft: rgba(var(--accent-rgb), 0.12);
@@ -92,6 +93,7 @@
   --accent-rgb: 63, 214, 245;
   --dot-rgb: 255, 255, 255;
   --dot-alpha: 0.075;
+  --dot-trail: 2.6;
   --accent-fg: #062630;
   --accent-hover: #6fe2f8;
   --accent-soft: rgba(var(--accent-rgb), 0.16);
@@ -133,6 +135,7 @@
   --accent-rgb: 63, 214, 245;
   --dot-rgb: 220, 228, 255;
   --dot-alpha: 0.09;
+  --dot-trail: 2.6;
   --accent-fg: #062630;
   --accent-hover: #6fe2f8;
   --accent-soft: rgba(var(--accent-rgb), 0.16);

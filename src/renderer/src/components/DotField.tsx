@@ -13,7 +13,7 @@ const FADE = [0, 0.32, 0.38]
 const BANDS = 16
 /** How much the fading end of the trail is lifted (below 1 lifts it). */
 const GAMMA = 0.6
-/** How much brighter the trail is drawn than the head, per strength; and how quickly a dot turns from one to the other (seconds). */
+/** How much brighter the trail is drawn than the head, per strength (times the look's --dot-trail); and how quickly a dot turns from one to the other (seconds). */
 const BOOST = [0, 1.6, 0.6]
 const TRAIL_EASE = 0.12
 const MAX_ALPHA = 0.9
@@ -60,7 +60,7 @@ export function DotField({ strength }: { strength: number }) {
     let trail = new Float32Array(0)
     let heldAt = new Uint32Array(0)
     let stamp = 0
-    const boost = BOOST[strength] ?? BOOST[1]
+    let boost = 0
     let lit: number[] = []
     let frame = 0, last = 0
 
@@ -69,6 +69,7 @@ export function DotField({ strength }: { strength: number }) {
       dot = css.getPropertyValue('--dot-rgb').trim()
       accent = css.getPropertyValue('--accent-rgb').trim()
       rest = parseFloat(css.getPropertyValue('--dot-alpha')) || 0.08
+      boost = (BOOST[strength] ?? BOOST[1]) * (parseFloat(css.getPropertyValue('--dot-trail')) || 1)
     }
     // The resting grid: drawn once per size or look, never per frame.
     const drawGrid = () => {

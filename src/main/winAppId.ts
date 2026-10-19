@@ -33,25 +33,35 @@ export function winAppId(copy: WinCopy): string {
   return APP_IDS[copy]
 }
 
+const programs = (root: string) => join(root, 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+
+/** The per-user Start Menu, where Electron keeps its shortcut. */
 function startMenuShortcut(name: string): string {
-  return join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', `${name}.lnk`)
+  return join(programs(app.getPath('appData')), `${name}.lnk`)
+}
+
+/** Where an installed copy's shortcut can be: the per-user Start Menu, or the all-users one for 「为所有用户安装」. */
+function installedShortcuts(name: string): string[] {
+  return [startMenuShortcut(name), join(programs(process.env.ProgramData || 'C:\\ProgramData'), `${name}.lnk`)]
 }
 
 /**
  * The portable zip has the installer's product name, so the shortcut Electron would keep for it is
- * the installed app's own 「<name>.lnk」: rewriting it would point the Start Menu at the zip. While an
- * installed copy owns that shortcut, the zip leaves notifications alone, which never creates it.
+ * the installed app's own 「<name>.lnk」: rewriting it would point the Start Menu at the zip, and next
+ * to an all-users install it would add a second entry of the same name. While an installed copy owns
+ * either shortcut, the zip leaves notifications alone, which never creates one.
  */
 export function notificationsWouldTakeShortcut(copy: WinCopy, productName: string, exe = process.execPath): boolean {
   if (copy !== 'portable') return false
-  const lnk = startMenuShortcut(productName)
-  if (!existsSync(lnk)) return false
-  try {
-    const target = shell.readShortcutLink(lnk).target
-    return !!target && existsSync(target) && resolve(target).toLowerCase() !== resolve(exe).toLowerCase()
-  } catch {
-    return true
-  }
+  return installedShortcuts(productName).some((lnk) => {
+    if (!existsSync(lnk)) return false
+    try {
+      const target = shell.readShortcutLink(lnk).target
+      return !!target && existsSync(target) && resolve(target).toLowerCase() !== resolve(exe).toLowerCase()
+    } catch {
+      return true
+    }
+  })
 }
 
 /** A fixed activator for runs from source, so the shortcut written below stays valid from run to run. */
@@ -65,15 +75,21 @@ const SOURCE_TOAST_CLSID = '{5B0F7C1E-3A9D-4E62-9C1B-7F4D2E8A6C35}'
  * plus the fox icon and this checkout as the argument, leaves Electron nothing to change and makes
  * the entry open Fenn Code from source. It runs before anything can use notifications (the top of
  * app ready), since that is when Electron checks the shortcut.
+ *
+ * The entry opens the last build, so it is written only once there is one: `npm run dev` alone
+ * serves the pages from its dev server and builds none, and the checkout would open a blank window
+ * or Electron's 「Unable to find app」. Until then Electron keeps its own shortcut, as for any app.
  */
-export function prepareSourceShortcut(icon: string): void {
+export function prepareSourceShortcut(icon: string): boolean {
+  const checkout = app.getAppPath()
+  if (!['main/index.js', 'renderer/index.html'].every((f) => existsSync(join(checkout, 'out', f)))) return false
   app.setToastActivatorCLSID(SOURCE_TOAST_CLSID)
   const lnk = startMenuShortcut('Electron')
   mkdirSync(dirname(lnk), { recursive: true })
   // 'create' writes it whether or not it exists ('replace' does nothing on a fresh machine).
   shell.writeShortcutLink(lnk, 'create', {
     target: process.execPath,
-    args: `"${app.getAppPath()}"`,
+    args: `"${checkout}"`,
     cwd: dirname(process.execPath),
     description: 'Fenn Code (source)',
     appUserModelId: APP_IDS.source,
@@ -81,4 +97,5 @@ export function prepareSourceShortcut(icon: string): void {
     icon,
     iconIndex: 0
   })
+  return true
 }
