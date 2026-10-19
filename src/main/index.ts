@@ -491,6 +491,7 @@ ipcMain.on("oc:window", (_e, action: string) => {
 let materialTimer: NodeJS.Timeout | undefined;
 let glassShown: boolean | undefined;
 function applyWindowMaterial(settings: { theme?: string; glass?: boolean }): void {
+  followLook(settings);
   if (!win || !nativeGlass) return;
   const glass = !!settings.glass;
   clearTimeout(materialTimer);
@@ -501,6 +502,15 @@ function applyWindowMaterial(settings: { theme?: string; glass?: boolean }): voi
   }
   glassShown = glass;
   setWindowMaterial(settings);
+}
+
+/**
+ * The window's own parts (its frame and border on Windows, the glass material on macOS,
+ * native menus and dialogs) take the look chosen in the app, not only the system's.
+ */
+function followLook(settings: { theme?: string }): void {
+  const source = settings.theme === "light" ? "light" : settings.theme === "dark" || settings.theme === "glass" ? "dark" : "system";
+  if (nativeTheme.themeSource !== source) nativeTheme.themeSource = source;
 }
 
 function setWindowMaterial(settings: { theme?: string; glass?: boolean }): void {
@@ -520,6 +530,7 @@ function createWindow(): void {
   const isMac = process.platform === "darwin";
   // A window reopened from the Dock saves what is typed in its files on close and quit, like the first.
   editsFlushed = false;
+  followLook(store.settings);
   const area = screen.getPrimaryDisplay().workAreaSize;
   const width = Math.min(1440, area.width);
   const height = Math.min(900, area.height);
