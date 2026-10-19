@@ -551,6 +551,10 @@ function createWindow(): void {
       contextIsolation: true,
     },
   });
+  // The taskbar draws a button from its app id's shortcut, or else from the program file, which from
+  // source is electron.exe: a source run names the fox icon for its id itself.
+  if (process.platform === "win32" && !app.isPackaged)
+    win.setAppDetails({ appId: "dev.fenncode.desktop", appIconPath: join(resourcesDir, "icon.ico"), appIconIndex: 0 });
   applyWindowMaterial(store.settings);
   win.once("ready-to-show", () => win?.show());
   // Only web and mail links leave the app. Anything else (file:, a relative link resolved against the
