@@ -2,11 +2,24 @@
 .main {
   isolation: isolate;
 }
+/* Clips the glow, so its moving canvas never adds to anything's scroll area. */
+.dot-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
 .dot-field {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: -1;
-  pointer-events: none;
+}
+/* The glow: a small canvas over the grid that moves with the pointer, so a frame repaints only it. */
+.dot-glow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
 }

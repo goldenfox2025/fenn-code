@@ -13,24 +13,29 @@ const BANDS = 12
 
 /**
  * A faint grid of dots behind the content that lights up softly around the pointer.
- * One canvas: the resting grid is drawn once per size or look, and each frame redraws only
- * the patch around the pointer, in a few fills. Frames run only while the glow is moving, never when the
+ * The resting grid is one canvas drawn once per size or look; the glow is a small second
+ * canvas that follows the pointer, so a frame repaints only that patch, in a few fills. Frames run only while the glow is moving, never when the
  * window is hidden or out of focus, and with reduced motion the grid stays still.
  */
 export function DotField({ strength }: { strength: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const glowRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const canvas = ref.current
+    const glow = glowRef.current
     const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx) return
+    const gtx = glow?.getContext('2d')
+    if (!canvas || !glow || !ctx || !gtx) return
     const still = matchMedia('(prefers-reduced-motion: reduce)')
-    const grid = document.createElement('canvas')
     let w = 0, h = 0, dpr = 1
     let dot = '', accent = '', rest = 0
     // Where the glow is and where it is heading; level eases between 0 (gone) and 1.
     const at = { x: -1e4, y: -1e4, level: 0 }
     const to = { x: -1e4, y: -1e4, level: 0 }
     let frame = 0
+    // The glow canvas spans the pointer's reach plus a cell each side, and moves a whole cell at a time.
+    const cells = Math.ceil((REACH * 2) / PITCH) + 2
+    const span = cells * PITCH
 
     const readLook = () => {
       const css = getComputedStyle(canvas)
@@ -38,51 +43,41 @@ export function DotField({ strength }: { strength: number }) {
       accent = css.getPropertyValue('--accent-rgb').trim()
       rest = parseFloat(css.getPropertyValue('--dot-alpha')) || 0.08
     }
+    // The resting grid: drawn once per size or look, never per frame.
     const drawGrid = () => {
       const r = canvas.getBoundingClientRect()
       dpr = window.devicePixelRatio || 1
       w = r.width
       h = r.height
-      for (const c of [canvas, grid]) {
-        c.width = Math.round(w * dpr)
-        c.height = Math.round(h * dpr)
-      }
-      dirty = null
-      const g = grid.getContext('2d')!
-      g.setTransform(dpr, 0, 0, dpr, 0, 0)
-      g.beginPath()
-      g.fillStyle = `rgba(${dot}, ${rest})`
-      for (let y = PITCH / 2; y < h; y += PITCH)
-        for (let x = PITCH / 2; x < w; x += PITCH) g.rect(x - DOT / 2, y - DOT / 2, DOT, DOT)
-      g.fill()
-      paint(true)
-    }
-    // The part of the canvas the glow last covered, in CSS pixels; only that and the new one are redrawn.
-    let dirty: { x: number; y: number; w: number; h: number } | null = null
-    const restore = (r: { x: number; y: number; w: number; h: number }) => {
-      const x = Math.max(0, Math.floor(r.x * dpr)), y = Math.max(0, Math.floor(r.y * dpr))
-      const rw = Math.min(canvas.width, Math.ceil((r.x + r.w) * dpr)) - x
-      const rh = Math.min(canvas.height, Math.ceil((r.y + r.h) * dpr)) - y
-      if (rw <= 0 || rh <= 0) return
-      ctx.clearRect(x, y, rw, rh)
-      ctx.drawImage(grid, x, y, rw, rh, x, y, rw, rh)
-    }
-    const paint = (full = false) => {
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      if (full) restore({ x: 0, y: 0, w, h })
-      else if (dirty) restore(dirty)
-      dirty = null
-      if (at.level < 0.01) return
-      const pad = REACH + PITCH
-      dirty = { x: at.x - pad, y: at.y - pad, w: pad * 2, h: pad * 2 }
-      restore(dirty)
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+      glow.width = glow.height = Math.round(span * dpr)
+      glow.style.width = glow.style.height = `${span}px`
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.beginPath()
+      ctx.fillStyle = `rgba(${dot}, ${rest})`
+      for (let y = PITCH / 2; y < h; y += PITCH)
+        for (let x = PITCH / 2; x < w; x += PITCH) ctx.rect(x - DOT / 2, y - DOT / 2, DOT, DOT)
+      ctx.fill()
+      paint()
+    }
+    let shown = false
+    const paint = () => {
+      gtx.setTransform(1, 0, 0, 1, 0, 0)
+      gtx.clearRect(0, 0, glow.width, glow.height)
+      if (at.level < 0.01) {
+        if (shown) (glow.style.visibility = 'hidden'), (shown = false)
+        return
+      }
+      const ci = Math.floor((at.x - REACH) / PITCH) - 1, cj = Math.floor((at.y - REACH) / PITCH) - 1
+      const ox = ci * PITCH, oy = cj * PITCH
+      glow.style.transform = `translate3d(${ox}px, ${oy}px, 0)`
+      if (!shown) (glow.style.visibility = ''), (shown = true)
+      gtx.setTransform(dpr, 0, 0, dpr, -ox * dpr, -oy * dpr)
       // Dots of about the same strength share one path and one fill, so a frame is a few draw calls.
       const paths: Path2D[] = []
-      const x0 = Math.max(0, Math.floor((at.x - REACH) / PITCH)), x1 = Math.ceil((at.x + REACH) / PITCH)
-      const y0 = Math.max(0, Math.floor((at.y - REACH) / PITCH)), y1 = Math.ceil((at.y + REACH) / PITCH)
-      for (let j = y0; j <= y1; j++)
-        for (let i = x0; i <= x1; i++) {
+      for (let j = Math.max(0, cj); j < cj + cells; j++)
+        for (let i = Math.max(0, ci); i < ci + cells; i++) {
           const x = i * PITCH + PITCH / 2, y = j * PITCH + PITCH / 2
           if (x > w || y > h) continue
           const dx = at.x - x, dy = at.y - y
@@ -97,8 +92,8 @@ export function DotField({ strength }: { strength: number }) {
           ;(paths[band] ??= new Path2D()).rect(x + dx * lift - size / 2, y + dy * lift - size / 2, size, size)
         }
       paths.forEach((path, band) => {
-        ctx.fillStyle = `rgba(${accent}, ${Math.min(0.9, (band / (BANDS - 1)) * strength * 0.55)})`
-        ctx.fill(path)
+        gtx.fillStyle = `rgba(${accent}, ${Math.min(0.9, (band / (BANDS - 1)) * strength * 0.55)})`
+        gtx.fill(path)
       })
     }
     const tick = () => {
@@ -147,5 +142,10 @@ export function DotField({ strength }: { strength: number }) {
       document.removeEventListener('visibilitychange', away)
     }
   }, [strength])
-  return <canvas ref={ref} className="dot-field" aria-hidden />
+  return (
+    <div className="dot-layer" aria-hidden>
+      <canvas ref={ref} className="dot-field" />
+      <canvas ref={glowRef} className="dot-glow" style={{ visibility: 'hidden' }} />
+    </div>
+  )
 }
