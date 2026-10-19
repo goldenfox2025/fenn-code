@@ -28,7 +28,7 @@ export function App() {
   const fileView = useApp((s) => s.fileView)
   const platform = useApp((s) => s.platform)
   const toasts = useApp((s) => s.toasts)
-  const dotGrid = useApp((s) => s.settings.dotGrid ?? 0)
+  const dotGrid = useApp((s) => s.settings.dotGrid ?? 1)
   // Shown until the guide is finished or skipped, so leaving it half-way brings it back next time.
   const firstRun = useApp((s) => !s.settings.onboarded)
 

@@ -588,7 +588,7 @@ function AppearanceSettings() {
         <label>{t('点阵背景')}</label>
         <div className="seg-control">
           {([0, 1, 2] as const).map((n) => (
-            <button key={n} className={(dotGrid ?? 0) === n ? 'on' : ''} onClick={() => api().updateSettings({ dotGrid: n })}>
+            <button key={n} className={(dotGrid ?? 1) === n ? 'on' : ''} onClick={() => api().updateSettings({ dotGrid: n })}>
               {[t('关'), t('轻'), t('明显')][n]}
             </button>
           ))}
