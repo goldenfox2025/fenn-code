@@ -80,6 +80,9 @@ await check('thanks in a project chat shows the coordinator 👍 on the message'
 await check('the sidebar and the thread panel resize from their inner edge, remember it, reset on double-click, and the sidebar folds away when dragged narrow', async () => {
   const width = async (sel) => (await page.locator(sel).boundingBox()).width
   const drag = async (sel, dx, during) => {
+    // A pane that is still sliding in moves its handle away from where it was measured.
+    await page.locator(sel).locator('..').evaluate((el) =>
+      Promise.allSettled(el.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished)))
     const h = await page.locator(sel).boundingBox()
     const x = h.x + h.width / 2
     const y = h.y + 300
