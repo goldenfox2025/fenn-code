@@ -555,6 +555,8 @@ export type AppEvent =
   | { type: 'open-settings' }
   /** Output of a backend upgrade as it runs. */
   | { type: 'backend-upgrade'; backendId: string; line: string }
+  /** GPU compositing turned out to be on or off once the GPU process reported (AppInfo.softwareRendering). */
+  | { type: 'rendering'; softwareRendering: boolean }
 
 /** A tool server (MCP) the user adds once; every agent session gets it, whatever the backend. */
 export interface Connector {

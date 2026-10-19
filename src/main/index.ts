@@ -736,8 +736,16 @@ app.whenReady().then(async () => {
     });
   };
   // Without GPU compositing, backdrop blur makes scrolling choppy; the glass theme then skips it.
-  const compositing = String(app.getGPUFeatureStatus().gpu_compositing ?? "");
-  core.info.softwareRendering = !compositing.startsWith("enabled") && !process.env.FENN_FORCE_BLUR;
+  // At ready the GPU process may not have reported yet, so the answer is read again when it does.
+  const readCompositing = () => {
+    const compositing = String(app.getGPUFeatureStatus().gpu_compositing ?? "");
+    const software = !compositing.startsWith("enabled") && !process.env.FENN_FORCE_BLUR;
+    if (software === core.info.softwareRendering) return;
+    core.info.softwareRendering = software;
+    publish({ type: "rendering", softwareRendering: software });
+  };
+  readCompositing();
+  app.on("gpu-info-update", readCompositing);
   appMenu();
   createWindow();
   core.scheduler.start();

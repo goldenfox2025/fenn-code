@@ -166,7 +166,15 @@ function useTheme(theme: 'system' | 'light' | 'dark' | 'glass', glass: boolean) 
         })
     apply()
     mq.addEventListener('change', apply)
-    return () => mq.removeEventListener('change', apply)
+    const off = api().onEvent((e) => {
+      if (e.type !== 'rendering') return
+      softwareRendering = e.softwareRendering
+      root.classList.toggle('no-blur', softwareRendering)
+    })
+    return () => {
+      mq.removeEventListener('change', apply)
+      off()
+    }
   }, [theme, glass])
 }
 
