@@ -44,6 +44,7 @@ import { legacyMacKey, OLD_NAMES, repairSecrets } from "./store/secrets";
 import { resolveLang, setLang, t } from "../shared/i18n";
 import { Store } from "./store/Store";
 import { ToolServer } from "./tools/ToolServer";
+import { notificationsWouldTakeShortcut, prepareSourceShortcut, winAppId, winCopy } from "./winAppId";
 
 // Apps opened from the macOS Dock or a Linux launcher get a minimal PATH, so
 // agents installed with Homebrew, nvm or npm aren't found. Borrow the PATH the
@@ -108,7 +109,7 @@ function publish(e: AppEvent): void {
 
 const notifier = new Notifier({
   enabled: () =>
-    store.settings.notifications !== false && Notification.isSupported(),
+    store.settings.notifications !== false && !quietNotifications && Notification.isSupported(),
   focused: () => !!win?.isFocused(),
   project: (id) => store.project(id),
   onlyStartedThreads: (id) => {
@@ -553,8 +554,8 @@ function createWindow(): void {
   });
   // The taskbar draws a button from its app id's shortcut, or else from the program file, which from
   // source is electron.exe: a source run names the fox icon for its id itself.
-  if (process.platform === "win32" && !app.isPackaged)
-    win.setAppDetails({ appId: "dev.fenncode.desktop", appIconPath: join(resourcesDir, "icon.ico"), appIconIndex: 0 });
+  if (copy === "source")
+    win.setAppDetails({ appId: winAppId(copy), appIconPath: join(resourcesDir, "icon.ico"), appIconIndex: 0 });
   applyWindowMaterial(store.settings);
   win.once("ready-to-show", () => win?.show());
   // Only web and mail links leave the app. Anything else (file:, a relative link resolved against the
@@ -674,8 +675,11 @@ function appMenu(): void {
 
 // One running copy: a second launch just brings the window back.
 if (!app.requestSingleInstanceLock()) app.quit();
-// Notifications and the taskbar group under the installed app's id (the installer's shortcuts carry the same).
-if (process.platform === "win32") app.setAppUserModelId("dev.fenncode.desktop");
+// Notifications and the taskbar group under this copy's id: the installed app's is the one its installer's
+// shortcuts carry; the portable zip and a run from source have their own (see winAppId.ts).
+const copy = process.platform === "win32" ? winCopy(app.getName()) : undefined;
+if (copy) app.setAppUserModelId(winAppId(copy));
+const quietNotifications = !!copy && notificationsWouldTakeShortcut(copy, app.getName());
 app.on("second-instance", showWindow);
 
 /**
@@ -705,6 +709,7 @@ app.whenReady().then(async () => {
   // A packaged app takes its Dock icon from the bundle; one run from source would show Electron's.
   if (process.platform === "darwin" && !app.isPackaged)
     app.dock?.setIcon(nativeImage.createFromPath(join(import.meta.dirname, "../../build/icon.png")));
+  if (copy === "source") prepareSourceShortcut(join(resourcesDir, "icon.ico"));
   // Agents are looked for on the PATH: wait for the login shell's (it gives up by itself after 4 s).
   await loginPath;
   await adoptSystemProxy();
