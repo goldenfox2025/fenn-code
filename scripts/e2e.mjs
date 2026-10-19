@@ -203,9 +203,18 @@ await check('@ in the project chat picks a thread, the message goes straight the
   await page.click('.center .workspace > .center .composer textarea')
   await page.keyboard.type('@竞品')
   await page.waitForSelector('.mention-menu .menu-item.active:has-text("调研竞品定价")')
+  // Frames come late on a loaded machine (the Ubuntu runner): what is typed right after picking
+  // must stay in order, not be split by a caret put back a frame later.
+  await page.evaluate(() => {
+    const raf = (window.__raf = window.requestAnimationFrame)
+    window.requestAnimationFrame = (f) => raf(() => setTimeout(() => f(performance.now()), 150))
+  })
   await page.keyboard.press('Enter')
   await page.waitForSelector('.mention-chip:has-text("调研竞品定价")')
-  await page.keyboard.type('再加一家 D 公司')
+  await page.keyboard.type('再加一家 D 公司', { delay: 30 })
+  await page.evaluate(() => (window.requestAnimationFrame = window.__raf))
+  const typed = await page.inputValue('.center .workspace > .center .composer textarea')
+  if (typed !== '再加一家 D 公司') throw new Error('typed after picking: ' + JSON.stringify(typed))
   await page.keyboard.press('Enter')
   await page.waitForSelector('.thread-event.kind-forwarded:has-text("已转给「调研竞品定价」：再加一家 D 公司")', { timeout: 5000 })
   if (await page.locator('.mention-chip').count()) throw new Error('chip stayed after sending')

@@ -220,10 +220,9 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     sessionStorage.setItem(draftKey, next)
     setTarget({ id: th.id, title: th.title })
     setMention(null)
-    requestAnimationFrame(() => {
-      ta.current?.focus()
-      ta.current?.setSelectionRange(mention.start, mention.start)
-    })
+    // The caret goes where the @ was in the same render as the text, as for a picked command:
+    // set a frame later it would jump back over whatever was typed meanwhile.
+    caretTo.current = mention.start
   }
 
   // / opens the commands: the app's own (a sub-conversation, a thread) and the agent's.
