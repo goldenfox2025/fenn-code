@@ -1,7 +1,7 @@
 {
   "name": "fenn-code",
   "productName": "Fenn Code",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Fenn Code: an unofficial, Claude-style desktop app for ACP agents (chats, projects, threads, scheduled tasks). Not affiliated with Anthropic.",
   "author": "Fenn Code contributors",
   "homepage": "https://github.com/goldenfox2025/fenn-code#readme",
