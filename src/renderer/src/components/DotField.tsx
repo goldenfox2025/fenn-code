@@ -8,11 +8,25 @@ const REACH = 140
 const PULL = 2.5
 /** How long the glow takes to catch up with the pointer, and how long a lit dot takes to fade (seconds, 1/e). */
 const LAG = 0.09
-const FADE = [0, 0.22, 0.32]
+const FADE = [0, 0.32, 0.38]
 /** Steps of glow strength; dots in one step are filled together. */
-const BANDS = 12
+const BANDS = 16
+/** How much the fading end of the trail is lifted (below 1 lifts it). */
+const GAMMA = 0.6
+/** How much brighter the trail is drawn than the head, per strength; and how quickly a dot turns from one to the other (seconds). */
+const BOOST = [0, 1.6, 0.6]
+const TRAIL_EASE = 0.12
+const MAX_ALPHA = 0.9
 /** The glow canvas grows in steps of this many CSS pixels. */
 const GROW = 6 * PITCH
+
+/**
+ * How opaque a dot lit to `v` (0–1) is drawn. The head (v = 1) is as strong as ever; the lower end
+ * is lifted, so the trail stays visible as it fades, and eases to nothing at the very end.
+ */
+function glowAlpha(v: number, strength: number): number {
+  return Math.min(MAX_ALPHA, strength * 0.55 * Math.max(0, (v ** GAMMA - 0.1) / 0.9))
+}
 
 /**
  * A faint grid of dots behind the content that lights up softly around the pointer and
@@ -30,6 +44,8 @@ export function DotField({ strength }: { strength: number }) {
     const ctx = canvas?.getContext('2d')
     const gtx = glow?.getContext('2d')
     if (!canvas || !glow || !ctx || !gtx) return
+    // Nothing is lit yet: no backing store (a canvas starts at 300×150).
+    glow.width = glow.height = 0
     const still = matchMedia('(prefers-reduced-motion: reduce)')
     const fade = FADE[strength] ?? FADE[1]
     let w = 0, h = 0, dpr = 1, cols = 0, rows = 0
@@ -39,6 +55,12 @@ export function DotField({ strength }: { strength: number }) {
     const to = { x: -1e4, y: -1e4, level: 0 }
     // How lit each dot is (0–1), and the dots that are lit at all.
     let heat = new Float32Array(0)
+    // How much each lit dot counts as trail rather than head (0–1, eased), and the frame the head last
+    // held it: the trail is drawn brighter than the head, so it shows as it fades.
+    let trail = new Float32Array(0)
+    let heldAt = new Uint32Array(0)
+    let stamp = 0
+    const boost = BOOST[strength] ?? BOOST[1]
     let lit: number[] = []
     let frame = 0, last = 0
 
@@ -59,6 +81,8 @@ export function DotField({ strength }: { strength: number }) {
       cols = Math.ceil(w / PITCH)
       rows = Math.ceil(h / PITCH)
       heat = new Float32Array(cols * rows)
+      trail = new Float32Array(cols * rows)
+      heldAt = new Uint32Array(cols * rows)
       lit = []
       paint()
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -67,6 +91,8 @@ export function DotField({ strength }: { strength: number }) {
       for (let y = PITCH / 2; y < h; y += PITCH)
         for (let x = PITCH / 2; x < w; x += PITCH) ctx.rect(x - DOT / 2, y - DOT / 2, DOT, DOT)
       ctx.fill()
+      // A pointer resting over the area lights it again at once.
+      if (at.level > 0.01) wake()
     }
     // The head lights the dots within its reach; a dot keeps the brightest it has been and then fades.
     // Returns how many lit dots the head holds where they are (they stop changing once the head rests).
@@ -79,12 +105,14 @@ export function DotField({ strength }: { strength: number }) {
         for (let i = i0; i <= i1; i++) {
           const d = Math.hypot(at.x - (i * PITCH + PITCH / 2), at.y - (j * PITCH + PITCH / 2))
           if (d >= REACH) continue
-          // Smooth falloff: full at the pointer, nothing at the edge of its reach.
-          const f = (1 - d / REACH) ** 2 * at.level
+          // Smooth falloff: full at the pointer, nothing at the edge of its reach. Steeper than it
+          // shows, since glowAlpha lifts low values: around the head it reads as (1 - d / REACH)².
+          const f = (1 - d / REACH) ** (2 / GAMMA) * at.level
           const k = j * cols + i
           if (f >= heat[k] && f >= 0.02) {
             if (!heat[k]) lit.push(k)
             heat[k] = f
+            heldAt[k] = stamp
             held++
           }
         }
@@ -130,18 +158,18 @@ export function DotField({ strength }: { strength: number }) {
       const paths: Path2D[] = []
       for (const k of lit) {
         const v = heat[k]
-        const band = Math.round(v * (BANDS - 1))
+        const band = Math.min(BANDS - 1, Math.round((glowAlpha(v, strength) * (1 + boost * trail[k]) / MAX_ALPHA) * (BANDS - 1)))
         if (!band) continue
         const x = (k % cols) * PITCH + PITCH / 2, y = Math.floor(k / cols) * PITCH + PITCH / 2
         // Lit dots near the head lean toward it a little.
         const dx = at.x - x, dy = at.y - y
         const d = Math.hypot(dx, dy)
         const lift = d && d < REACH ? (PULL * v * (1 - d / REACH)) / d : 0
-        const size = DOT + v * strength * 0.9
+        const size = DOT + v * strength * 0.9 * (1 + boost * trail[k] * 0.5)
         ;(paths[band] ??= new Path2D()).rect(x + dx * lift - size / 2, y + dy * lift - size / 2, size, size)
       }
       paths.forEach((path, band) => {
-        gtx.fillStyle = `rgba(${accent}, ${Math.min(0.9, (band / (BANDS - 1)) * strength * 0.55)})`
+        gtx.fillStyle = `rgba(${accent}, ${(band / (BANDS - 1)) * MAX_ALPHA})`
         gtx.fill(path)
       })
     }
@@ -156,12 +184,22 @@ export function DotField({ strength }: { strength: number }) {
       at.level += (to.level - at.level) * follow
       const cool = Math.exp(-dt / fade)
       for (const k of lit) heat[k] *= cool
+      stamp++
       const held = warm()
-      lit = lit.filter((k) => heat[k] >= 0.02 || ((heat[k] = 0), false))
+      lit = lit.filter((k) => heat[k] >= 0.02 || ((heat[k] = trail[k] = 0), false))
+      // A dot the head has left turns to trail; one it comes back to turns to head again.
+      const shift = dt / TRAIL_EASE
+      let easing = false
+      for (const k of lit) {
+        if (heldAt[k] === stamp) {
+          trail[k] = Math.max(0, trail[k] - shift)
+          if (trail[k]) easing = true
+        } else trail[k] = Math.min(1, trail[k] + shift)
+      }
       paint()
       const moving = Math.abs(to.x - at.x) + Math.abs(to.y - at.y) > 0.3 || Math.abs(to.level - at.level) > 0.005
       // Once the head rests, only the trail behind it still changes; with that gone the frames stop.
-      if ((moving || lit.length > held) && !document.hidden) frame = requestAnimationFrame(tick)
+      if ((moving || easing || lit.length > held) && !document.hidden) frame = requestAnimationFrame(tick)
       else last = 0
     }
     const wake = () => {
@@ -171,6 +209,7 @@ export function DotField({ strength }: { strength: number }) {
         frame = last = 0
         at.level = to.level = 0
         heat.fill(0)
+        trail.fill(0)
         lit = []
         return paint()
       }
