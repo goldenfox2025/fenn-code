@@ -106,7 +106,14 @@ export function DotField({ strength }: { strength: number }) {
       if (moving && !document.hidden) frame = requestAnimationFrame(tick)
     }
     const wake = () => {
-      if (!frame && !still.matches) frame = requestAnimationFrame(tick)
+      // With reduced motion the glow is off: one that was lit goes out at once.
+      if (still.matches) {
+        cancelAnimationFrame(frame)
+        frame = 0
+        at.level = to.level = 0
+        return paint()
+      }
+      if (!frame) frame = requestAnimationFrame(tick)
     }
     const onMove = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect()
@@ -128,6 +135,16 @@ export function DotField({ strength }: { strength: number }) {
     // A change of look (颜色, 玻璃效果) changes the dots' colors.
     const mo = new MutationObserver(() => (readLook(), drawGrid()))
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    // Moving to a screen of another density keeps the CSS size, so the resize observer never hears of it.
+    let density: MediaQueryList | undefined
+    const onDensity = () => (drawGrid(), watchDensity())
+    const watchDensity = () => {
+      density?.removeEventListener('change', onDensity)
+      density = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+      density.addEventListener('change', onDensity)
+    }
+    watchDensity()
+    still.addEventListener('change', wake)
     window.addEventListener('pointermove', onMove, { passive: true })
     document.documentElement.addEventListener('pointerleave', away)
     window.addEventListener('blur', away)
@@ -136,6 +153,8 @@ export function DotField({ strength }: { strength: number }) {
       cancelAnimationFrame(frame)
       ro.disconnect()
       mo.disconnect()
+      density?.removeEventListener('change', onDensity)
+      still.removeEventListener('change', wake)
       window.removeEventListener('pointermove', onMove)
       document.documentElement.removeEventListener('pointerleave', away)
       window.removeEventListener('blur', away)
