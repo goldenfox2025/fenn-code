@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { BackendManager } from '../src/main/backends/BackendManager'
 import { loadPlugins } from '../src/main/backends/registry'
 import type { HostEvent } from '../src/shared/contract'
+import { until } from './helpers'
 
 function makeManager(events: HostEvent[]) {
   const store: Record<string, Record<string, string>> = {}
@@ -269,8 +270,7 @@ describe('what an agent reports beyond ACP usage (Grok) and what background chor
       await mgr.ask('chore', '你好')
       const s = await mgr.newSession('chore')
       await mgr.prompt('chore', s.sessionId, [{ type: 'text', text: '你好' }])
-      await new Promise((r) => setTimeout(r, 300))
-      const lines = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []
+      const lines = await until(() => existsSync(log) && readFileSync(log, 'utf8').trim().split('\n'))
       expect(lines).toHaveLength(1)
       expect(lines[0]).not.toContain(s.sessionId)
     } finally { await mgr.disposeAll() }

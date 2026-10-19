@@ -33,9 +33,8 @@ describe('long-running project', () => {
       const ref = store.conversation(cid)!.sessionRef
       if (ref) sessions.add(ref.sessionId)
     }
-    await new Promise((r) => setTimeout(r, 1500))
-    const hidden = store.messagesOf(cid).filter((m) => m.hidden)
-    expect(hidden.length).toBeGreaterThanOrEqual(4) // at least two memory flushes
+    // At least two memory flushes.
+    await until(() => store.messagesOf(cid).filter((m) => m.hidden && m.state !== 'streaming').length >= 4)
     expect(sessions.size).toBeGreaterThanOrEqual(2)
 
     // Hidden housekeeping never shows up as visible conversation.

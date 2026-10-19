@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { textOf } from '../src/main/core/ChatService'
-import { makeCore } from './helpers'
+import { makeCore, until } from './helpers'
 
 const lastReply = (store: any, id: string) =>
   textOf(store.messagesOf(id).filter((m: any) => m.role === 'assistant' && !m.hidden).pop())
@@ -27,9 +27,11 @@ describe('project memory', () => {
     const p = await core.createProject({ name: 'long', backendId: 'mock' })
     await core.chat.send(p.conversationId, '你好')
     // The housekeeping turn runs hidden right after.
-    await new Promise((r) => setTimeout(r, 1500))
+    const hidden = await until(() => {
+      const h = store.messagesOf(p.conversationId).filter((m) => m.hidden)
+      return h.length >= 2 && h.every((m) => m.state !== 'streaming') && h
+    })
     expect(core.memory.index(p.id)).toContain('交接前保存的要点')
-    const hidden = store.messagesOf(p.conversationId).filter((m) => m.hidden)
     expect(hidden.length).toBe(2)
     expect(store.conversation(p.conversationId)!.sessionRef).toBeUndefined()
 

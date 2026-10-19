@@ -13,8 +13,10 @@ describe('a reply the user stopped', () => {
         await until(() => t.store.messagesOf(conv.id).some((m) => m.role === 'assistant' && m.blocks.some((b) => b.type === 'text' && b.text.includes('它不以摧'))))
         await t.core.cancel(conv.id)
         await until(() => t.store.conversation(conv.id)?.status !== 'working')
-        await new Promise((r) => setTimeout(r, 200))
-        const reply = t.store.messagesOf(conv.id).filter((m) => m.role === 'assistant').pop()!
+        const reply = await until(() => {
+          const r = t.store.messagesOf(conv.id).filter((m) => m.role === 'assistant').pop()
+          return r?.state !== 'streaming' && r
+        })
         expect(reply.state).toBe('cancelled')
         expect(reply.error).toBeUndefined()
         const text = reply.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')

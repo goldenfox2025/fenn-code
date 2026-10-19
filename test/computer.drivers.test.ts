@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { until } from './helpers'
 import { desktopExec } from '../src/main/computer/linux'
 import { parseApp, WindowsDriverImpl } from '../src/main/computer/win'
 
@@ -66,7 +67,7 @@ describe('Windows input helper protocol', () => {
       expect((await driver.apps()).map((a) => a.id)).toEqual(['notepad', 'windowsterminal'])
       await expect(driver.open('画图')).rejects.toThrow('找不到名为「画图」的程序')
       expect(starts()).toBe(1)
-      await new Promise((r) => setTimeout(r, 100))
+      await until(() => log.length >= 4)
       expect(log[0]).toMatchObject({ op: 'click', x: 150, y: 300, b: 'right', n: 2, mods: ['ctrl'] })
       expect(Buffer.from(String(log[1].s), 'base64').toString('utf8')).toBe('你好 "quotes" \n {braces}')
       expect(log[2]).toMatchObject({ op: 'key', keys: ['ctrl', 'shift', 't'], n: 3, hold: 0 })
