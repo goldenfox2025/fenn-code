@@ -778,6 +778,7 @@ export const en: Record<string, string> = {
   "读取自 agent 的会话日志": "Read from the agent’s session log",
   "窗口大小来自模型上限表": "Window size from the model limit table",
   "上下文 已用 {0}": "Context: {0} used",
+  "agent 只报告了占用比例，没有报告 token 数": "The agent reports only how full the context is, not token counts",
   "不知道窗口大小，所以不显示百分比": "The window size is unknown, so no percentage is shown",
   "这个 agent 不提供用量": "This agent doesn’t report usage",
   "它没有报告 token 数，所以这里不显示数字。": "It reports no token counts, so no numbers are shown.",

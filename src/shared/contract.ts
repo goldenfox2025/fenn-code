@@ -71,6 +71,8 @@ export interface SessionContext {
   used?: number
   /** The window size, when the log says. */
   size?: number
+  /** How full the context is (0–1), when the log has only that (Qoder writes 0 tokens and a context_usage_ratio). */
+  share?: number
   model?: string
   /** The latest turn's usage, for agents that report it only in their log (Grok). */
   turn?: TurnUsage & { cost?: Cost }

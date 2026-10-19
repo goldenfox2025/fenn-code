@@ -48,11 +48,16 @@ export interface UsageTotals {
   /** The context window as last reported (conversations only). */
   contextUsed?: number
   contextSize?: number
-  /** Where contextUsed came from: the agent over ACP, or its own session log. */
+  /** How full the context is (0–1), for agents that report only that and no token counts (Qoder). */
+  contextShare?: number
+  /** Where contextUsed (or contextShare) came from: the agent over ACP, or its own session log. */
   contextSource?: 'agent' | 'log'
   /** Where contextSize came from; 'table' is the bundled model-limit table. */
   contextSizeSource?: 'agent' | 'log' | 'table'
 }
+
+/** No context figures: a new session, or another agent, starts empty. */
+export const noContext: Partial<UsageTotals> = { contextUsed: undefined, contextShare: undefined, contextSize: undefined, contextSource: undefined, contextSizeSource: undefined }
 
 export const emptyTotals = (): UsageTotals => ({ input: 0, output: 0, total: 0, turns: 0, unreported: 0 })
 

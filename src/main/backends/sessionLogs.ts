@@ -114,7 +114,8 @@ export function codexContext(lines: string[]): SessionContext | undefined {
 
 /**
  * Claude Code, and Qoder, which keeps the same log: the last main-thread assistant entry.
- * Its input does not include the cache, so the context is input plus cache reads and writes.
+ * Its input does not include the cache, so the context is input plus cache reads and writes;
+ * Qoder 1.1.72 writes 0 tokens there, and only the share of the window as context_usage_ratio.
  * The latest compact_boundary entry names the last compaction.
  */
 export function claudeContext(lines: string[]): SessionContext | undefined {
@@ -133,8 +134,12 @@ export function claudeContext(lines: string[]): SessionContext | undefined {
     const input = n(u?.input_tokens)
     if (input === undefined) continue
     const used = input + (n(u.cache_read_input_tokens) ?? 0) + (n(u.cache_creation_input_tokens) ?? 0)
+    const model = typeof x.message.model === 'string' ? x.message.model : undefined
+    // Qoder writes 0 tokens and only how full the context is (context_usage_ratio, 0–1).
+    const share = n(u.context_usage_ratio)
+    if (!used && share !== undefined && share > 0 && share <= 1) return { share, model, ...(compactionKey ? { compactionKey } : {}) }
     if (!used) continue
-    return { used, model: typeof x.message.model === 'string' ? x.message.model : undefined, ...(compactionKey ? { compactionKey } : {}) }
+    return { used, model, ...(compactionKey ? { compactionKey } : {}) }
   }
   return compactionKey ? { compactionKey } : undefined
 }

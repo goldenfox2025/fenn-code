@@ -118,3 +118,20 @@ describe('Qoder signed in after it started (replayed)', () => {
     }
   }, 60000)
 })
+
+describe('Qoder 1.1.72 on its free model (replayed)', () => {
+  it('fills the ring from the share of the window its log reports, with no token counts made up', async () => {
+    const { core, store, dispose } = await qoder({ QODER_STUB_VERSION: '1.1.72', QODER_STUB_ZERO: '1' })
+    try {
+      const conv = await core.startChat({ backendId: 'qoder', text: '你好' })
+      await settled(store, conv.id)
+      const u = store.conversation(conv.id)!.usage!
+      expect(u).toMatchObject({ contextShare: 0.124635, contextSource: 'log' })
+      expect(u.contextUsed).toBeUndefined()
+      expect(u.contextSize).toBeUndefined()
+    } finally {
+      delete process.env.QODER_STUB_ZERO
+      await dispose()
+    }
+  }, 60000)
+})

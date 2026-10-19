@@ -154,8 +154,9 @@ function Row({ label, value, note, tip }: { label: ReactNode; value?: ReactNode;
  */
 function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timing?: GenerationTiming }) {
   const hasCtx = u?.contextUsed !== undefined
+  const onlyShare = !hasCtx && u?.contextShare !== undefined
   const cost = u?.cost && u.cost.amount > 0 ? u.cost : undefined
-  if (!u || (!hasCtx && !cost && !timing))
+  if (!u || (!hasCtx && !onlyShare && !cost && !timing))
     return (
       <div className="usage-panel">
         <div className="usage-head">{scope}</div>
@@ -176,6 +177,13 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
             tip={from || undefined}
           />
           {u.contextSize ? <Meter label={t('上下文')} used={u.contextUsed!} total={u.contextSize} colored /> : <div className="usage-foot">{t('不知道窗口大小，所以不显示百分比')}</div>}
+        </div>
+      )}
+      {onlyShare && (
+        <div className="usage-section">
+          <Row label={t('上下文')} value={t('已用 {0}', percent(u.contextShare!, 1))} tip={from || undefined} />
+          <Meter label={t('上下文')} used={u.contextShare!} total={1} colored />
+          <div className="usage-foot">{t('agent 只报告了占用比例，没有报告 token 数')}</div>
         </div>
       )}
       {cost && (
@@ -350,31 +358,35 @@ export function ContextRing({ usage, scope, timing, onCompact }: { usage?: Usage
   const [menu, openMenu] = useMenu({ align: 'right', placement: 'auto', compact: true })
   const size = usage?.contextSize
   const used = usage?.contextUsed
-  const share = size && used !== undefined ? Math.max(0, Math.min(1, used / size)) : 0
+  // Tokens against the window, or the share an agent reports alone (Qoder).
+  const reported = used !== undefined ? (size ? used / size : undefined) : usage?.contextShare
+  const share = reported !== undefined ? Math.max(0, Math.min(1, reported)) : 0
   const title =
-    used === undefined
-      ? !usage || usage.turns + usage.unreported === 0
-        ? t('还没有用量')
-        : usage.turns > 0 && (usage.input || usage.output)
-          ? t('这个 agent 不报告上下文用量')
-          : t('这个 agent 不提供用量')
-      : size
+    used !== undefined
+      ? size
         ? t('上下文 {0} / {1}（{2}）', formatTokens(used), formatTokens(size), percent(used, size))
         : t('上下文 已用 {0}', formatTokens(used))
+      : usage?.contextShare !== undefined
+        ? t('上下文 已用 {0}', percent(usage.contextShare, 1))
+        : !usage || usage.turns + usage.unreported === 0
+          ? t('还没有用量')
+          : usage.turns > 0 && (usage.input || usage.output)
+            ? t('这个 agent 不报告上下文用量')
+            : t('这个 agent 不提供用量')
   // An arc around the ring, as far as the context is full; it turns amber, then red, and moves as the figure changes.
   const r = 6.4
   const length = 2 * Math.PI * r
   return (
     <>
       <button
-        className={'context-ring ' + tone(share) + (used === undefined ? ' none' : '')}
+        className={'context-ring ' + tone(share) + (used === undefined && usage?.contextShare === undefined ? ' none' : '')}
         data-tip={title}
         aria-label={title}
         onClick={(e) => {
           e.stopPropagation()
           // The agent's own compact command, when it has one, as Claude Code's /compact.
           // Nothing to compact before the first turn.
-          const something = !!used || (usage?.turns ?? 0) + (usage?.unreported ?? 0) > 0
+          const something = !!used || !!usage?.contextShare || (usage?.turns ?? 0) + (usage?.unreported ?? 0) > 0
           openMenu(e.currentTarget, [
             ...usageMenu(usage, scope, timing),
             ...(onCompact && something ? [{ separator: true }, { label: t('压缩上下文'), icon: <Minimize2 size={15} />, onClick: onCompact }] : [])

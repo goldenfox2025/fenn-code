@@ -103,9 +103,13 @@ async function prompt({ sessionId, prompt: blocks }) {
   const reply = text.includes('规则在哪') ? `本条消息：${rules}` : `好的，第 ${s.turns} 轮。`
   for (const piece of [reply.slice(0, 3), reply.slice(3)]) notify(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: piece } })
 
-  const input = 1200, cacheRead = s.context - 1200, output = 80
+  // QODER_STUB_ZERO: as 1.1.72 on its free "auto" model reports it on the PC: 0 tokens everywhere, and in its
+  // log only the share of the window (context_usage_ratio) and the credits the message cost.
+  const zero = !!process.env.QODER_STUB_ZERO
+  const input = zero ? 0 : 1200, cacheRead = zero ? 0 : s.context - 1200, output = zero ? 0 : 80
   log(s, { type: 'assistant', message: { model: s.model, role: 'assistant', content: [{ type: 'text', text: reply }],
-    usage: { input_tokens: input, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: 0, output_tokens: output } } })
+    usage: { input_tokens: input, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: 0, output_tokens: output,
+      ...(zero ? { service_tier: 'standard', credits: 0.47749054, original_credits: 0.47749054, billable: true, context_usage_ratio: 0.124635 } : {}) } } })
   return { stopReason: 'end_turn', userMessageId, usage: { inputTokens: input, outputTokens: output, totalTokens: input + output },
     _meta: { quota: { token_count: { input_tokens: input, output_tokens: output }, model_usage: [{ model: s.model, token_count: { input_tokens: input, output_tokens: output } }] } } }
 }

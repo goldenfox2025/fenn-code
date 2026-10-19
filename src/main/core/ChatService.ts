@@ -11,7 +11,7 @@ import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, Se
 import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
 import type { AppEvent, Attachment, Block, Conversation, Message, QueuedMessage, ReplyModel } from '../../shared/model'
-import { addTurn, emptyTotals, type MessageUsage, type UsageTotals } from '../../shared/usage'
+import { addTurn, emptyTotals, noContext, type MessageUsage, type UsageTotals } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import { t, tk } from '../../shared/i18n'
@@ -558,7 +558,7 @@ export class ChatService {
       const c = this.store.conversation(conversationId)
       if (c) this.patchConversation(conversationId, { usage: { ...addTurn(c.usage, usage), ...contextOf(c.usage) } })
     }
-    if (live && !live.reported && logged?.used !== undefined) this.setLoggedContext(conversationId, logged)
+    if (live && !live.reported && logged && (logged.used !== undefined || logged.share !== undefined)) this.setLoggedContext(conversationId, logged)
 
     if (live) live.chars += JSON.stringify(reply.blocks).length
     // If the save-memory turn failed, keep the session: rotating now would lose what it didn't save.
@@ -793,8 +793,8 @@ export class ChatService {
     // A new session starts with an empty context; the old session's figures no longer apply.
     if (fresh) {
       const u = this.store.conversation(conv.id)?.usage
-      if (u && (u.contextUsed !== undefined || u.contextSize !== undefined))
-        this.patchConversation(conv.id, { usage: { ...u, contextUsed: undefined, contextSize: undefined, contextSource: undefined, contextSizeSource: undefined } })
+      if (u && (u.contextUsed !== undefined || u.contextShare !== undefined || u.contextSize !== undefined))
+        this.patchConversation(conv.id, { usage: { ...u, ...noContext } })
     }
     this.live.set(conv.id, live)
     // A reopened session has said nothing yet: its own log shows how full it already is.
@@ -1317,18 +1317,23 @@ export class ChatService {
     if (!ctx || this.live.get(conversationId) !== live) return
     live.turnKey ??= ctx.turnKey
     live.compactionKey ??= ctx.compactionKey
-    if (ctx.used !== undefined && this.store.conversation(conversationId)?.usage?.contextSource !== 'agent') this.setLoggedContext(conversationId, ctx)
+    if ((ctx.used !== undefined || ctx.share !== undefined) && this.store.conversation(conversationId)?.usage?.contextSource !== 'agent') this.setLoggedContext(conversationId, ctx)
   }
 
   /** Context figures read from the agent's own log; a size the agent reported is kept. */
   private setLoggedContext(conversationId: string, ctx: SessionContext): void {
     const c = this.store.conversation(conversationId)
-    if (!c || ctx.used === undefined) return
+    if (!c) return
     const u = c.usage ?? emptyTotals()
+    // Only a share, no tokens: shown as it is, never turned into token counts.
+    if (ctx.used === undefined) {
+      if (ctx.share !== undefined) this.patchConversation(conversationId, { usage: { ...u, ...noContext, contextShare: ctx.share, contextSource: 'log' } })
+      return
+    }
     const size = ctx.size !== undefined
       ? { contextSize: ctx.size, contextSizeSource: 'log' as const }
       : u.contextSize !== undefined && u.contextSizeSource !== 'table' ? { contextSize: u.contextSize, contextSizeSource: u.contextSizeSource } : tableSize(ctx.model ?? c.modelId)
-    this.patchConversation(conversationId, { usage: { ...u, contextUsed: ctx.used, contextSource: 'log', contextSize: undefined, contextSizeSource: undefined, ...size } })
+    this.patchConversation(conversationId, { usage: { ...u, ...noContext, contextUsed: ctx.used, contextSource: 'log', ...size } })
   }
 
   private onAgentEvent(backendId: string, sessionId: string, event: AgentEvent): void {
@@ -1402,7 +1407,7 @@ export class ChatService {
           ? { contextSize: event.contextSize, contextSizeSource: 'agent' as const }
           : u.contextSize !== undefined ? { contextSize: u.contextSize, contextSizeSource: u.contextSizeSource } : tableSize(c.modelId)
         this.patchConversation(conversationId, {
-          usage: { ...u, contextUsed: event.contextUsed ?? u.contextUsed, contextSource: event.contextUsed !== undefined ? 'agent' : u.contextSource, ...size }
+          usage: { ...u, contextUsed: event.contextUsed ?? u.contextUsed, ...(event.contextUsed !== undefined ? { contextShare: undefined, contextSource: 'agent' as const } : {}), ...size }
         })
       }
       return
@@ -1754,7 +1759,7 @@ export function transcript(messages: Message[], maxChars = 24000, maxRecent = In
  */
 /** A conversation's context figures, carried over unchanged. */
 function contextOf(u: UsageTotals | undefined): Partial<UsageTotals> {
-  return u ? { contextUsed: u.contextUsed, contextSize: u.contextSize, contextSource: u.contextSource, contextSizeSource: u.contextSizeSource } : {}
+  return u ? { contextUsed: u.contextUsed, contextShare: u.contextShare, contextSize: u.contextSize, contextSource: u.contextSource, contextSizeSource: u.contextSizeSource } : {}
 }
 
 /** The window size from the bundled model-limit table, when the model is in it. */

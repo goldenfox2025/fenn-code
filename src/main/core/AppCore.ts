@@ -8,7 +8,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
 import { boardWidgetKey, type AppEvent, type AppSettings, type AppSnapshot, type Attachment, type BoardWidget, type Conversation, Message, NewChatOptions, Project, Routine, Schedule, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
-import { removeTurn } from '../../shared/usage'
+import { noContext, removeTurn } from '../../shared/usage'
 import { UsageCalendar } from './UsageCalendar'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
@@ -851,7 +851,7 @@ export class AppCore {
     this.chat.patchConversation(id, { backendId: nextBackendId, nextBackendId: undefined, sessionRef: undefined, models: undefined,
       modelId: this.store.settings.backendModelDefaults?.[nextBackendId], sessionOptions: undefined, optionValues: undefined, status: 'idle',
       // The ring shows the new agent's context, which starts empty.
-      usage: before.usage && { ...before.usage, contextUsed: undefined, contextSize: undefined, contextSource: undefined, contextSizeSource: undefined } })
+      usage: before.usage && { ...before.usage, ...noContext } })
     if (before.kind === 'project') {
       const project = this.store.project(before.projectId)
       if (project) {
