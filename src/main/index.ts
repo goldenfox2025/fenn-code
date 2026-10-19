@@ -698,6 +698,9 @@ async function adoptSystemProxy(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // A packaged app takes its Dock icon from the bundle; one run from source would show Electron's.
+  if (process.platform === "darwin" && !app.isPackaged)
+    app.dock?.setIcon(nativeImage.createFromPath(join(import.meta.dirname, "../../build/icon.png")));
   // Agents are looked for on the PATH: wait for the login shell's (it gives up by itself after 4 s).
   await loginPath;
   await adoptSystemProxy();
