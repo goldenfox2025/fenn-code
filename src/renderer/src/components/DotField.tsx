@@ -8,11 +8,13 @@ const REACH = 150
 const PULL = 2.5
 /** How quickly the glow follows the pointer and fades once it leaves (per frame, 0–1). */
 const FOLLOW = 0.18
+/** Steps of glow strength; dots in one step are filled together. */
+const BANDS = 12
 
 /**
  * A faint grid of dots behind the content that lights up softly around the pointer.
  * One canvas: the resting grid is drawn once per size or look, and each frame redraws only
- * the dots near the pointer. Frames run only while the glow is moving, never when the
+ * the patch around the pointer, in a few fills. Frames run only while the glow is moving, never when the
  * window is hidden or out of focus, and with reduced motion the grid stays still.
  */
 export function DotField({ strength }: { strength: number }) {
@@ -45,19 +47,38 @@ export function DotField({ strength }: { strength: number }) {
         c.width = Math.round(w * dpr)
         c.height = Math.round(h * dpr)
       }
+      dirty = null
       const g = grid.getContext('2d')!
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
+      g.beginPath()
       g.fillStyle = `rgba(${dot}, ${rest})`
       for (let y = PITCH / 2; y < h; y += PITCH)
-        for (let x = PITCH / 2; x < w; x += PITCH) g.fillRect(x - DOT / 2, y - DOT / 2, DOT, DOT)
-      paint()
+        for (let x = PITCH / 2; x < w; x += PITCH) g.rect(x - DOT / 2, y - DOT / 2, DOT, DOT)
+      g.fill()
+      paint(true)
     }
-    const paint = () => {
+    // The part of the canvas the glow last covered, in CSS pixels; only that and the new one are redrawn.
+    let dirty: { x: number; y: number; w: number; h: number } | null = null
+    const restore = (r: { x: number; y: number; w: number; h: number }) => {
+      const x = Math.max(0, Math.floor(r.x * dpr)), y = Math.max(0, Math.floor(r.y * dpr))
+      const rw = Math.min(canvas.width, Math.ceil((r.x + r.w) * dpr)) - x
+      const rh = Math.min(canvas.height, Math.ceil((r.y + r.h) * dpr)) - y
+      if (rw <= 0 || rh <= 0) return
+      ctx.clearRect(x, y, rw, rh)
+      ctx.drawImage(grid, x, y, rw, rh, x, y, rw, rh)
+    }
+    const paint = (full = false) => {
       ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      ctx.drawImage(grid, 0, 0)
+      if (full) restore({ x: 0, y: 0, w, h })
+      else if (dirty) restore(dirty)
+      dirty = null
       if (at.level < 0.01) return
+      const pad = REACH + PITCH
+      dirty = { x: at.x - pad, y: at.y - pad, w: pad * 2, h: pad * 2 }
+      restore(dirty)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      // Dots of about the same strength share one path and one fill, so a frame is a few draw calls.
+      const paths: Path2D[] = []
       const x0 = Math.max(0, Math.floor((at.x - REACH) / PITCH)), x1 = Math.ceil((at.x + REACH) / PITCH)
       const y0 = Math.max(0, Math.floor((at.y - REACH) / PITCH)), y1 = Math.ceil((at.y + REACH) / PITCH)
       for (let j = y0; j <= y1; j++)
@@ -69,11 +90,16 @@ export function DotField({ strength }: { strength: number }) {
           if (d >= REACH) continue
           // Smooth falloff: full at the pointer, nothing at the edge of its reach.
           const f = (1 - d / REACH) ** 2 * at.level
+          const band = Math.round(f * (BANDS - 1))
+          if (!band) continue
           const lift = d ? (PULL * f) / d : 0
           const size = DOT + f * strength * 0.9
-          ctx.fillStyle = `rgba(${accent}, ${Math.min(0.9, f * strength * 0.55)})`
-          ctx.fillRect(x + dx * lift - size / 2, y + dy * lift - size / 2, size, size)
+          ;(paths[band] ??= new Path2D()).rect(x + dx * lift - size / 2, y + dy * lift - size / 2, size, size)
         }
+      paths.forEach((path, band) => {
+        ctx.fillStyle = `rgba(${accent}, ${Math.min(0.9, (band / (BANDS - 1)) * strength * 0.55)})`
+        ctx.fill(path)
+      })
     }
     const tick = () => {
       frame = 0
