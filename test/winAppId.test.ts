@@ -18,7 +18,8 @@ const lnk = join(home, 'AppData', 'Microsoft', 'Windows', 'Start Menu', 'Program
 const copyAt = (dir: string, installed: boolean) => {
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'FennCode.exe'), '')
-  if (installed) writeFileSync(join(dir, 'Uninstall Fenn Code.exe'), '')
+  // electron-builder's NSIS names it after the program file (executableName), not the product name.
+  if (installed) writeFileSync(join(dir, 'Uninstall FennCode.exe'), '')
   return join(dir, 'FennCode.exe')
 }
 
@@ -27,9 +28,15 @@ describe('Windows app ids', () => {
   const portable = copyAt(join(home, 'Downloads', 'Fenn-Code-win'), false)
 
   it('tells the installed app, the portable zip and a run from source apart, each with its own id', () => {
-    expect(winCopy('Fenn Code', true, installed)).toBe('installed')
-    expect(winCopy('Fenn Code', true, portable)).toBe('portable')
-    expect(winCopy('Fenn Code', false, portable)).toBe('source')
+    expect(winCopy(true, installed)).toBe('installed')
+    expect(winCopy(true, portable)).toBe('portable')
+    expect(winCopy(false, portable)).toBe('source')
+    // A per-machine install is the same layout under Program Files.
+    expect(winCopy(true, copyAt(join(home, 'Program Files', 'FennCode'), true))).toBe('installed')
+    // An uninstaller named after the product, which electron-builder never writes, is not taken for one.
+    const misnamed = copyAt(join(home, 'Elsewhere'), false)
+    writeFileSync(join(home, 'Elsewhere', 'Uninstall Fenn Code.exe'), '')
+    expect(winCopy(true, misnamed)).toBe('portable')
     expect(winAppId('installed')).toBe('dev.fenncode.desktop')
     expect(new Set(['installed', 'portable', 'source'].map((c) => winAppId(c as never))).size).toBe(3)
   })

@@ -1,6 +1,6 @@
 import { app, shell } from 'electron'
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 
 /**
  * Windows groups taskbar buttons and notifications by app id. For notifications to work at all,
@@ -20,10 +20,13 @@ const APP_IDS: Record<WinCopy, string> = {
   source: 'dev.fenncode.desktop.dev'
 }
 
-/** The installer puts its uninstaller next to the program; the zip has none. */
-export function winCopy(productName: string, packaged = app.isPackaged, exe = process.execPath): WinCopy {
+/**
+ * The installer puts its uninstaller next to the program, named after the program file
+ * (「Uninstall FennCode.exe」, for a per-user or a per-machine install alike); the zip has none.
+ */
+export function winCopy(packaged = app.isPackaged, exe = process.execPath): WinCopy {
   if (!packaged) return 'source'
-  return existsSync(join(dirname(exe), `Uninstall ${productName}.exe`)) ? 'installed' : 'portable'
+  return existsSync(join(dirname(exe), `Uninstall ${basename(exe, extname(exe))}.exe`)) ? 'installed' : 'portable'
 }
 
 export function winAppId(copy: WinCopy): string {

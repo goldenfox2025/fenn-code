@@ -677,7 +677,7 @@ function appMenu(): void {
 if (!app.requestSingleInstanceLock()) app.quit();
 // Notifications and the taskbar group under this copy's id: the installed app's is the one its installer's
 // shortcuts carry; the portable zip and a run from source have their own (see winAppId.ts).
-const copy = process.platform === "win32" ? winCopy(app.getName()) : undefined;
+const copy = process.platform === "win32" ? winCopy() : undefined;
 if (copy) app.setAppUserModelId(winAppId(copy));
 const quietNotifications = !!copy && notificationsWouldTakeShortcut(copy, app.getName());
 app.on("second-instance", showWindow);
