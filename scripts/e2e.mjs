@@ -45,9 +45,19 @@ async function check(name, fn) {
     console.log('✓', name)
   } catch (e) {
     failed++
-    console.log('✗', name, '\n  ', String(e?.message ?? e).split('\n')[0])
+    // The first line, and for a wait the selector it waited for (Playwright's call log follows).
+    const lines = String(e?.message ?? e).split('\n')
+    console.log('✗', name, '\n  ', lines[0], ...(lines.find((l) => /waiting for/.test(l)) ? ['\n  ', lines.find((l) => /waiting for/.test(l)).trim()] : []))
   }
   if (shots) await page.screenshot({ path: join(shots, `e2e-${name.replace(/\W+/g, '-')}.png`) }).catch(() => {})
+}
+/** Opens the thread a forwarded line points to. The line moves when the thread card above it changes (its step line comes and goes as the thread works), so a click a move made miss is tried again. */
+const openForwarded = async (line) => {
+  await page.click(line)
+  for (let i = 0; i < 5 && !(await page.locator('.panel .thread-view').count()); i++) {
+    await page.waitForTimeout(300)
+    await page.click(line)
+  }
 }
 const send = async (text) => {
   await page.fill('.composer textarea', text)
@@ -200,7 +210,7 @@ await check('@ in the project chat picks a thread, the message goes straight the
   await page.waitForSelector('.thread-event.kind-forwarded:has-text("已转给「调研竞品定价」：再加一家 D 公司")', { timeout: 5000 })
   if (await page.locator('.mention-chip').count()) throw new Error('chip stayed after sending')
   if (await page.locator('.center .workspace > .center .msg-user:has-text("再加一家")').count()) throw new Error('the message also went to the coordinator')
-  await page.click('.thread-event.kind-forwarded')
+  await openForwarded('.thread-event.kind-forwarded')
   // It reaches the thread at once: waiting while the thread's first reply is still running (slow runners), then sent.
   await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司"), .panel .queue-row:has-text("再加一家 D 公司")', { timeout: 5000 })
   await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司")', { timeout: 30000 })
@@ -215,7 +225,7 @@ await check('a thread leaves another a message: a card on each side, where it we
   await page.keyboard.press('Enter')
   await page.keyboard.insertText('#留言 写发布说明 || now || || 定价结论：D 公司最便宜')
   await page.keyboard.press('Enter')
-  await page.click('.thread-event.kind-forwarded >> nth=-1')
+  await openForwarded('.thread-event.kind-forwarded >> nth=-1')
   const out = page.locator('.panel .peer-card.dir-out')
   await out.waitFor({ timeout: 15000 })
   if (!(await out.innerText()).includes('留言给「写发布说明」')) throw new Error('out card: ' + (await out.innerText()))
