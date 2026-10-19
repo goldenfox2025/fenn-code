@@ -142,9 +142,22 @@
   background: rgba(255, 255, 255, 0.12);
   background-clip: content-box;
 }
+/* The glow is a painted gradient, not a filter: on macOS a filtered layer over the window's
+   vibrancy can come out as a black square. */
 .glass-toggle.on {
+  position: relative;
   color: var(--accent);
-  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.6));
+}
+.glass-toggle.on::before {
+  content: '';
+  position: absolute;
+  inset: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: radial-gradient(closest-side, rgba(var(--accent-rgb), 0.3), transparent);
+  pointer-events: none;
+}
+.glass-toggle.on svg {
+  position: relative;
 }
 
 /* No GPU compositing: skip the blur, and make the panels a little more solid instead. */
