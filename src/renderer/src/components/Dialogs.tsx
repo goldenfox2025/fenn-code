@@ -561,6 +561,7 @@ function Diagnostics() {
 function AppearanceSettings() {
   const theme = useApp((s) => s.settings.theme)
   const glass = useApp((s) => !!s.settings.glass)
+  const dotGrid = useApp((s) => s.settings.dotGrid)
   return (
     <>
       <h2>{t('外观')}</h2>
@@ -582,6 +583,17 @@ function AppearanceSettings() {
           </div>
           <Switch on={glass} label={t('玻璃效果')} onChange={(next) => api().updateSettings({ glass: next })} />
         </div>
+      </div>
+      <div className="field">
+        <label>{t('点阵背景')}</label>
+        <div className="seg-control">
+          {([0, 1, 2] as const).map((n) => (
+            <button key={n} className={(dotGrid ?? 0) === n ? 'on' : ''} onClick={() => api().updateSettings({ dotGrid: n })}>
+              {[t('关'), t('轻'), t('明显')][n]}
+            </button>
+          ))}
+        </div>
+        <div className="help">{t('内容后面一层很淡的小点，鼠标经过时附近会微微亮起。')}</div>
       </div>
       <div className="field">
         <label>{t('语言')}</label>

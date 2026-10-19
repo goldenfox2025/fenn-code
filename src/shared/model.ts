@@ -447,6 +447,8 @@ export interface AppSettings {
   theme: 'system' | 'light' | 'dark' | 'glass'
   /** The frosted glass look, layered over the color scheme. */
   glass?: boolean
+  /** A faint dot grid behind the content that lights up near the pointer: 0 or unset off, 1 轻, 2 明显. */
+  dotGrid?: number
   /** Diagnostics: write every ACP message to logs/ in the data folder. Off by default. */
   acpDebugLog?: boolean
   /** UI language (Settings → 通用); 'system' follows the OS. */

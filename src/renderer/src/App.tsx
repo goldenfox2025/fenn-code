@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { CircleAlert, Minus, Orbit, PanelLeft, Square, X } from 'lucide-react'
 import { Dialogs } from './components/Dialogs'
+import { DotField } from './components/DotField'
 import { ConfirmHost } from './components/Modal'
 import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
@@ -27,6 +28,7 @@ export function App() {
   const fileView = useApp((s) => s.fileView)
   const platform = useApp((s) => s.platform)
   const toasts = useApp((s) => s.toasts)
+  const dotGrid = useApp((s) => s.settings.dotGrid ?? 0)
   // Shown until the guide is finished or skipped, so leaving it half-way brings it back next time.
   const firstRun = useApp((s) => !s.settings.onboarded)
 
@@ -63,6 +65,7 @@ export function App() {
     <div className="app">
       <Sidebar />
       <main className="main">
+        {!!dotGrid && <DotField strength={dotGrid} />}
         <div className="topbar drag">
           {!sidebarOpen && (
             <button
