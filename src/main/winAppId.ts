@@ -59,15 +59,19 @@ const SOURCE_TOAST_CLSID = '{5B0F7C1E-3A9D-4E62-9C1B-7F4D2E8A6C35}'
 
 /**
  * A run from source is electron.exe, whose product name is 「Electron」: Electron keeps
- * 「Electron.lnk」 for it, with electron.exe's atom as the icon, and the taskbar shows that. Writing
- * the same shortcut first, as Electron would but with the fox icon, leaves Electron nothing to change.
+ * 「Electron.lnk」 for it, with electron.exe's atom as the icon and no arguments, so the Start Menu
+ * entry opens Electron's own default app. Writing the same shortcut first, with the fields Electron
+ * checks (program, folder, app id, activator; ExistingShortcutValid compares no arguments or icon),
+ * plus the fox icon and this checkout as the argument, leaves Electron nothing to change and makes
+ * the entry open Fenn Code from source.
  */
 export function prepareSourceShortcut(icon: string): void {
   app.setToastActivatorCLSID(SOURCE_TOAST_CLSID)
   shell.writeShortcutLink(startMenuShortcut('Electron'), 'replace', {
     target: process.execPath,
+    args: `"${app.getAppPath()}"`,
     cwd: dirname(process.execPath),
-    description: 'Electron',
+    description: 'Fenn Code (source)',
     appUserModelId: APP_IDS.source,
     toastActivatorClsid: SOURCE_TOAST_CLSID,
     icon,
