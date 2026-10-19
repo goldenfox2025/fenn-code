@@ -235,15 +235,23 @@ try {
   const qoderCard = page.locator('.settings-body .card').filter({ has: page.locator('.title').getByText('Qoder', { exact: true }) })
   for (const [label, value] of [['Node 路径（用于 Qoder JS 入口）', process.execPath], ['Qoder CLI 路径', qoderEntry]]) {
     const field = qoderCard.locator('.field').filter({ has: page.locator('label').getByText(label, { exact: true }) })
+    // The field has no 保存 button: Enter (or leaving it) saves, as in the app's other settings.
     await field.locator('input').fill(value)
-    await field.getByRole('button', { name: '保存', exact: true }).scrollIntoViewIfNeeded()
+    await field.scrollIntoViewIfNeeded()
     const editing = await field.boundingBox()
-    await field.getByRole('button', { name: '保存', exact: true }).click()
+    await field.locator('input').press('Enter')
     await field.getByRole('button', { name: '修改', exact: true }).waitFor()
     // The account line refreshes after a save; it must not nudge the field either.
     await page.waitForTimeout(800)
-    assert.deepEqual(await field.boundingBox(), editing, 'Saving backend settings must preserve field geometry')
+    // Once the CLI is found and signed in, its raw settings fold under 高级设置, as for any working agent.
+    if (label === 'Qoder CLI 路径') break
+    assert.deepEqual(await field.boundingBox(), editing, `Saving ${label} must preserve field geometry`)
   }
+  const advanced = qoderCard.locator('details.backend-advanced')
+  await advanced.waitFor()
+  assert.equal(await advanced.evaluate((d) => d.open), false, 'A signed-in agent keeps its raw settings folded')
+  await advanced.locator('summary').click()
+  assert.equal(await advanced.locator('.field').filter({ hasText: '已设置' }).count(), 2, 'Both saved paths show as set under 高级设置')
   assert.deepEqual(await page.evaluate(() => window.fenn.backendAccount('qoder')), {
     installed: true, signedIn: true, version: 'packaged-fixture', detail: 'qodercli packaged-fixture'
   })
@@ -299,7 +307,11 @@ try {
   // Token usage lives in the composer's ring; the header only shows account credits.
   assert.equal(await page.locator('.chat-header .usage-btn').count(), 0)
   await page.locator('.composer .context-ring').click()
-  assert.match(await page.locator('.menu').innerText(), /新输入\n[\d,.k]+\n输出/)
+  // The ring's panel keeps the context and the cost as reported (its per-kind rows went in the leaner panel);
+  // the reply's own line keeps its input and output.
+  assert.match(await page.locator('.menu').innerText(), /上下文\n[\d,.k]+ \/ [\d,.k]+/)
+  assert.match(await page.locator('.menu').innerText(), /费用\n按标价估算\n\$[\d.]+/)
+  assert.match(await page.locator('.msg-usage').last().innerText(), /输入 [\d,.k]+ · 输出 [\d,.k]+/)
   assert(!/未提供/.test(await page.locator('.menu').innerText()))
   await page.keyboard.press('Escape')
   console.log('Other agents retain reported tokens and costs, without an invented account quota')
@@ -316,7 +328,7 @@ try {
     const panel = page.locator('.menu')
     await panel.waitFor()
     assert(!/费用|未提供/.test(await panel.innerText()))
-    assert.match(await panel.innerText(), /平均每个 token/)
+    assert.match(await panel.innerText(), /输出速度\n[\d.]+ tok\/s\n每个 token\n[\d.]+ (毫秒|秒)/)
     assert.match(await page.locator('.msg-usage').getAttribute('data-tip'), /平均每个 token/)
     assert.equal(await panel.getByRole('meter', { name: '上下文', exact: true }).getAttribute('aria-valuemax'), '200000')
     const layout = await panel.evaluate((el) => {
@@ -392,6 +404,9 @@ try {
     const modal = page.locator('.modal').filter({ has: page.getByRole('heading', { name: '新建项目', exact: true }) })
     const field = (label) => modal.locator('.field').filter({ has: page.locator('label').getByText(label, { exact: true }) })
     const instructions = field('项目指令').locator('textarea')
+    // Measured once the dialog has finished rising in (its entrance scales it from 98%); an animation
+    // cancelled meanwhile (its element went) counts as over.
+    await page.evaluate(() => Promise.allSettled(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished)))
     const initial = await instructions.boundingBox()
     await instructions.fill('项目指令 Project instructions\n保持一致的位置和间距。')
     const filled = await instructions.boundingBox()
