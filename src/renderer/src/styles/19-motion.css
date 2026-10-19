@@ -28,6 +28,9 @@ a,
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(6px) scale(0.98); }
 }
+@keyframes fade-out {
+  to { opacity: 0; }
+}
 @keyframes slide-in {
   from { opacity: 0; transform: translateX(12px); }
 }

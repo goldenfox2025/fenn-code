@@ -1109,9 +1109,36 @@ await check('approvals come one at a time, each in the place of the last', async
     if (!left) break
     await page.waitForSelector('.perm', { timeout: 3000 })
     const after = (await page.locator('.perm-slot').boundingBox()).y
-    if (Math.abs(after - before) > 30) throw new Error(`the next card moved ${Math.round(after - before)}px`)
+    if (Math.abs(after - before) > 2) throw new Error(`the next card moved ${Math.round(after - before)}px`)
   }
   await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
+})
+
+await check('an answered card fades in its place, and a request that follows a while later rises into the same place', async () => {
+  await page.click('.sidebar .nav-item:has-text("新建")')
+  await page.locator('.composer-row .backend-chip').click()
+  await page.locator('.menu .menu-item', { hasText: '演示 Agent' }).click()
+  await page.fill('.composer textarea', '慢慢写三次')
+  await page.keyboard.press('Enter')
+  const top = async (sel) => (await page.locator(sel).boundingBox())?.y
+  for (let k = 0; k < 3; k++) {
+    await page.waitForSelector('.perm:not(.leaving)', { timeout: 5000 })
+    const name = await page.locator('.perm:not(.leaving)').evaluate((e) => getComputedStyle(e).animationName)
+    if (name !== 'rise-in') throw new Error(`card ${k + 1} comes in with "${name}"`)
+    await page.waitForTimeout(300)
+    const before = await top('.perm-slot')
+    await page.click('.perm .btn.primary')
+    if (k === 2) break
+    // The agent runs the tool before it asks again: meanwhile the place stays where it was.
+    await page.waitForSelector('.perm.leaving', { state: 'detached', timeout: 2000 })
+    const held = await top('.perm-slot')
+    if (held === undefined || Math.abs(held - before) > 2) throw new Error(`while waiting for the next request the place ${held === undefined ? 'closed' : `moved ${Math.round(held - before)}px`}`)
+    await page.waitForSelector('.perm:not(.leaving)', { timeout: 5000 })
+    const after = await top('.perm-slot')
+    if (Math.abs(after - before) > 2) throw new Error(`card ${k + 2} landed ${Math.round(after - before)}px away`)
+  }
+  // Once the turn is over, the place closes.
+  await page.waitForSelector('.perm-slot', { state: 'detached', timeout: 20000 })
 })
 
 await check('the new-chat page shows usage widgets that can be removed and brought back', async () => {

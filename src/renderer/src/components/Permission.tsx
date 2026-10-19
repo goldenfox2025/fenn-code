@@ -1,5 +1,5 @@
 import { ShieldQuestion } from 'lucide-react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { PermissionRequest } from '../../../shared/contract'
 import { api, useApp } from '../store'
@@ -13,66 +13,91 @@ const TIERS: { id: Tier; label: string }[] = [
   { id: 'none', label: '不允许' } // i18n-ignore
 ]
 
-/** How long an answered request's place is kept for the next one (agents often ask several in a row). */
-const HOLD_MS = 400
+/** While the agent works on, how long an answered request's place is kept for its next one. */
+const HOLD_MS = 1500
 
 /**
  * This conversation's permission requests, one at a time, oldest first, with how many more wait.
- * After an answer the card's place is held a moment, so a next request lands where it was
- * and the conversation above doesn't jump.
+ * A card rises in; an answered one fades out where it was. Through a run of requests the slot
+ * keeps the top of its tallest card, so each next card lands in the same place and the
+ * conversation above doesn't move; once no next request comes, the place closes smoothly.
  */
 export function PermissionPrompts({ conversationId }: { conversationId: string }) {
   const queue = useApp(useShallow((s) => s.permissions.filter((p) => p.conversationId === conversationId)))
-  const current = queue[0]
+  // The turn goes on (it reads as waiting while a request is open): a next request may follow.
+  const working = useApp((s) => ['working', 'waiting'].includes(s.conversations.find((c) => c.id === conversationId)?.status ?? ''))
+  const current = queue[0]?.request
+  const shown = current?.requestId
 
-  const box = useRef<HTMLDivElement>(null)
-  const height = useRef(0)
-  const [hold, setHold] = useState<{ height: number; closing?: boolean } | null>(null)
-  const shown = current?.request.requestId
+  const stack = useRef<HTMLDivElement>(null)
+  const last = useRef<PermissionRequest | undefined>(undefined)
+  // The tallest card of this run: the slot's height floor, so a shorter next card keeps the same top.
+  const [floor, setFloor] = useState(0)
+  const [leaving, setLeaving] = useState<PermissionRequest | undefined>(undefined)
+  const [closing, setClosing] = useState(false)
+
   useLayoutEffect(() => {
-    const el = box.current
-    if (shown && el) {
-      setHold(null)
-      // Its height as last drawn: that is the place to keep once it goes.
-      const ro = new ResizeObserver(() => (height.current = el.offsetHeight))
+    if (current) {
+      last.current = current
+      setLeaving(undefined)
+      setClosing(false)
+      const el = stack.current
+      if (!el) return
+      const ro = new ResizeObserver(() => setFloor((f) => Math.max(f, el.offsetHeight)))
       ro.observe(el)
       return () => ro.disconnect()
     }
-    if (!height.current) return
-    setHold({ height: height.current })
-    height.current = 0
-    const close = setTimeout(() => setHold({ height: 0, closing: true }), HOLD_MS)
-    return () => clearTimeout(close)
+    if (!last.current) return
+    // Answered: the card fades out in its place.
+    setLeaving(last.current)
+    last.current = undefined
   }, [shown])
 
-  // The held place closes with its CSS transition (--dur-2) and goes once that has run.
-  if (!current)
-    return hold ? (
-      <div
-        className={'perm-hold' + (hold.closing ? ' closing' : '')}
-        style={{ height: hold.height }}
-        onTransitionEnd={() => hold.closing && setHold(null)}
-      />
-    ) : null
+  // Its place is kept a while for a next request while the agent works on, then closes.
+  const idle = !current && !leaving && floor > 0
+  useEffect(() => {
+    if (!idle) return
+    if (!working) return setClosing(true)
+    const close = setTimeout(() => setClosing(true), HOLD_MS)
+    return () => clearTimeout(close)
+  }, [idle, working])
+
+  if (!current && !leaving && !floor) return null
   return (
-    <div className="perm-slot" ref={box}>
-      <Prompt key={current.request.requestId} r={current.request} />
-      {queue.length > 1 && <div className="perm-more">{t('还有 {0} 个等您确认', queue.length - 1)}</div>}
+    <div
+      className={'perm-slot' + (closing ? ' closing' : '')}
+      style={{ minHeight: closing ? 0 : floor }}
+      // The place has closed (its min-height transition, --dur-2): the next run starts afresh.
+      onTransitionEnd={(e) => e.target === e.currentTarget && closing && (setFloor(0), setClosing(false))}
+    >
+      <div className="perm-stack" ref={stack}>
+        {current ? (
+          <Prompt key={current.requestId} r={current} more={queue.length - 1} />
+        ) : (
+          leaving && <Prompt key={leaving.requestId + ':out'} r={leaving} more={0} leaving onGone={() => setLeaving(undefined)} />
+        )}
+      </div>
     </div>
   )
 }
 
-function Prompt({ r }: { r: PermissionRequest }) {
+function Prompt({ r, more, leaving, onGone }: { r: PermissionRequest; more: number; leaving?: boolean; onGone?: () => void }) {
   const [tiers, setTiers] = useState<Record<string, Tier>>(() => Object.fromEntries((r.apps ?? []).map((a) => [a.key, a.tier])))
   const allowedAny = Object.values(tiers).some((v) => v !== 'none')
   const answer = (id: string, kind: string) =>
     r.apps && kind.startsWith('allow') ? `${id}:${JSON.stringify(tiers)}` : id
   return (
-    <div className="perm">
+    <div
+      className={'perm' + (leaving ? ' leaving' : '')}
+      inert={leaving}
+      onAnimationEnd={(e) => leaving && e.target === e.currentTarget && onGone?.()}
+    >
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 500 }}>
         <ShieldQuestion size={16} style={{ color: 'var(--amber)' }} />
         {t('需要您的许可：')}
         {r.title}
+        {/* In the card, so the count going away doesn't change the slot's height. */}
+        {more > 0 && <span className="perm-more">{t('还有 {0} 个等您确认', more)}</span>}
       </div>
       {r.detail && <div className={'detail' + (r.apps ? ' prose' : '')}>{r.detail}</div>}
       {r.apps && (

@@ -966,7 +966,11 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     });
     const results = [];
     if (/同时写三个/.test(text)) results.push(...(await Promise.all([0, 1, 2].map(ask))));
-    else for (let i = 0; i < (/写三次/.test(text) ? 3 : 1); i++) results.push(await ask(i));
+    // 「慢慢写三次」: each next ask comes a while after the answer, as a real agent's tool runs first.
+    else for (let i = 0; i < (/写三次/.test(text) ? 3 : 1); i++) {
+      if (i && /慢慢/.test(text)) await sleep(1200);
+      results.push(await ask(i));
+    }
     const ok = results.every((res) => res?.outcome?.outcome === "selected" && (res.outcome.optionId === "allow" || res.outcome.optionId === "always"));
     await stream(
       sessionId,
