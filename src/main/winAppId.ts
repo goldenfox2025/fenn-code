@@ -1,5 +1,5 @@
 import { app, shell } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 
 /**
@@ -63,11 +63,15 @@ const SOURCE_TOAST_CLSID = '{5B0F7C1E-3A9D-4E62-9C1B-7F4D2E8A6C35}'
  * entry opens Electron's own default app. Writing the same shortcut first, with the fields Electron
  * checks (program, folder, app id, activator; ExistingShortcutValid compares no arguments or icon),
  * plus the fox icon and this checkout as the argument, leaves Electron nothing to change and makes
- * the entry open Fenn Code from source.
+ * the entry open Fenn Code from source. It runs before anything can use notifications (the top of
+ * app ready), since that is when Electron checks the shortcut.
  */
 export function prepareSourceShortcut(icon: string): void {
   app.setToastActivatorCLSID(SOURCE_TOAST_CLSID)
-  shell.writeShortcutLink(startMenuShortcut('Electron'), 'replace', {
+  const lnk = startMenuShortcut('Electron')
+  mkdirSync(dirname(lnk), { recursive: true })
+  // 'create' writes it whether or not it exists ('replace' does nothing on a fresh machine).
+  shell.writeShortcutLink(lnk, 'create', {
     target: process.execPath,
     args: `"${app.getAppPath()}"`,
     cwd: dirname(process.execPath),

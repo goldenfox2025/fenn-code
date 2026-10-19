@@ -5,14 +5,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 const home = mkdtempSync(join(tmpdir(), 'oc-appid-'))
 const links = new Map<string, string>()
+const written: { path: string; op: string; opts: Record<string, unknown> }[] = []
 vi.mock('electron', () => ({
-  app: { isPackaged: true, getPath: () => join(home, 'AppData'), setToastActivatorCLSID: () => undefined },
+  app: { isPackaged: true, getPath: () => join(home, 'AppData'), getAppPath: () => join(home, 'checkout'), setToastActivatorCLSID: () => undefined },
   shell: {
     readShortcutLink: (p: string) => ({ target: links.get(p) ?? '' }),
-    writeShortcutLink: () => true
+    writeShortcutLink: (path: string, op: string, opts: Record<string, unknown>) => (written.push({ path, op, opts }), true)
   }
 }))
-const { notificationsWouldTakeShortcut, winAppId, winCopy } = await import('../src/main/winAppId')
+const { notificationsWouldTakeShortcut, prepareSourceShortcut, winAppId, winCopy } = await import('../src/main/winAppId')
 
 const lnk = join(home, 'AppData', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Fenn Code.lnk')
 const copyAt = (dir: string, installed: boolean) => {
@@ -54,5 +55,24 @@ describe('Windows app ids', () => {
     expect(notificationsWouldTakeShortcut('portable', 'Fenn Code', portable)).toBe(false)
     links.set(lnk, join(home, 'gone', 'FennCode.exe'))
     expect(notificationsWouldTakeShortcut('portable', 'Fenn Code', portable)).toBe(false)
+  })
+
+  it('writes the source run’s shortcut even where none exists yet, opening this checkout with the fox icon', () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'oc-appid-fresh-'))
+    const before = home
+    void before
+    prepareSourceShortcut('C:/fenn/resources/icon.ico')
+    const w = written.at(-1)!
+    // 'replace' would fail on a missing file and leave Electron to write its own.
+    expect(w.op).toBe('create')
+    expect(w.path.endsWith(join('Start Menu', 'Programs', 'Electron.lnk'))).toBe(true)
+    expect(w.opts).toMatchObject({
+      target: process.execPath,
+      args: `"${join(home, 'checkout')}"`,
+      appUserModelId: winAppId('source'),
+      icon: 'C:/fenn/resources/icon.ico'
+    })
+    expect(w.opts.toastActivatorClsid).toMatch(/^\{[0-9A-F-]{36}\}$/)
+    void fresh
   })
 })
