@@ -7,11 +7,11 @@ import { makeCore, until } from './helpers'
 const THREAD_CAP = 5200
 
 // What the agent really gets: the app's tools/list over MCP, with every source wired (computer control too).
-async function toolsList(core: any, id: string): Promise<{ chars: number; names: string[] }> {
+async function toolsList(core: any, id: string): Promise<{ json: string; names: string[] }> {
   const { url } = core.orchestrator.tools.endpoint(id, () => core.orchestrator.toolsFor(id))
   const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) })
   const tools = ((await res.json()) as any).result.tools as { name: string }[]
-  return { chars: JSON.stringify(tools).length, names: tools.map((t) => t.name) }
+  return { json: JSON.stringify(tools), names: tools.map((t) => t.name) }
 }
 
 it('a thread starts with a short prompt and only the tools its task needs', async () => {
@@ -21,9 +21,11 @@ it('a thread starts with a short prompt and only the tools its task needs', asyn
     const o = (core as any).orchestrator
     const th = o.startThread(p, '竞品定价调研', '用户原话：调研竞品定价')
     await until(() => store.conversation(th.id)?.status !== 'working', 20000)
+    // The folder paths in it are as long as the machine makes them (macOS's temp folder is long): counted as one short name.
+    const short = (s: string) => s.split(p.cwd ?? '<none>').join('<cwd>').split(store.dir).join('<dir>')
     const pre: string = o.preamble(store.conversation(th.id), false)
     const list = await toolsList(core, th.id)
-    expect(pre.length + list.chars).toBeLessThanOrEqual(THREAD_CAP)
+    expect(short(pre).length + short(list.json).length).toBeLessThanOrEqual(THREAD_CAP)
     for (const name of ['progress_update', 'create_routine', 'set_title', 'react']) expect(list.names).not.toContain(name)
     // Computer control's tools come only once the user turns it on.
     expect(list.names.some((n) => n.startsWith('computer_'))).toBe(false)

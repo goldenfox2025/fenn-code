@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { inUse, moveAppData } from '../src/main/store/migrateFolder'
+import { link } from './links'
 
 function old() {
   const base = mkdtempSync(join(tmpdir(), 'mig-'))
@@ -24,11 +25,12 @@ describe('moving the data from the old name', () => {
     expect(existsSync(from)).toBe(false)
   })
 
-  it('leaves it all where it is while an old copy runs on it', () => {
+  it('leaves it all where it is while an old copy runs on it', (ctx) => {
     const { from, to } = old()
-    symlinkSync(`${hostname()}-${process.pid}`, join(from, 'SingletonLock'))
-    expect(inUse(from)).toBe(true)
-    expect(moveAppData(from, to)).toBe(false)
+    // How Electron marks it on macOS and Linux (Windows holds a lockfile instead: the next test).
+    link(ctx, `${hostname()}-${process.pid}`, join(from, 'SingletonLock'))
+    expect(inUse(from, 'linux')).toBe(true)
+    expect(moveAppData(from, to, 'linux')).toBe(false)
     expect(existsSync(join(from, 'data', 'state.json'))).toBe(true)
     expect(existsSync(join(to, 'Local State'))).toBe(false)
   })

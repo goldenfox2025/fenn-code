@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspaces, isInside, type AccessDecision } from '../src/main/backends/workspace'
+import { link } from './links'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'oc-ws-'))
 // The user's answer to each question, by its detail.
@@ -65,13 +66,13 @@ describe('working folder', () => {
 })
 
 describe('symlinks in the working folder', () => {
-  it('asks before reading or writing through a link that points outside', async () => {
-    const { symlinkSync, mkdirSync } = await import('node:fs')
+  it('asks before reading or writing through a link that points outside', async (ctx) => {
+    const { mkdirSync } = await import('node:fs')
     const root = tmp()
     const outsideDir = tmp()
     writeFileSync(join(outsideDir, 'secret.txt'), 'x')
-    symlinkSync(outsideDir, join(root, 'link'), 'dir')
-    symlinkSync(join(outsideDir, 'secret.txt'), join(root, 'file-link'))
+    link(ctx, outsideDir, join(root, 'link'), 'dir')
+    link(ctx, join(outsideDir, 'secret.txt'), join(root, 'file-link'))
     mkdirSync(join(root, 'sub'))
     const asked: string[] = []
     const ws = new Workspaces(ask((d) => (asked.push(d), false)))
@@ -89,11 +90,10 @@ describe('symlinks in the working folder', () => {
     expect(asked).toHaveLength(5)
   })
 
-  it('works when the folder itself is reached through a link', async () => {
-    const { symlinkSync } = await import('node:fs')
+  it('works when the folder itself is reached through a link', async (ctx) => {
     const real = tmp()
     const alias = join(tmp(), 'alias')
-    symlinkSync(real, alias, 'dir')
+    link(ctx, real, alias, 'dir')
     const ws = new Workspaces(ask(() => false))
     ws.setRoot('s1', alias)
     await ws.writeTextFile('s1', 'a.txt', 'ok')
@@ -102,15 +102,15 @@ describe('symlinks in the working folder', () => {
 })
 
 describe('dangling symlinks', () => {
-  it('asks before writing through a link whose target outside does not exist yet', async () => {
-    const { symlinkSync, existsSync } = await import('node:fs')
+  it('asks before writing through a link whose target outside does not exist yet', async (ctx) => {
+    const { existsSync } = await import('node:fs')
     const root = tmp()
     const outside = join(tmp(), 'planted.txt')
     const outsideDir = join(tmp(), 'not-yet')
-    symlinkSync(outside, join(root, 'notes.txt'))
-    symlinkSync(outsideDir, join(root, 'out'))
+    link(ctx, outside, join(root, 'notes.txt'))
+    link(ctx, outsideDir, join(root, 'out'), 'dir')
     // A chain: link → link → outside.
-    symlinkSync(join(root, 'notes.txt'), join(root, 'chain.txt'))
+    link(ctx, join(root, 'notes.txt'), join(root, 'chain.txt'))
     const asked: string[] = []
     const ws = new Workspaces(ask((d) => (asked.push(d), false)))
     ws.setRoot('s1', root)
@@ -122,21 +122,20 @@ describe('dangling symlinks', () => {
     expect(existsSync(outsideDir)).toBe(false)
   })
 
-  it('still allows a dangling link that points inside the folder', async () => {
-    const { symlinkSync, readFileSync: read } = await import('node:fs')
+  it('still allows a dangling link that points inside the folder', async (ctx) => {
+    const { readFileSync: read } = await import('node:fs')
     const root = tmp()
-    symlinkSync(join(root, 'real.txt'), join(root, 'alias.txt'))
+    link(ctx, join(root, 'real.txt'), join(root, 'alias.txt'))
     const ws = new Workspaces(ask(() => false))
     ws.setRoot('s1', root)
     await ws.writeTextFile('s1', 'alias.txt', 'ok')
     expect(read(join(root, 'real.txt'), 'utf8')).toBe('ok')
   })
 
-  it('gives up on link loops instead of hanging', async () => {
-    const { symlinkSync } = await import('node:fs')
+  it('gives up on link loops instead of hanging', async (ctx) => {
     const root = tmp()
-    symlinkSync(join(root, 'b'), join(root, 'a'))
-    symlinkSync(join(root, 'a'), join(root, 'b'))
+    link(ctx, join(root, 'b'), join(root, 'a'))
+    link(ctx, join(root, 'a'), join(root, 'b'))
     const ws = new Workspaces(ask(() => false))
     ws.setRoot('s1', root)
     await expect(ws.writeTextFile('s1', 'a', 'x')).rejects.toThrow()
@@ -144,16 +143,16 @@ describe('dangling symlinks', () => {
 })
 
 describe('.. after a symlinked folder', () => {
-  it('applies .. to the real folder, as the OS does, not to the spelling', async () => {
-    const { symlinkSync, mkdirSync, existsSync } = await import('node:fs')
+  it('applies .. to the real folder, as the OS does, not to the spelling', async (ctx) => {
+    const { mkdirSync, existsSync } = await import('node:fs')
     const base = tmp()
     const root = join(base, 'proj')
     const out = join(base, 'out')
     mkdirSync(root)
     mkdirSync(join(out, 'sub'), { recursive: true })
-    symlinkSync(join(out, 'sub'), join(root, 'outdir'))
+    link(ctx, join(out, 'sub'), join(root, 'outdir'), 'dir')
     // Spelled inside (proj/dotdot.txt), really out/dotdot.txt.
-    symlinkSync('outdir/../dotdot.txt', join(root, 'dotdot'))
+    link(ctx, 'outdir/../dotdot.txt', join(root, 'dotdot'))
     const asked: string[] = []
     const ws = new Workspaces(ask((d) => (asked.push(d), false)))
     ws.setRoot('s1', root)

@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { addFile, changedFiles, createEntry, fileName, inside, listFolder, readPreview, removablePath, renameEntry, writeText } from '../src/main/core/Library'
 import type { Message } from '../src/shared/model'
+import { link } from './links'
 
 function folder() {
   const root = mkdtempSync(join(tmpdir(), 'lib-'))
@@ -24,7 +25,7 @@ const tool = (paths: string[], toolKind = 'edit', status = 'completed', createdA
 })
 
 describe('the files panel', () => {
-  it('lists folders first, hides dotfiles, and never leaves the folder', () => {
+  it('lists folders first, hides dotfiles, and never leaves the folder', (ctx) => {
     const root = folder()
     expect(listFolder(root)!.entries.map((e) => e.name)).toEqual(['src', 'bin.dat', 'README.md'])
     expect(listFolder(root, 'src')!.entries[0]).toMatchObject({ name: 'a.ts', path: 'src/a.ts', dir: false })
@@ -32,7 +33,7 @@ describe('the files panel', () => {
     expect(inside(root, '/etc')).toBeUndefined()
     expect(inside(root, 'src/../../x')).toBeUndefined()
     const outside = mkdtempSync(join(tmpdir(), 'out-'))
-    symlinkSync(outside, join(root, 'link'))
+    link(ctx, outside, join(root, 'link'), 'dir')
     expect(inside(root, 'link')).toBeUndefined()
   })
 
@@ -131,13 +132,13 @@ describe('the files panel', () => {
     expect(writeText(root, 'src', 'x')).toEqual({ refused: 'gone' })
   })
 
-  it('never writes, renames or deletes through a link or outside the folder, nor the folder itself', () => {
+  it('never writes, renames or deletes through a link or outside the folder, nor the folder itself', (ctx) => {
     const root = folder()
     const outside = mkdtempSync(join(tmpdir(), 'lib-out-'))
     writeFileSync(join(outside, 'x.txt'), 'outside\n')
-    symlinkSync(outside, join(root, 'evil'))
-    symlinkSync(join(outside, 'x.txt'), join(root, 'link.txt'))
-    symlinkSync(join(outside, 'missing.txt'), join(root, 'dangling.txt'))
+    link(ctx, outside, join(root, 'evil'), 'dir')
+    link(ctx, join(outside, 'x.txt'), join(root, 'link.txt'))
+    link(ctx, join(outside, 'missing.txt'), join(root, 'dangling.txt'))
     expect(writeText(root, 'evil/x.txt', 'pwned', undefined, true)).toEqual({ refused: 'gone' })
     expect(writeText(root, 'link.txt', 'pwned', undefined, true)).toEqual({ refused: 'gone' })
     expect(writeText(root, 'dangling.txt', 'pwned', undefined, true)).toEqual({ refused: 'gone' })
@@ -147,7 +148,7 @@ describe('the files panel', () => {
     expect(createEntry(root, '', 'dangling.txt', false)).toEqual({ refused: 'taken' })
     expect(addFile(root, '', 'dangling.txt', Buffer.from('x'))).toBe(join(root, 'dangling (2).txt'))
     expect(existsSync(join(outside, 'missing.txt'))).toBe(false)
-    for (const rel of ['', '.', '..', '../' + root.split('/').pop(), 'src/..', 'evil/x.txt', '/etc/passwd']) expect(removablePath(root, rel)).toBeUndefined()
+    for (const rel of ['', '.', '..', '../' + basename(root), 'src/..', 'evil/x.txt', '/etc/passwd']) expect(removablePath(root, rel)).toBeUndefined()
     expect(removablePath(root, 'dangling.txt')).toBe(join(root, 'dangling.txt'))
     expect(removablePath(root, 'evil')).toBe(join(root, 'evil'))
     expect(renameEntry(root, '.', 'x')).toEqual({ refused: 'gone' })
@@ -175,9 +176,15 @@ describe('the files panel on any disk', () => {
     const root = mkdtempSync(join(tmpdir(), 'lib-case-'))
     writeFileSync(join(root, 'a.txt'), 'small a')
     writeFileSync(join(root, 'A.txt'), 'big A')
-    // Two files on a disk that tells case apart (Linux): A.txt stays.
-    expect(renameEntry(root, 'a.txt', 'A.txt')).toEqual({ refused: 'taken' })
-    expect(readFileSync(join(root, 'A.txt'), 'utf8')).toBe('big A')
+    if (readdirSync(root).length === 2) {
+      // Two files on a disk that tells case apart (Linux): A.txt stays.
+      expect(renameEntry(root, 'a.txt', 'A.txt')).toEqual({ refused: 'taken' })
+      expect(readFileSync(join(root, 'A.txt'), 'utf8')).toBe('big A')
+    } else {
+      // One file on a disk that ignores case (Windows, macOS): only its name's case changes.
+      expect(renameEntry(root, 'a.txt', 'A.txt')).toEqual({ path: 'A.txt' })
+      expect(readdirSync(root)).toEqual(['A.txt'])
+    }
     writeFileSync(join(root, 'b.txt'), 'b')
     expect(renameEntry(root, 'b.txt', 'B.txt')).toEqual({ path: 'B.txt' })
     expect(readFileSync(join(root, 'B.txt'), 'utf8')).toBe('b')
@@ -188,7 +195,7 @@ describe('the files panel on any disk', () => {
     expect(addFile(root, '', 'notes. ', Buffer.from('x'))).toBe(join(root, 'notes'))
     expect(addFile(root, '', 'CON.txt', Buffer.from('x'))).toBe(join(root, '_CON.txt'))
     const long = addFile(root, '', 'x'.repeat(300) + '.md', Buffer.from('x'))!
-    expect(long.split('/').pop()!.length).toBeLessThanOrEqual(120)
+    expect(basename(long).length).toBeLessThanOrEqual(120)
     expect(long.endsWith('.md')).toBe(true)
     writeFileSync(join(root, 'desktop.ini'), '')
     writeFileSync(join(root, 'Thumbs.db'), '')

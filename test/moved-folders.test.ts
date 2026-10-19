@@ -43,6 +43,7 @@ describe('paths into a former data folder', () => {
     expect((s.messagesOf('c1')[0].blocks[0] as any).paths).toEqual([moved])
     s.flush()
     expect(readFileSync(join(dir, 'state.json'), 'utf8')).not.toContain(old + '/')
-    expect(readFileSync(join(dir, 'messages', 'c1.json'), 'utf8')).toContain(moved)
+    // As JSON writes it (a Windows path's backslashes doubled).
+    expect(readFileSync(join(dir, 'messages', 'c1.json'), 'utf8')).toContain(JSON.stringify(moved))
   })
 })

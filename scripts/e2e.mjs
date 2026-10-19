@@ -201,7 +201,9 @@ await check('@ in the project chat picks a thread, the message goes straight the
   if (await page.locator('.mention-chip').count()) throw new Error('chip stayed after sending')
   if (await page.locator('.center .workspace > .center .msg-user:has-text("再加一家")').count()) throw new Error('the message also went to the coordinator')
   await page.click('.thread-event.kind-forwarded')
-  await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司")', { timeout: 5000 })
+  // It reaches the thread at once: waiting while the thread's first reply is still running (slow runners), then sent.
+  await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司"), .panel .queue-row:has-text("再加一家 D 公司")', { timeout: 5000 })
+  await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司")', { timeout: 30000 })
 })
 
 await check('a thread leaves another a message: a card on each side, where it went and where it came from', async () => {

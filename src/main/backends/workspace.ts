@@ -61,9 +61,12 @@ export function whenExited(proc: ChildProcess, waitMs: number): Promise<void> {
  * Ends a program that ran too long. On Windows a command through cmd.exe is a child of it, and
  * killing only cmd.exe leaves that running (holding its output open): end the whole tree there.
  */
-export function endTree(proc: ChildProcess, platform: NodeJS.Platform = process.platform): void {
+export function endTree(proc: ChildProcess, platform: NodeJS.Platform = process.platform, run: typeof spawn = spawn): void {
   if (platform === 'win32' && proc.pid && proc.exitCode === null && proc.signalCode === null)
-    spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }).on('error', () => proc.kill())
+    run('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
+      .on('error', () => proc.kill())
+      // taskkill refused (or found nothing): end the program itself all the same.
+      .on('exit', (code) => code && proc.kill())
   else proc.kill()
 }
 

@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { FolderFinder, foldersInText, matchingFolders, pathsInText, rankFolders } from '../src/main/core/folders'
 import { makeCore } from './helpers'
 
@@ -17,7 +17,9 @@ describe('folders mentioned in a message', () => {
   })
 
   it('keeps only existing folders, using a file’s own folder', () => {
-    const home = mkdtempSync(join(tmpdir(), 'oc-home-'))
+    // macOS's temp folder is under /var, a system folder never offered: there the test works in the home folder.
+    const home = mkdtempSync(join(process.platform === 'darwin' ? homedir() : tmpdir(), 'oc-home-'))
+    onTestFinished(() => rmSync(home, { recursive: true, force: true }))
     const app = join(home, 'app')
     mkdirSync(join(app, 'src'), { recursive: true })
     writeFileSync(join(app, 'src', 'main.ts'), '')
@@ -58,6 +60,16 @@ describe('likely project folders', () => {
     const names = (await finder.scan()).map((f) => f.name).sort()
     expect(names).toEqual(['garden-planner', 'openclaude'])
     expect((await finder.suggest('Open Claude 桌面端'))[0].name).toBe('openclaude')
+  })
+
+  it('lists a repository once when two usual places are one folder (~/code and ~/Code on macOS and Windows)', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'oc-home-'))
+    mkdirSync(join(home, 'Code', 'site', '.git'), { recursive: true })
+    // On a disk that ignores case (macOS, Windows) code already is Code; elsewhere a link makes it one folder under both names.
+    if (!existsSync(join(home, 'code'))) symlinkSync(join(home, 'Code'), join(home, 'code'), 'junction')
+    const finder = new FolderFinder(home)
+    expect(finder.roots()).toHaveLength(1)
+    expect((await finder.scan()).map((f) => f.name)).toEqual(['site'])
   })
 
   it('ranks by name match, then recency', () => {

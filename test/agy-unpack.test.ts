@@ -76,7 +76,9 @@ describe('unpacking a PyInstaller onefile program ahead', () => {
     expect(readFileSync(join(d, 'out', 'agy', 'templates', 'prompt.txt'), 'utf8')).toBe('hello')
     expect(readFileSync(join(d, 'out', 'certifi', 'cacert.pem'), 'utf8')).toBe('')
     expect(existsSync(join(d, 'out', 'PYZ.pyz'))).toBe(false)
-    expect(readlinkSync(join(d, 'out', 'link.dll'))).toBe('python310.dll')
+    // A symlink, as its bootloader makes; a copy on Windows, where making links needs special rights.
+    if (process.platform === 'win32') expect(readFileSync(join(d, 'out', 'link.dll'))).toEqual(Buffer.alloc(5000, 7))
+    else expect(readlinkSync(join(d, 'out', 'link.dll'))).toBe('python310.dll')
   })
 
   it('refuses what it cannot unpack safely, and anything that is not such a program', async () => {

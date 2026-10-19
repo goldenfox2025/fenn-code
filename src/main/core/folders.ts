@@ -56,6 +56,16 @@ function expand(p: string, home: string): string {
   return normalize(q)
 }
 
+/** The same folder by any spelling (case, links): its device and inode; undefined when it is no folder. */
+function folderId(p: string): string | undefined {
+  try {
+    const s = statSync(p)
+    return s.isDirectory() ? `${s.dev}:${s.ino}` : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function isDir(p: string): boolean {
   try {
     return statSync(p).isDirectory()
@@ -131,12 +141,14 @@ export class FolderFinder {
   ) {}
 
   roots(): string[] {
-    const seen = new Set<string>()
+    // On a disk that ignores case (macOS, Windows) ~/code and ~/Code are one folder: kept once.
+    const seen = new Map<string, string>()
     for (const r of ROOT_NAMES) {
-      const p = join(this.home, r)
-      if (isDir(p)) seen.add(resolve(p))
+      const p = resolve(join(this.home, r))
+      const id = folderId(p)
+      if (id && !seen.has(id)) seen.set(id, p)
     }
-    return [...seen]
+    return [...seen.values()]
   }
 
   async scan(): Promise<FolderCandidate[]> {
@@ -165,7 +177,7 @@ export class FolderFinder {
       }
       if (depth > 0 && entries.some((e) => e.name === '.git')) {
         const s = await stat(dir).catch(() => undefined)
-        found.set(process.platform === 'win32' ? dir.toLowerCase() : dir, { path: dir, name: basename(dir), mtime: s?.mtimeMs ?? 0 })
+        found.set(s ? `${s.dev}:${s.ino}` : dir, { path: dir, name: basename(dir), mtime: s?.mtimeMs ?? 0 })
         continue // A repository's own subfolders are not separate projects.
       }
       if (depth >= maxDepth) continue

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -165,11 +166,33 @@ describe('ending a command that ran too long', () => {
     expect(p.kill).toHaveBeenCalled()
   })
 
-  it('ends the tree with taskkill on Windows, the program alone when taskkill is missing', async () => {
-    const p = fake()
-    endTree(p, 'win32')
-    // No taskkill on this machine: its spawn fails, and the fallback kills the program.
-    await vi.waitFor(() => expect(p.kill).toHaveBeenCalled())
+  it('ends the tree with taskkill on Windows, the program alone when taskkill is missing or fails', () => {
+    // A stand-in taskkill that does what each case needs, at once.
+    const taskkill = (then: (t: EventEmitter) => void) => {
+      const calls: string[][] = []
+      const run = ((command: string, args: string[]) => {
+        calls.push([command, ...args])
+        const t = new EventEmitter()
+        queueMicrotask(() => then(t))
+        return t
+      }) as unknown as typeof import('node:child_process').spawn
+      return { run, calls }
+    }
+    const cases: [string, (t: EventEmitter) => void, boolean][] = [
+      ['ends the tree', (t) => t.emit('exit', 0), false],
+      ['finds nothing or is refused', (t) => t.emit('exit', 128), true],
+      ['is missing', (t) => t.emit('error', Object.assign(new Error('spawn taskkill ENOENT'), { code: 'ENOENT' })), true]
+    ]
+    return Promise.all(
+      cases.map(async ([name, then, killed]) => {
+        const p = fake()
+        const t = taskkill(then)
+        endTree(p, 'win32', t.run)
+        await new Promise((r) => setTimeout(r, 0))
+        expect(t.calls, name).toEqual([['taskkill', '/pid', '999999', '/T', '/F']])
+        expect(p.kill.mock.calls.length, name).toBe(killed ? 1 : 0)
+      })
+    )
   })
 })
 
@@ -252,9 +275,11 @@ describe('Antigravity install on Windows and Linux', () => {
     const none = unzipStep('s.zip', 'd', 'linux', { PATH: bin })
     expect(none.command).toBe('unzip')
     expect(none.label).toContain('apt install unzip')
-    writeFileSync(join(bin, 'python3'), '')
+    // findOnPath looks for .exe on a Windows machine.
+    const exe = process.platform === 'win32' ? '.exe' : ''
+    writeFileSync(join(bin, 'python3' + exe), '')
     expect(unzipStep('s.zip', 'd', 'linux', { PATH: bin }).args).toEqual(['-I', '-m', 'zipfile', '-e', 's.zip', 'd'])
-    writeFileSync(join(bin, 'unzip'), '')
+    writeFileSync(join(bin, 'unzip' + exe), '')
     const unzip = unzipStep('s.zip', 'd', 'linux', { PATH: bin })
     expect(unzip).toMatchObject({ command: 'unzip', args: ['-o', 's.zip', '-d', 'd'] })
     expect(unzip.label).not.toContain('apt')

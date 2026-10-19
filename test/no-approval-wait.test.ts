@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, symlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { makeCore, until } from './helpers'
+import { link } from './links'
 
 const replyOf = (store: any, id: string) =>
   until(() => store.conversation(id)?.status === 'idle' && store.messagesOf(id).find((m: any) => m.role === 'assistant' && m.state === 'done'))
@@ -137,11 +138,11 @@ describe('which tool calls go ahead without asking', () => {
     expect(await run({ MOCK_ASK_KIND: 'read', MOCK_LOCATED: 'inside' }, { cwd })).toEqual({ asked: [], allowed: true })
   }, 60000)
 
-  it('a link inside the folder that leads outside counts as outside', async () => {
+  it('a link inside the folder that leads outside counts as outside', async (ctx) => {
     const cwd = folder()
     const elsewhere = folder()
     mkdirSync(join(elsewhere, 'secret'))
-    symlinkSync(join(elsewhere, 'secret'), join(cwd, 'link'))
+    link(ctx, join(elsewhere, 'secret'), join(cwd, 'link'), 'dir')
     expect(await run({ MOCK_LOCATED_PATH: join(cwd, 'link', 'notes.md') }, { cwd })).toEqual({ asked: ['写入 notes.md'], allowed: false })
     expect(await run({ MOCK_LOCATED_PATH: join(cwd, 'new', 'notes.md') }, { cwd })).toEqual({ asked: [], allowed: true })
   }, 60000)

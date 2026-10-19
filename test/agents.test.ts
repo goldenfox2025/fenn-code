@@ -6,6 +6,7 @@ import { findOnPath } from '../src/main/backends/install'
 import { BackendManager } from '../src/main/backends/BackendManager'
 import { loadPlugins } from '../src/main/backends/registry'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 describe('Claude Code and Codex plugins', () => {
   it('read the sign-in state each CLI prints', () => {
@@ -13,7 +14,8 @@ describe('Claude Code and Codex plugins', () => {
     expect(c.requires).toEqual(['claude-agent-acp'])
     expect(c.parse('{"loggedIn": true, "authMethod": "claude.ai", "subscriptionType": "max"}')).toEqual({ installed: true, signedIn: true, detail: 'Claude 账号 · max' })
     expect(c.parse('{"loggedIn": false}')).toMatchObject({ signedIn: false })
-    const x = codexAccount()
+    // An adapter path that isn't there: no versions from whatever is installed on this machine.
+    const x = codexAccount({ CODEX_ACP_PATH: join(tmpdir(), 'no-codex-acp', 'codex-acp') })
     expect(x.stderr).toBe(true)
     expect(x.parse('\nLogged in using ChatGPT\n')).toEqual({ installed: true, signedIn: true, detail: 'ChatGPT 账号' })
     expect(x.parse('WARNING: proceeding\nNot logged in\n')).toEqual({ installed: true, signedIn: false })
