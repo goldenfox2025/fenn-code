@@ -4,18 +4,22 @@ import { useEffect, useRef } from 'react'
 const PITCH = 22
 const DOT = 1
 /** How far from the pointer the dots respond, and how much they lift toward it at most. */
-const REACH = 150
+const REACH = 140
 const PULL = 2.5
-/** How quickly the glow follows the pointer and fades once it leaves (per frame, 0–1). */
-const FOLLOW = 0.18
+/** How long the glow takes to catch up with the pointer, and how long a lit dot takes to fade (seconds, 1/e). */
+const LAG = 0.09
+const FADE = [0, 0.22, 0.32]
 /** Steps of glow strength; dots in one step are filled together. */
 const BANDS = 12
+/** The glow canvas grows in steps of this many CSS pixels. */
+const GROW = 6 * PITCH
 
 /**
- * A faint grid of dots behind the content that lights up softly around the pointer.
- * The resting grid is one canvas drawn once per size or look; the glow is a small second
- * canvas that follows the pointer, so a frame repaints only that patch, in a few fills. Frames run only while the glow is moving, never when the
- * window is hidden or out of focus, and with reduced motion the grid stays still.
+ * A faint grid of dots behind the content that lights up softly around the pointer and
+ * leaves a short fading trail where it passed. The resting grid is one canvas drawn once
+ * per size or look; the glow is a second canvas that covers only the lit dots and is
+ * repainted each frame in a few fills. Frames run only while something is lit or moving,
+ * never while the window is hidden, and with reduced motion the grid stays still.
  */
 export function DotField({ strength }: { strength: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -27,15 +31,16 @@ export function DotField({ strength }: { strength: number }) {
     const gtx = glow?.getContext('2d')
     if (!canvas || !glow || !ctx || !gtx) return
     const still = matchMedia('(prefers-reduced-motion: reduce)')
-    let w = 0, h = 0, dpr = 1
+    const fade = FADE[strength] ?? FADE[1]
+    let w = 0, h = 0, dpr = 1, cols = 0, rows = 0
     let dot = '', accent = '', rest = 0
-    // Where the glow is and where it is heading; level eases between 0 (gone) and 1.
+    // Where the glow's head is and where it is heading; level eases between 0 (gone) and 1.
     const at = { x: -1e4, y: -1e4, level: 0 }
     const to = { x: -1e4, y: -1e4, level: 0 }
-    let frame = 0
-    // The glow canvas spans the pointer's reach plus a cell each side, and moves a whole cell at a time.
-    const cells = Math.ceil((REACH * 2) / PITCH) + 2
-    const span = cells * PITCH
+    // How lit each dot is (0–1), and the dots that are lit at all.
+    let heat = new Float32Array(0)
+    let lit: number[] = []
+    let frame = 0, last = 0
 
     const readLook = () => {
       const css = getComputedStyle(canvas)
@@ -51,66 +56,122 @@ export function DotField({ strength }: { strength: number }) {
       h = r.height
       canvas.width = Math.round(w * dpr)
       canvas.height = Math.round(h * dpr)
-      glow.width = glow.height = Math.round(span * dpr)
-      glow.style.width = glow.style.height = `${span}px`
+      cols = Math.ceil(w / PITCH)
+      rows = Math.ceil(h / PITCH)
+      heat = new Float32Array(cols * rows)
+      lit = []
+      paint()
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.beginPath()
       ctx.fillStyle = `rgba(${dot}, ${rest})`
       for (let y = PITCH / 2; y < h; y += PITCH)
         for (let x = PITCH / 2; x < w; x += PITCH) ctx.rect(x - DOT / 2, y - DOT / 2, DOT, DOT)
       ctx.fill()
-      paint()
     }
-    let shown = false
-    const paint = () => {
-      gtx.setTransform(1, 0, 0, 1, 0, 0)
-      gtx.clearRect(0, 0, glow.width, glow.height)
-      if (at.level < 0.01) {
-        if (shown) (glow.style.visibility = 'hidden'), (shown = false)
-        return
-      }
-      const ci = Math.floor((at.x - REACH) / PITCH) - 1, cj = Math.floor((at.y - REACH) / PITCH) - 1
-      const ox = ci * PITCH, oy = cj * PITCH
-      glow.style.transform = `translate3d(${ox}px, ${oy}px, 0)`
-      if (!shown) (glow.style.visibility = ''), (shown = true)
-      gtx.setTransform(dpr, 0, 0, dpr, -ox * dpr, -oy * dpr)
-      // Dots of about the same strength share one path and one fill, so a frame is a few draw calls.
-      const paths: Path2D[] = []
-      for (let j = Math.max(0, cj); j < cj + cells; j++)
-        for (let i = Math.max(0, ci); i < ci + cells; i++) {
-          const x = i * PITCH + PITCH / 2, y = j * PITCH + PITCH / 2
-          if (x > w || y > h) continue
-          const dx = at.x - x, dy = at.y - y
-          const d = Math.hypot(dx, dy)
+    // The head lights the dots within its reach; a dot keeps the brightest it has been and then fades.
+    // Returns how many lit dots the head holds where they are (they stop changing once the head rests).
+    const warm = () => {
+      let held = 0
+      if (at.level < 0.01) return held
+      const i0 = Math.max(0, Math.floor((at.x - REACH) / PITCH)), i1 = Math.min(cols - 1, Math.ceil((at.x + REACH) / PITCH))
+      const j0 = Math.max(0, Math.floor((at.y - REACH) / PITCH)), j1 = Math.min(rows - 1, Math.ceil((at.y + REACH) / PITCH))
+      for (let j = j0; j <= j1; j++)
+        for (let i = i0; i <= i1; i++) {
+          const d = Math.hypot(at.x - (i * PITCH + PITCH / 2), at.y - (j * PITCH + PITCH / 2))
           if (d >= REACH) continue
           // Smooth falloff: full at the pointer, nothing at the edge of its reach.
           const f = (1 - d / REACH) ** 2 * at.level
-          const band = Math.round(f * (BANDS - 1))
-          if (!band) continue
-          const lift = d ? (PULL * f) / d : 0
-          const size = DOT + f * strength * 0.9
-          ;(paths[band] ??= new Path2D()).rect(x + dx * lift - size / 2, y + dy * lift - size / 2, size, size)
+          const k = j * cols + i
+          if (f >= heat[k] && f >= 0.02) {
+            if (!heat[k]) lit.push(k)
+            heat[k] = f
+            held++
+          }
         }
+      return held
+    }
+    // The glow canvas covers just the lit dots: it moves to them each frame and grows in steps when
+    // the trail outgrows it, so a frame uploads a small patch however large the window is.
+    let gw = 0, gh = 0
+    const fit = (need: number, have: number) => (need <= have ? have : Math.ceil(need / GROW) * GROW)
+    const paint = () => {
+      if (!lit.length) {
+        if (gw) {
+          gw = gh = glow.width = glow.height = 0
+          glow.style.width = glow.style.height = '0'
+        }
+        return
+      }
+      let i0 = cols, j0 = rows, i1 = 0, j1 = 0
+      for (const k of lit) {
+        const i = k % cols, j = (k - i) / cols
+        if (i < i0) i0 = i
+        if (i > i1) i1 = i
+        if (j < j0) j0 = j
+        if (j > j1) j1 = j
+      }
+      // A cell of margin each side holds a dot's lean and size.
+      const ox = (i0 - 1) * PITCH, oy = (j0 - 1) * PITCH
+      const bw = fit((i1 - i0 + 3) * PITCH, gw), bh = fit((j1 - j0 + 3) * PITCH, gh)
+      if (bw !== gw || bh !== gh) {
+        gw = bw
+        gh = bh
+        glow.width = Math.round(gw * dpr)
+        glow.height = Math.round(gh * dpr)
+        glow.style.width = `${gw}px`
+        glow.style.height = `${gh}px`
+      } else {
+        gtx.setTransform(1, 0, 0, 1, 0, 0)
+        gtx.clearRect(0, 0, glow.width, glow.height)
+      }
+      glow.style.transform = `translate3d(${ox}px, ${oy}px, 0)`
+      gtx.setTransform(dpr, 0, 0, dpr, -ox * dpr, -oy * dpr)
+      // Dots of about the same strength share one path and one fill, so a frame is a few draw calls.
+      const paths: Path2D[] = []
+      for (const k of lit) {
+        const v = heat[k]
+        const band = Math.round(v * (BANDS - 1))
+        if (!band) continue
+        const x = (k % cols) * PITCH + PITCH / 2, y = Math.floor(k / cols) * PITCH + PITCH / 2
+        // Lit dots near the head lean toward it a little.
+        const dx = at.x - x, dy = at.y - y
+        const d = Math.hypot(dx, dy)
+        const lift = d && d < REACH ? (PULL * v * (1 - d / REACH)) / d : 0
+        const size = DOT + v * strength * 0.9
+        ;(paths[band] ??= new Path2D()).rect(x + dx * lift - size / 2, y + dy * lift - size / 2, size, size)
+      }
       paths.forEach((path, band) => {
         gtx.fillStyle = `rgba(${accent}, ${Math.min(0.9, (band / (BANDS - 1)) * strength * 0.55)})`
         gtx.fill(path)
       })
     }
-    const tick = () => {
+    const tick = (now: number) => {
       frame = 0
-      at.x += (to.x - at.x) * FOLLOW
-      at.y += (to.y - at.y) * FOLLOW
-      at.level += (to.level - at.level) * FOLLOW
+      // Time-based, so the trail is as long at 120 Hz as at 60 Hz; a long gap counts as one frame.
+      const dt = Math.min(0.05, last ? (now - last) / 1000 : 1 / 60)
+      last = now
+      const follow = 1 - Math.exp(-dt / LAG)
+      at.x += (to.x - at.x) * follow
+      at.y += (to.y - at.y) * follow
+      at.level += (to.level - at.level) * follow
+      const cool = Math.exp(-dt / fade)
+      for (const k of lit) heat[k] *= cool
+      const held = warm()
+      lit = lit.filter((k) => heat[k] >= 0.02 || ((heat[k] = 0), false))
       paint()
       const moving = Math.abs(to.x - at.x) + Math.abs(to.y - at.y) > 0.3 || Math.abs(to.level - at.level) > 0.005
-      if (moving && !document.hidden) frame = requestAnimationFrame(tick)
+      // Once the head rests, only the trail behind it still changes; with that gone the frames stop.
+      if ((moving || lit.length > held) && !document.hidden) frame = requestAnimationFrame(tick)
+      else last = 0
     }
     const wake = () => {
       // With reduced motion the glow is off: one that was lit goes out at once.
       if (still.matches) {
         cancelAnimationFrame(frame)
-        frame = 0
+        frame = last = 0
         at.level = to.level = 0
+        heat.fill(0)
+        lit = []
         return paint()
       }
       if (!frame) frame = requestAnimationFrame(tick)
@@ -119,7 +180,7 @@ export function DotField({ strength }: { strength: number }) {
       const r = canvas.getBoundingClientRect()
       to.x = e.clientX - r.left
       to.y = e.clientY - r.top
-      // Jump there when the glow was gone, rather than sweeping in from where it last was.
+      // Start there when the glow was gone, rather than sweeping in from where it last was.
       if (at.level < 0.01) (at.x = to.x), (at.y = to.y)
       to.level = document.hasFocus() ? 1 : 0
       wake()
@@ -130,7 +191,9 @@ export function DotField({ strength }: { strength: number }) {
     }
     readLook()
     drawGrid()
-    const ro = new ResizeObserver(drawGrid)
+    // A drag that resizes the area redraws the grid at most once a frame.
+    let sized = 0
+    const ro = new ResizeObserver(() => (sized ||= requestAnimationFrame(() => ((sized = 0), drawGrid()))))
     ro.observe(canvas)
     // A change of look (颜色, 玻璃效果) changes the dots' colors.
     const mo = new MutationObserver(() => (readLook(), drawGrid()))
@@ -151,6 +214,7 @@ export function DotField({ strength }: { strength: number }) {
     document.addEventListener('visibilitychange', away)
     return () => {
       cancelAnimationFrame(frame)
+      cancelAnimationFrame(sized)
       ro.disconnect()
       mo.disconnect()
       density?.removeEventListener('change', onDensity)
@@ -164,7 +228,7 @@ export function DotField({ strength }: { strength: number }) {
   return (
     <div className="dot-layer" aria-hidden>
       <canvas ref={ref} className="dot-field" />
-      <canvas ref={glowRef} className="dot-glow" style={{ visibility: 'hidden' }} />
+      <canvas ref={glowRef} className="dot-glow" />
     </div>
   )
 }

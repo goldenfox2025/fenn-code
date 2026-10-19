@@ -2,7 +2,7 @@
 .main {
   isolation: isolate;
 }
-/* Clips the glow, so its moving canvas never adds to anything's scroll area. */
+/* Holds the grid and its glow; clips the glow, so its moving canvas never adds to a scroll area. */
 .dot-layer {
   position: absolute;
   inset: 0;
@@ -16,10 +16,12 @@
   width: 100%;
   height: 100%;
 }
-/* The glow: a small canvas over the grid that moves with the pointer, so a frame repaints only it. */
+/* Moved and sized by DotField.tsx to cover only the lit dots. */
 .dot-glow {
   position: absolute;
   left: 0;
   top: 0;
+  width: 0;
+  height: 0;
   will-change: transform;
 }
