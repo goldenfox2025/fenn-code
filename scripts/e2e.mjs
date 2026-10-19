@@ -288,11 +288,29 @@ await check('one click turns 玻璃效果 on and back off, and the long chat sti
   // Nothing moves when the look changes: the same boxes before and after.
   const boxes = () => page.evaluate(() => [...document.querySelectorAll('.bubble, .composer, .chat-header')].slice(-6).map((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)].join('x') }).join(' '))
   const plainBoxes = await boxes()
+  // Nor does depth: every raised surface casts the same drop shadow, glass only adds its top highlight.
+  const depths = () => page.evaluate(() => {
+    const host = document.createElement('div')
+    host.style.cssText = 'position:fixed;left:-9999px;top:0'
+    document.querySelector('#root').appendChild(host)
+    const out = ['aside.panel.floating', 'aside.panel.maximized', 'div.composer', 'div.queue-tray', 'div.no-agent-card', 'div.menu', 'div.modal'].map((p) => {
+      const [tag, ...cls] = p.split('.')
+      const el = host.appendChild(document.createElement(tag))
+      el.className = cls.join(' ')
+      const drop = getComputedStyle(el).boxShadow.split(/,(?![^(]*\))/).map((x) => x.trim()).filter((x) => x !== 'none' && !x.includes('inset') && !/ 0px 0px 0px 1px$/.test(x))
+      return `${p}: ${drop.join(', ') || 'none'}`
+    })
+    host.remove()
+    return out.join('\n')
+  })
+  const plainDepths = await depths()
   await page.click('.glass-toggle')
   await page.waitForFunction(() => /^glass/.test(document.documentElement.dataset.theme))
   await page.waitForTimeout(200)
   const glassBoxes = await boxes()
   if (glassBoxes !== plainBoxes) throw new Error(`glass moves things: ${plainBoxes} → ${glassBoxes}`)
+  const glassDepths = await depths()
+  if (glassDepths !== plainDepths) throw new Error(`glass changes depth:\n${plainDepths}\n→\n${glassDepths}`)
   const glass = await scrollTest()
   console.log(`   slowest scroll frame: ${Math.round(plain)} ms ${before}, ${Math.round(glass)} ms glass (software rendering)`)
   await page.click('.glass-toggle')

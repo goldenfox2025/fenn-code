@@ -44,8 +44,9 @@
   backdrop-filter: var(--frost);
   box-shadow: var(--hairline-top);
 }
-:root[data-theme='glass'] .panel.floating,
-:root[data-theme='glass'] .panel.maximized {
+/* A panel over the conversation floats as high as in the plain looks. */
+:root:is([data-theme='glass'], [data-theme='glass-light']) .panel.floating,
+:root:is([data-theme='glass'], [data-theme='glass-light']) .panel.maximized {
   box-shadow: var(--shadow);
 }
 /* Full screen covers the project chat: nothing shows through it. */
