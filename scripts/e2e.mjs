@@ -314,6 +314,33 @@ await check('interactive pages work inline and expand into a clipped responsive 
   if (Math.abs(proseLeft-controlsLeft)>1) throw new Error(`Embedded controls shifted from prose: ${proseLeft} vs ${controlsLeft}`)
   if(shots) await page.screenshot({path:join(shots,'rounded-focus-in-reply.png')})
 
+  // Check the actual popup, not just the closed control's focus ring. Native
+  // macOS menus otherwise align their selected text instead of their edges.
+  for (const selector of ['#edge-left', '#edge-right']) {
+    const select = small.locator(selector)
+    if (selector === '#edge-right') await select.evaluate((el) => {
+      for (let i=0;i<12;i++) el.add(new Option('Another model choice '+i, String(i)))
+    })
+    await select.click()
+    const picker = await select.evaluate((el) => {
+      const control = el.getBoundingClientRect()
+      const css = getComputedStyle(el, '::picker(select)')
+      const option = el.querySelector('option').getBoundingClientRect()
+      return { open:el.matches(':open'), appearance:css.appearance, width:parseFloat(css.width), height:parseFloat(css.height), left:option.left-parseFloat(css.paddingLeft)-parseFloat(css.borderLeftWidth), controlLeft:control.left, controlWidth:control.width, optionTop:option.top, optionBottom:option.bottom, viewport:innerHeight }
+    })
+    if (!picker.open || picker.appearance !== 'base-select' || Math.abs(picker.width-picker.controlWidth)>1 || Math.abs(picker.left-picker.controlLeft)>1 || picker.optionTop<0 || picker.optionBottom>picker.viewport)
+      throw new Error('Embedded select popup is misaligned: '+JSON.stringify(picker))
+    if (selector === '#edge-right' && picker.height<100) throw new Error('A long picker must show several choices, not a single cramped row')
+    if (shots) await page.screenshot({path:join(shots,`aligned-picker-${selector.slice(1)}.png`)})
+    await select.press('Escape')
+    if (await select.evaluate((el)=>el.matches(':open'))) throw new Error('Escape must close the picker')
+  }
+  await small.locator('#edge-left').evaluate((el) => el.addEventListener('change',()=>el.dataset.changed='yes'))
+  await small.locator('#edge-left').click()
+  await small.locator('#edge-left option').nth(1).click()
+  if (await small.locator('#edge-left').inputValue() !== 'Sol') throw new Error('Select value must remain available to generated UI code')
+  if (await small.locator('#edge-left').getAttribute('data-changed') !== 'yes') throw new Error('Selecting an option must notify generated UI code')
+
   const isolated = await small.locator('body').evaluate(() => {
     try { void parent.document.body; return false } catch { return true }
   })

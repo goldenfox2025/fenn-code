@@ -8,7 +8,11 @@ describe('embedded conversation UI documents', () => {
     expect(fixed).toContain('data-fenn-ui-display')
     expect(fixed).toContain('outline-offset:-2px')
     expect(fixed).toContain('.card{border-radius:12px}')
+    expect(fixed).toContain('appearance:base-select')
+    expect(fixed).toContain('width:anchor-size(width)')
     expect(uiDisplayDocument(fixed)).toBe(fixed)
+    // Documents saved with the previous display fix receive the new picker too.
+    expect(uiDisplayDocument(saved.replace('</head>', '<style data-fenn-ui-display></style></head>'))).toContain('data-fenn-ui-picker')
     const page = '<html><head></head><body>Standalone page</body></html>'
     expect(uiDisplayDocument(page)).toBe(page)
   })

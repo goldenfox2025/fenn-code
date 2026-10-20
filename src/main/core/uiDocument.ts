@@ -1,11 +1,25 @@
 // Matches --space-3 in the host: space for rounded focus rings and edge shadows.
 const DISPLAY_STYLE = `<style data-fenn-ui-display>[data-fenn-ui]{padding:6px}:where(button,select,input:not([type=range],[type=checkbox],[type=radio]),textarea){border-radius:6px}:focus-visible{outline-offset:-2px}</style>`
+// Keep native select semantics/events, but render its picker in Chromium rather
+// than the OS menu (macOS aligns the selected row, not the control's edges).
+const PICKER_STYLE = `<style data-fenn-ui-picker>
+@supports (appearance:base-select){
+select:not([multiple]):not([size]),select:not([multiple]):not([size])::picker(select){appearance:base-select}
+select:not([multiple]):not([size]){anchor-name:--fenn-select;anchor-scope:--fenn-select}
+select:not([multiple]):not([size])::picker(select){position-anchor:--fenn-select;position-area:bottom;inset:auto;position-try-fallbacks:flip-block,--fenn-picker-fit;width:anchor-size(width);min-width:0;max-width:calc(100vw - 12px);max-height:min(280px,100%);margin:4px 0;padding:4px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-elevated);color:var(--text);font:inherit;box-shadow:0 4px 16px #0003}
+select:not([multiple]):not([size]):has(option:nth-child(4))::picker(select){min-height:min(120px,calc(100vh - 20px))}
+@position-try --fenn-picker-fit{position-area:none;inset:6px auto auto anchor(left);max-height:calc(100vh - 20px)}
+select:not([multiple]):not([size]) option{padding:6px 10px;border-radius:4px;overflow-wrap:anywhere;white-space:normal}
+select:not([multiple]):not([size]) option:checked{background:color-mix(in srgb,var(--accent) 12%,var(--bg-elevated))}
+select:not([multiple]):not([size]) option:hover,select:not([multiple]):not([size]) option:focus{background:color-mix(in srgb,var(--accent) 18%,var(--bg-elevated))}
+}
+</style>`
 
 /** Apply current display fixes to saved UI documents too; user source stays intact. */
 export function uiDisplayDocument(html: string): string {
-  return html.includes('<main data-fenn-ui>') && !html.includes('data-fenn-ui-display')
-    ? html.replace(/<\/head>/i, `${DISPLAY_STYLE}</head>`)
-    : html
+  if (!html.includes('<main data-fenn-ui>')) return html
+  const styles = (!html.includes('data-fenn-ui-display') ? DISPLAY_STYLE : '') + (!html.includes('data-fenn-ui-picker') ? PICKER_STYLE : '')
+  return styles ? html.replace(/<\/head>/i, `${styles}</head>`) : html
 }
 
 /** A self-contained UI fragment gets typography and colors, not a webpage shell. */
