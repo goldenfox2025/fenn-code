@@ -43,7 +43,7 @@ If a CLI isn't on `PATH` (a shell alias, or bundled inside another app), set its
 
 ### Outputs
 
-Ask an agent for an interactive chart, comparison or small simulator. It can publish self-contained HTML/CSS/JavaScript directly in the reply, or choose the side pane for a full page. Inline previews can be expanded manually; pages keep version history and can be copied or downloaded as HTML.
+Ask an agent for an interactive chart, comparison or small simulator. Controls appear between the paragraphs of its answer, inherit the conversation's colors, and grow with their content. No page card needs opening. The agent uses `render_ui` for this, and `publish_page` for a separate webpage; it can also explicitly choose the side pane. Embedded UI can be expanded manually, and keeps version history.
 
 When an agent hands over a file or a link, it shows up as a card under its reply and in the project's **Outputs** library, with the thread it came from. Files open in their default app.
 

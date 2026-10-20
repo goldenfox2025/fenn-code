@@ -185,7 +185,7 @@ describe('pages', () => {
       store.messagesOf(c.id).flatMap((m) => m.blocks).find((b) => b.type === 'artifact') as any
     )
     await until(() => store.conversation(c.id)!.status === 'idle')
-    expect(first.display).toBe('inline')
+    expect(first.display).toBe('panel')
     await core.chat.send(c.id, '改一下页面 侧栏')
     const blocks = store.messagesOf(c.id).flatMap((m) => m.blocks).filter((b) => b.type === 'artifact') as any[]
     expect(blocks.map((b) => b.version)).toEqual([1, 2])
@@ -195,6 +195,12 @@ describe('pages', () => {
     expect(info!.versions).toHaveLength(2)
     expect(await core.artifactSource(first.artifactId, 1)).toContain('计数器 v1')
     expect(await core.artifactSource(first.artifactId)).toContain('计数器 v2')
+    const uiChat = await core.startChat({ text: '做个可视化', backendId: 'mock' })
+    const ui = await until(() => store.messagesOf(uiChat.id).flatMap((m) => m.blocks).find((b) => b.type === 'artifact') as any)
+    expect(ui.display).toBe('inline')
+    expect(await core.artifactSource(ui.artifactId)).toContain('data-fenn-ui')
+    await until(() => store.conversation(uiChat.id)!.status === 'idle')
+
     await dispose()
   }, 30000)
 })

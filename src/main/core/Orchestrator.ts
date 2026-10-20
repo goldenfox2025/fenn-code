@@ -22,6 +22,7 @@ import type { BackendManager } from '../backends/BackendManager'
 import type { ProjectMemory } from './ProjectMemory'
 import type { ProjectFiles } from './ProjectFiles'
 import type { Artifacts } from './Artifacts'
+import { uiDocument } from './uiDocument'
 import type { PeerMail } from './PeerMail'
 import { obj, str } from './tools/args'
 
@@ -812,31 +813,35 @@ export class Orchestrator {
         return '文件卡片已附上。'
       }
     })
-    common.push({
-      name: 'publish_page',
-      description:
-        '创建可直接交互的可视化（图表、流程、对比、模拟器、小工具）或完整网页。默认 display=inline，嵌在回复中，用户可展开到侧栏；完整应用、长报告用 display=panel。只在能帮助理解或操作时使用，简单回答用文字。HTML/CSS 自包含，交互可用少量 JS 或 SVG；优先不依赖外部库，必要时外部脚本只能用 HTTPS CDN。内联预览约 360px 高，宽度随对话变化，使用响应式布局，避免固定宽度、重复大标题和无关装饰；控件需可键盘操作。用有层次的中性色和一个强调色，保留清晰的数据标签。数据必须来自已知事实；示例、估算必须标明。页面运行在隔离沙箱，不能读取本地文件、访问应用 API 或发网络请求。修改已发布页面时传 page_id，生成新版本。',
+    // Both tools share storage/versioning; their default presentation is deliberately different.
+    for (const embedded of [true, false]) common.push({
+      name: embedded ? 'render_ui' : 'publish_page',
+      description: embedded
+        ? '在回复正文中直接绘制可交互 UI（图表、对比、滑块、流程、模拟器）。这是对话内容，不是网页或打开页面的卡片；可以在调用前后继续写解释文字。html 给正文片段，可含 style、SVG 和少量 script；不要 doctype/html/head/body、整页背景、网站标题栏、重复大标题，也不要固定宽度、100vh 或固定高度的外层页面。容器按内容自动长高并跟随对话主题；字体已提供，可用 CSS 变量 --text、--text-2、--text-3、--bg、--bg-elevated、--border、--accent、--accent-fg。使用响应式布局和可键盘操作的控件。数据须有依据，示例/估算明确标注。默认 display=inline，直接嵌入正文；只有更适合独立操作时才用 display=panel。修改用 page_id 保留版本。沙箱中不能访问应用或本地文件，fetch/WebSocket 不可用。'
+        : '发布独立的完整网页、长报告或应用原型，默认在侧栏打开。html 是自包含的完整 HTML 文档，CSS/JS 写在文档中，外部脚本只能用 HTTPS CDN。若用户要嵌在对话正文中的图表、比较或交互控件，请用 render_ui，不要制作整页网页。修改传 page_id 会生成新版本。',
       inputSchema: obj(
         {
-          title: { type: 'string', description: '两到四个词的名字' },
-          html: { type: 'string', description: '完整的 HTML 文档' },
-          page_id: { type: 'string', description: '要更新的页面 id（可选）' },
-          display: { type: 'string', enum: ['inline', 'panel'], description: 'inline（默认）：对话内交互预览；panel：完整侧栏页面' }
+          title: { type: 'string', description: '简短名字，用于无障碍标签与版本记录' },
+          html: { type: 'string', description: embedded ? '嵌入对话的 HTML/CSS/SVG/JS 片段，不是完整网页' : '完整的 HTML 文档' },
+          page_id: { type: 'string', description: '要更新的 UI 或页面 id（可选）' },
+          display: { type: 'string', enum: ['inline', 'panel'], description: embedded ? '默认 inline：正文内直接使用；panel：明确需要侧栏时使用' : '默认 panel：独立网页' }
         },
         ['title', 'html']
       ),
       run: ({ title, html, page_id, display }) => {
         const reply = this.chat.currentReply(conversationId)
         if (!reply) throw new Error('只能在回复过程中使用')
+        const source = String(html ?? '')
         const { meta, version } = this.artifacts.publish(
           conversationId,
           String(title ?? '').slice(0, 60),
-          String(html ?? ''),
+          embedded ? uiDocument(source) : source,
           page_id ? String(page_id) : undefined
         )
-        reply.blocks.push({ type: 'artifact', artifactId: meta.id, title: meta.title, version, display: display === 'panel' ? 'panel' : 'inline' })
+        const placement = display === 'inline' ? 'inline' : display === 'panel' ? 'panel' : embedded ? 'inline' : 'panel'
+        reply.blocks.push({ type: 'artifact', artifactId: meta.id, title: meta.title, version, display: placement })
         this.chat.updateMessage(reply)
-        return { page_id: meta.id, version }
+        return { page_id: meta.id, version, display: placement }
       }
     })
     if (!project) return common

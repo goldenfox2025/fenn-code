@@ -379,46 +379,27 @@
 }
 .interactive-preview {
   margin: var(--space-6) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: var(--bg-panel);
-}
-.interactive-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  min-height: 38px;
-}
-.interactive-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex: 1;
   min-width: 0;
-  padding: var(--space-2) 0;
-  text-align: left;
-  font-size: var(--font-sm);
-  font-weight: 500;
 }
-.interactive-title svg {
-  flex: none;
+.interactive-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 28px;
   color: var(--text-3);
-}
-.interactive-title span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .interactive-version {
-  flex: none;
-  color: var(--text-3);
   font-size: var(--font-xs);
 }
 .artifact-surface.inline {
-  height: clamp(240px, 42vh, 360px);
-  border-top: 1px solid var(--border);
+  display: block;
+  flex: none;
+  overflow: hidden;
+  background: transparent;
+}
+.artifact-surface.inline .page-frame {
+  background: transparent;
 }
 .page-code {
   flex: 1;

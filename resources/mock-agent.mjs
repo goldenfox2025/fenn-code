@@ -708,17 +708,22 @@ async function turn(sessionId, s, text, abort, sawHistory) {
   if (sawHistory)
     await stream(sessionId, "（我看到了之前的对话记录。）\n\n", abort);
   if (
-    /做个页面|改一下页面/.test(text) &&
+    /做个页面|改一下页面|做个可视化|改一下可视化/.test(text) &&
     (await toolNames(s).catch(() => [])).includes("publish_page")
   ) {
     const v = s.pageId ? 2 : 1;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    const inlineUi = /可视化/.test(text);
+    const pageHtml = `<!doctype html><html><head><meta charset="utf-8"><style>
 body{font-family:system-ui,sans-serif;margin:0;display:grid;place-items:center;height:100vh;background:#faf9f5;color:#141413}
 .card{padding:32px 40px;border-radius:16px;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.08);text-align:center}
 button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d97757;color:#fff;font-size:15px}
 </style></head><body><div class="card"><h1>计数器 v${v}</h1><div id="n" style="font-size:48px">0</div>
 <button id="b">加一</button></div><script>let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n}<\/script></body></html>`;
-    const r = await callTool(sessionId, s, "publish_page", {
+    const html = inlineUi ? `<style>
+.demo-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}.demo-controls button{border:1px solid var(--border);border-radius:8px;padding:6px 14px;background:var(--bg-elevated);color:var(--text)}.demo-count{font-variant-numeric:tabular-nums;font-size:24px;min-width:36px}.demo-note{color:var(--text-3);font-size:12px}.demo-details{padding-top:16px;line-height:1.8}
+</style><div><strong>计数器 v${v}</strong><div class="demo-note">交互示例 · 直接在回复中操作</div><div class="demo-controls"><output id="n" class="demo-count">0</output><button id="b">加一</button><button id="more" aria-expanded="false">展开说明</button></div><div id="details" class="demo-details" hidden>这个控件与上面的说明文字属于同一条回复。<br>内容展开时，对话自然向下排版。<br>切换主题和调整窗口不会重置计数。</div></div><script>let n=0;document.getElementById('b').onclick=()=>document.getElementById('n').textContent=++n;document.getElementById('more').onclick=()=>{const d=document.getElementById('details');d.hidden=!d.hidden;document.getElementById('more').setAttribute('aria-expanded',String(!d.hidden))}<\/script>` : pageHtml;
+    if (inlineUi) await stream(sessionId, "这里可以直接调整参数：\n\n", abort);
+    const r = await callTool(sessionId, s, inlineUi ? "render_ui" : "publish_page", {
       title: "计数器",
       html,
       ...(/侧栏/.test(text) ? { display: 'panel' } : {}),

@@ -3,7 +3,7 @@ import type { Block } from '@shared/model'
 export type ToolBlock = Extract<Block, { type: 'tool' }>
 
 /** The app's own coordination tools are plumbing; their effects show up as cards and status instead. */
-export const APP_TOOL = /(^|[/_.:\s])(publish_page|ask_decision|start_thread|start_subconversation|message_thread|list_threads|read_thread|set_thread_resolved|update_status|set_title|set_resolved|react|correct_message|memory_list|memory_read|memory_write|memory_delete|set_blocker|progress_read|progress_update)\b/
+export const APP_TOOL = /(^|[/_.:\s])(render_ui|publish_page|ask_decision|start_thread|start_subconversation|message_thread|list_threads|read_thread|set_thread_resolved|update_status|set_title|set_resolved|react|correct_message|memory_list|memory_read|memory_write|memory_delete|set_blocker|progress_read|progress_update)\b/
 
 /** Tools whose result is the card itself. */
 export const OUTPUT_TOOL = /(^|[/_.:\s])(attach_output|project_file_write)\b/
@@ -13,7 +13,7 @@ export function visualWork(blocks: Block[]): 'visualization' | 'page' | undefine
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i]
     if (b.type !== 'tool' || (b.status !== 'pending' && b.status !== 'running')) continue
-    if (/(^|[/_.:\s])publish_page\b/.test(b.title)) return 'visualization'
+    if (/(^|[/_.:\s])(render_ui|publish_page)\b/.test(b.title)) return 'visualization'
     const editing = b.toolKind === 'edit' || /write|edit|create|\u4fee\u6539|\u7f16\u8f91|\u5199\u5165/i.test(b.title)
     if (editing && b.paths?.some((p) => /\.(css|html?)$/i.test(p))) return 'page'
   }
