@@ -266,55 +266,24 @@ await check('a long chat keeps the composer on screen', async () => {
   if (!box || box.y + box.height > vp.height || box.y < 0) throw new Error(`composer at ${JSON.stringify(box)}`)
 })
 
-await check('one click turns 玻璃效果 on and back off, and the long chat still scrolls smoothly', async () => {
-  const theme = () => page.evaluate(() => document.documentElement.dataset.theme)
-  const before = await theme()
-  // Scroll the long chat to the top and back, timing frames.
-  const scrollTest = () => page.evaluate(async () => {
-    const el = document.querySelector('.center .scroll')
-    if (!el) throw new Error('no transcript')
-    let last = performance.now()
-    let worst = 0
-    for (let i = 0; i < 60; i++) {
-      el.scrollTop = (el.scrollHeight * (i % 30)) / 30
-      await new Promise((r) => requestAnimationFrame(r))
-      const now = performance.now()
-      worst = Math.max(worst, now - last)
-      last = now
-    }
-    return worst
-  })
-  const plain = await scrollTest()
-  // Nothing moves when the look changes: the same boxes before and after.
-  const boxes = () => page.evaluate(() => [...document.querySelectorAll('.bubble, .composer, .chat-header')].slice(-6).map((el) => { const r = el.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)].join('x') }).join(' '))
-  const plainBoxes = await boxes()
-  // Nor does depth: every raised surface casts the same drop shadow, glass only adds its top highlight.
-  const depths = () => page.evaluate(() => {
-    const host = document.createElement('div')
-    host.style.cssText = 'position:fixed;left:-9999px;top:0'
-    document.querySelector('#root').appendChild(host)
-    const out = ['aside.panel.floating', 'aside.panel.maximized', 'div.composer', 'div.queue-tray', 'div.no-agent-card', 'div.menu', 'div.modal'].map((p) => {
-      const [tag, ...cls] = p.split('.')
-      const el = host.appendChild(document.createElement(tag))
-      el.className = cls.join(' ')
-      const drop = getComputedStyle(el).boxShadow.split(/,(?![^(]*\))/).map((x) => x.trim()).filter((x) => x !== 'none' && !x.includes('inset') && !/ 0px 0px 0px 1px$/.test(x))
-      return `${p}: ${drop.join(', ') || 'none'}`
+await check('appearance offers only opaque light, dark and system themes', async () => {
+  const original = await page.evaluate(async () => (await window.fenn.snapshot()).settings.theme)
+  for (const theme of ['light', 'dark', 'system']) {
+    await page.evaluate((theme) => window.fenn.updateSettings({ theme }), theme)
+    await page.waitForFunction((theme) => document.documentElement.dataset.theme ===
+      (theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme), theme)
+    const surface = await page.evaluate(() => {
+      const css = getComputedStyle(document.body)
+      return { background: css.backgroundColor, blur: css.backdropFilter }
     })
-    host.remove()
-    return out.join('\n')
-  })
-  const plainDepths = await depths()
-  await page.click('.glass-toggle')
-  await page.waitForFunction(() => /^glass/.test(document.documentElement.dataset.theme))
-  await page.waitForTimeout(200)
-  const glassBoxes = await boxes()
-  if (glassBoxes !== plainBoxes) throw new Error(`glass moves things: ${plainBoxes} → ${glassBoxes}`)
-  const glassDepths = await depths()
-  if (glassDepths !== plainDepths) throw new Error(`glass changes depth:\n${plainDepths}\n→\n${glassDepths}`)
-  const glass = await scrollTest()
-  console.log(`   slowest scroll frame: ${Math.round(plain)} ms ${before}, ${Math.round(glass)} ms glass (software rendering)`)
-  await page.click('.glass-toggle')
-  await page.waitForFunction((b) => document.documentElement.dataset.theme === b, before)
+    if (!/^rgb\(/.test(surface.background) || surface.blur !== 'none') throw new Error(JSON.stringify(surface))
+  }
+  await page.click('.user-btn')
+  await page.click('.settings-nav .nav-item:has-text("外观")')
+  const settings = page.locator('.settings-body')
+  if (/玻璃|Glass/i.test(await settings.innerText())) throw new Error('Retired appearance control still visible')
+  await page.keyboard.press('Escape')
+  await page.evaluate((theme) => window.fenn.updateSettings({ theme }), original)
 })
 
 await check('Esc closes dialogs, and Settings keeps one size on every tab', async () => {

@@ -32,7 +32,6 @@
     "test": "vitest run",
     "test:e2e": "electron-vite build && node scripts/e2e.mjs",
     "test:package": "node scripts/package-smoke.mjs",
-    "test:dot-field": "node scripts/dot-field-smoke.mjs",
     "dist": "electron-vite build && electron-builder",
     "postinstall": "install-electron",
     "visual": "node scripts/visual.mjs",

@@ -443,10 +443,8 @@ export interface AppSettings {
   secretsToReenter?: string[]
   /** The app name the one-time repair of secrets saved under old names last ran for. */
   secretsRepairedFor?: string
-  /** Color scheme; 'system' follows the OS. ('glass' is the pre-0.1.1 setting, read as dark + glass.) */
-  theme: 'system' | 'light' | 'dark' | 'glass'
-  /** The frosted glass look, layered over the color scheme. */
-  glass?: boolean
+  /** Color scheme; 'system' follows the OS. */
+  theme: 'system' | 'light' | 'dark'
   /** A faint dot grid behind the content that lights up near the pointer: 0 off, 1 or unset 轻 (the default), 2 明显. */
   dotGrid?: number
   /** Diagnostics: write every ACP message to logs/ in the data folder. Off by default. */
@@ -503,13 +501,11 @@ export interface AppInfo {
   node?: string
   platform: string
   arch: string
-  /** The window can blur the desktop behind it (macOS vibrancy, Windows 11 acrylic). */
-  nativeGlass?: boolean
   /** Where chats' folders go when Settings names none. */
   defaultFolder?: string
   /** The build has a release channel, so 检查更新 can work. */
   updates?: boolean
-  /** No GPU compositing: expensive effects like backdrop blur are skipped. */
+  /** GPU compositing is unavailable; useful for rendering diagnostics. */
   softwareRendering?: boolean
 }
 
@@ -557,8 +553,6 @@ export type AppEvent =
   | { type: 'open-settings' }
   /** Output of a backend upgrade as it runs. */
   | { type: 'backend-upgrade'; backendId: string; line: string }
-  /** GPU compositing turned out to be on or off once the GPU process reported (AppInfo.softwareRendering). */
-  | { type: 'rendering'; softwareRendering: boolean }
 
 /** A tool server (MCP) the user adds once; every agent session gets it, whatever the backend. */
 export interface Connector {
@@ -752,9 +746,10 @@ export interface FennApi {
   windowControl(action: 'minimize' | 'maximize' | 'close'): void
 }
 
-/** Glass used to be a theme of its own (always dark); it is now a switch over light or dark. */
-export function normalizeTheme<T extends Partial<Pick<AppSettings, 'theme' | 'glass'>>>(s: T): T {
-  return s.theme === 'glass' ? { ...s, theme: 'dark', glass: true } : s
+/** Migrate retired glass settings to an opaque color scheme and drop the old switch. */
+export function normalizeTheme<T extends { theme?: string; glass?: unknown }>(s: T): Omit<T, 'theme' | 'glass'> & { theme: AppSettings['theme'] } {
+  const { glass: _removed, theme, ...settings } = s
+  return { ...settings, theme: theme === 'glass' || theme === 'dark' ? 'dark' : theme === 'glass-light' || theme === 'light' ? 'light' : 'system' }
 }
 
 /** One file or folder in a project's library. `path` is relative to the project's folder, with / between parts. */

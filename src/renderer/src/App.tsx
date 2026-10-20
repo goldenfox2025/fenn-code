@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { CircleAlert, Minus, Orbit, PanelLeft, Square, X } from 'lucide-react'
+import { CircleAlert, Minus, PanelLeft, Square, X } from 'lucide-react'
 import { Dialogs } from './components/Dialogs'
 import { DotField } from './components/DotField'
 import { ConfirmHost } from './components/Modal'
@@ -21,7 +21,6 @@ export function App() {
   const ready = useApp((s) => s.ready)
   const route = useApp((s) => s.route)
   const theme = useApp((s) => s.settings.theme)
-  const glass = useApp((s) => !!s.settings.glass)
   const sidebarOpen = useApp((s) => s.sidebarOpen)
   usePaneFit(sidebarOpen)
   const page = useApp((s) => s.page)
@@ -32,7 +31,7 @@ export function App() {
   // Shown until the guide is finished or skipped, so leaving it half-way brings it back next time.
   const firstRun = useApp((s) => !s.settings.onboarded)
 
-  useTheme(theme, glass)
+  useTheme(theme)
   useShortcuts()
   useReenterNotice()
   useLanguageSync()
@@ -65,7 +64,7 @@ export function App() {
     <div className="app">
       <Sidebar />
       <main className="main">
-        {!!dotGrid && <DotField strength={dotGrid} fixed={platform === 'darwin' && glass} />}
+        {!!dotGrid && <DotField strength={dotGrid} />}
         <div className="topbar drag">
           {!sidebarOpen && (
             <button
@@ -77,7 +76,6 @@ export function App() {
             </button>
           )}
           <span className="spacer" />
-          <GlassToggle />
           {platform !== 'darwin' && <WindowControls />}
         </div>
         <div className="workspace">
@@ -120,65 +118,25 @@ function WindowControls() {
   )
 }
 
-/** One click to turn the glass look on or off, over whichever color scheme is set. */
-function GlassToggle() {
-  const on = useApp((s) => !!s.settings.glass)
-  const toggle = () => void api().updateSettings({ glass: !on })
-  return (
-    <button className={'icon-btn glass-toggle' + (on ? ' on' : '')} data-tip={on ? t('退出玻璃效果') : t('玻璃效果')} aria-pressed={on} onClick={toggle}>
-      <Orbit size={16} />
-    </button>
-  )
-}
-
-let nativeGlass: boolean | undefined
-let softwareRendering = false
-
-function useTheme(theme: 'system' | 'light' | 'dark' | 'glass', glass: boolean) {
+/** The page follows the chosen color scheme, including OS changes in system mode. */
+function useTheme(theme: 'system' | 'light' | 'dark') {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const root = document.documentElement
-    const look = () => {
-      const dark = theme === 'dark' || theme === 'glass' || (theme === 'system' && mq.matches)
-      // Glass over dark keeps its old name, 'glass'; glass over light is 'glass-light'.
-      return glass ? (dark ? 'glass' : 'glass-light') : dark ? 'dark' : 'light'
-    }
-    const set = () => {
-      root.dataset.theme = look()
-      root.classList.toggle('native-glass', glass && !!nativeGlass)
-      root.classList.toggle('no-blur', softwareRendering)
-    }
-    // A change of look cross-fades instead of snapping. The window's own material changes
-    // behind the page, timed by the main process so it never shows (see applyWindowMaterial).
+    const look = () => theme === 'dark' || (theme === 'system' && mq.matches) ? 'dark' : 'light'
+    const set = () => { root.dataset.theme = look() }
     const apply = () => {
       const fade = !!root.dataset.theme && root.dataset.theme !== look() && 'startViewTransition' in document &&
         !matchMedia('(prefers-reduced-motion: reduce)').matches
       if (!fade) return set()
-      // A fade cut short by the next change (or skipped) rejects these; the look is set either way.
-      const fadeOut = (document as Document & { startViewTransition(cb: () => void): { ready: Promise<void>; finished: Promise<void> } }).startViewTransition(set)
-      fadeOut.ready.catch(() => undefined)
-      fadeOut.finished.catch(() => undefined)
+      const transition = (document as Document & { startViewTransition(cb: () => void): { ready: Promise<void>; finished: Promise<void> } }).startViewTransition(set)
+      transition.ready.catch(() => undefined)
+      transition.finished.catch(() => undefined)
     }
-    if (nativeGlass === undefined)
-      void api()
-        .appInfo()
-        .then((i) => {
-          nativeGlass = !!i.nativeGlass
-          softwareRendering = !!i.softwareRendering
-          apply()
-        })
     apply()
     mq.addEventListener('change', apply)
-    const off = api().onEvent((e) => {
-      if (e.type !== 'rendering') return
-      softwareRendering = e.softwareRendering
-      root.classList.toggle('no-blur', softwareRendering)
-    })
-    return () => {
-      mq.removeEventListener('change', apply)
-      off()
-    }
-  }, [theme, glass])
+    return () => mq.removeEventListener('change', apply)
+  }, [theme])
 }
 
 /** Once per launch: secrets the rename couldn't carry over need entering again. */

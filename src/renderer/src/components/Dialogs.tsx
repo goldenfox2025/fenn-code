@@ -560,7 +560,6 @@ function Diagnostics() {
 
 function AppearanceSettings() {
   const theme = useApp((s) => s.settings.theme)
-  const glass = useApp((s) => !!s.settings.glass)
   const dotGrid = useApp((s) => s.settings.dotGrid)
   return (
     <>
@@ -573,15 +572,6 @@ function AppearanceSettings() {
               {{ system: t('跟随系统'), light: t('浅色'), dark: t('深色') }[th]}
             </button>
           ))}
-        </div>
-      </div>
-      <div className="field">
-        <div className="row-between">
-          <div>
-            <label>{t('玻璃效果')}</label>
-            <div className="help">{t('半透明的磨砂玻璃界面，浅色和深色都可以用。')}</div>
-          </div>
-          <Switch on={glass} label={t('玻璃效果')} onChange={(next) => api().updateSettings({ glass: next })} />
         </div>
       </div>
       <div className="field">

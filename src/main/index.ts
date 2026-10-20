@@ -1,5 +1,5 @@
 import "./env";
-import { homedir, release } from "node:os";
+import { homedir } from "node:os";
 import {
   app,
   BrowserWindow,
@@ -96,13 +96,8 @@ const resourcesDir = app.isPackaged
   ? process.resourcesPath
   : join(import.meta.dirname, "../../resources");
 
-// Windows 11 22H2 (build 22621) added acrylic for app windows.
-const nativeGlass =
-  process.platform === "darwin" ||
-  (process.platform === "win32" && Number(release().split(".")[2] ?? 0) >= 22621);
-
 function publish(e: AppEvent): void {
-  if (e.type === "settings") applyWindowMaterial(e.settings);
+  if (e.type === "settings") applyWindowTheme(e.settings);
   win?.webContents.send("oc:event", e);
   notifier.observe(e);
 }
@@ -458,7 +453,6 @@ core.info = {
   node: process.versions.node,
   platform: process.platform,
   arch: process.arch,
-  nativeGlass,
 };
 core.updateFeed = process.env.FENN_UPDATE_FEED || __OC_UPDATE_FEED__ || undefined;
 core.fetchJson = async (url) => {
@@ -483,49 +477,22 @@ ipcMain.on("oc:window", (_e, action: string) => {
   else if (action === "close") win.close();
 });
 
-/**
- * The glass look lets the desktop show through, blurred, where the OS can do it.
- * The page cross-fades between looks (App.tsx): glass turns on under the still-opaque
- * page, and turns off only once the page has faded to opaque, so the switch of the
- * window's material never shows as a flash.
- */
-let materialTimer: NodeJS.Timeout | undefined;
-let glassShown: boolean | undefined;
-function applyWindowMaterial(settings: { theme?: string; glass?: boolean }): void {
-  followLook(settings);
-  if (!win || !nativeGlass) return;
-  const glass = !!settings.glass;
-  clearTimeout(materialTimer);
-  if (glassShown && !glass) {
-    glassShown = false;
-    materialTimer = setTimeout(() => setWindowMaterial(settings), 450);
-    return;
-  }
-  glassShown = glass;
-  setWindowMaterial(settings);
-}
-
-/**
- * The window's own parts (its frame and border on Windows, the glass material on macOS,
- * native menus and dialogs) take the look chosen in the app, not only the system's.
- */
+/** Native menus, dialogs and window borders follow the app's color scheme. */
 function followLook(settings: { theme?: string }): void {
-  const source = settings.theme === "light" ? "light" : settings.theme === "dark" || settings.theme === "glass" ? "dark" : "system";
+  const source = settings.theme === "light" ? "light" : settings.theme === "dark" ? "dark" : "system";
   if (nativeTheme.themeSource !== source) nativeTheme.themeSource = source;
 }
 
-function setWindowMaterial(settings: { theme?: string; glass?: boolean }): void {
-  if (!win) return;
-  const glass = !!settings.glass;
-  const dark = settings.theme === "dark" || (settings.theme !== "light" && nativeTheme.shouldUseDarkColors);
-  try {
-    if (process.platform === "darwin") win.setVibrancy(glass ? "under-window" : null);
-    else win.setBackgroundMaterial(glass ? "acrylic" : "none");
-    win.setBackgroundColor(glass ? "#00000000" : dark ? "#262624" : "#faf9f5");
-  } catch (err) {
-    console.warn("window material", err);
-  }
+function setWindowBackground(): void {
+  win?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? "#262624" : "#faf9f5");
 }
+
+function applyWindowTheme(settings: { theme?: string }): void {
+  followLook(settings);
+  setWindowBackground();
+}
+
+nativeTheme.on("updated", setWindowBackground);
 
 function createWindow(): void {
   const isMac = process.platform === "darwin";
@@ -556,7 +523,7 @@ function createWindow(): void {
   // source is electron.exe: a source run names the fox icon for its id itself.
   if (copy === "source")
     win.setAppDetails({ appId: winAppId(copy), appIconPath: join(resourcesDir, "icon.ico"), appIconIndex: 0 });
-  applyWindowMaterial(store.settings);
+  applyWindowTheme(store.settings);
   win.once("ready-to-show", () => win?.show());
   // Only web and mail links leave the app. Anything else (file:, a relative link resolved against the
   // app itself, a custom scheme) would have the system open or run it, from text an agent wrote.
@@ -758,14 +725,13 @@ app.whenReady().then(async () => {
       ...(lost.length ? { secretsToReenter: [...new Set([...(store.settings.secretsToReenter ?? []), ...lost])] } : {}),
     });
   };
-  // Without GPU compositing, backdrop blur makes scrolling choppy; the glass theme then skips it.
+  // Keep GPU compositing status available for diagnostics.
   // At ready the GPU process may not have reported yet, so the answer is read again when it does.
   const readCompositing = () => {
     const compositing = String(app.getGPUFeatureStatus().gpu_compositing ?? "");
-    const software = !compositing.startsWith("enabled") && !process.env.FENN_FORCE_BLUR;
+    const software = !compositing.startsWith("enabled");
     if (software === core.info.softwareRendering) return;
     core.info.softwareRendering = software;
-    publish({ type: "rendering", softwareRendering: software });
   };
   readCompositing();
   app.on("gpu-info-update", readCompositing);

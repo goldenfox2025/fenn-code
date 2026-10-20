@@ -34,7 +34,6 @@
 }
 .bubble {
   background: var(--bg-user);
-  /* Glass draws a hairline here; every look keeps its width so nothing moves when glass is switched. */
   border: 1px solid transparent;
   border-radius: var(--radius-xl);
   padding: var(--space-5) var(--space-7);

@@ -55,9 +55,7 @@ Run a prompt once, every few minutes, daily, weekly or on a cron schedule, and h
 
 ### Themes and languages
 
-Light, dark or follow the system, with an optional translucent glass look on top, in English or Simplified Chinese. The language follows your system until you pick one in Settings → Appearance.
-
-![The same view in light, dark and glass](docs/screenshots/en/themes.webp)
+Light, dark or follow the system, in English or Simplified Chinese. The language follows your system until you pick one in Settings → Appearance.
 
 Also included: attachments, editing and regenerating with version history, token and cost usage as the agent reports it (over ACP or in its own session log, never estimated), chats grouped by working folder, sub-conversations the agent can hand side work to, working folders with file and terminal tools, MCP connectors, full-text search, desktop notifications, and a new-chat page with usage figures, an activity heatmap, your most used models and cards that agents can put there and refresh on a schedule.
 

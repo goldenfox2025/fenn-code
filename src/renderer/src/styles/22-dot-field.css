@@ -25,12 +25,3 @@
   height: 0;
   will-change: transform;
 }
-
-/* Keep the alpha surface still above native macOS vibrancy, including while the
-   pointer moves, a trail fades, or the glow becomes empty. */
-.dot-glow.fixed {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  will-change: auto;
-}

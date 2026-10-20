@@ -1,6 +1,6 @@
 /*
  * Design tokens: every color, spacing, radius and type size the app uses.
- * Themes (light, dark, 太空玻璃, 玻璃 over light) only redefine the colors.
+ * Themes (light and dark) only redefine the colors.
  * styles.css builds on these; see test/style-tokens.test.ts.
  */
 :root {
@@ -56,7 +56,7 @@
   --amber: #b7791f;
   --red: #c4423b;
   --blue: #3b74c9;
-  /* How far a surface floats. Each glass look floats as high as its plain twin, so switching glass changes the material, never the depth. */
+  /* How far a surface floats. */
   --drop: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
   --drop-pop: 0 4px 24px rgba(0, 0, 0, 0.12);
   --shadow: var(--drop);
@@ -108,90 +108,9 @@
   --focus-ring: rgba(var(--accent-rgb), 0.55);
   color-scheme: dark;
 }
-:root:is([data-theme='dark'], [data-theme='glass']) {
+:root[data-theme='dark'] {
   --drop: 0 1px 2px rgba(0, 0, 0, 0.2);
   --drop-pop: 0 6px 28px rgba(0, 0, 0, 0.45);
-}
-
-/* 太空玻璃: deep space black behind frosted, translucent panels. */
-:root[data-theme='glass'] {
-  --bg: #07080d;
-  --bg-sidebar: rgba(255, 255, 255, 0.035);
-  --bg-elevated: rgba(255, 255, 255, 0.065);
-  --bg-panel: rgba(255, 255, 255, 0.04);
-  --bg-floating: #10121b;
-  --bg-hover: rgba(255, 255, 255, 0.06);
-  --bg-active: rgba(255, 255, 255, 0.1);
-  --bg-input: rgba(255, 255, 255, 0.055);
-  --bg-user: rgba(255, 255, 255, 0.08);
-  --bg-code: rgba(0, 0, 0, 0.32);
-  --text: #f1f2f7;
-  --text-2: #d6d8e3;
-  --text-3: #9ea3b5;
-  --text-4: #6f7488;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --accent: #3fd6f5;
-  --accent-rgb: 63, 214, 245;
-  --dot-rgb: 220, 228, 255;
-  --dot-alpha: 0.09;
-  --dot-trail: 2.6;
-  --accent-fg: #062630;
-  --accent-hover: #6fe2f8;
-  --accent-soft: rgba(var(--accent-rgb), 0.16);
-  --accent-text: var(--accent);
-  --link: #9fb3ff;
-  --green: #6fd3a0;
-  --amber: #f0c06b;
-  --red: #ff8a80;
-  --blue: #8fb4ff;
-  --glow: 0 0 0 1px rgba(143, 157, 255, 0.45), 0 0 18px rgba(143, 157, 255, 0.22);
-  --hairline-top: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --frost: blur(18px) saturate(150%);
-  --focus-border: rgba(var(--accent-rgb), 0.55);
-  --focus-ring: rgba(120, 230, 250, 0.9);
-  --shadow: var(--hairline-top), var(--drop);
-  --shadow-pop: var(--hairline-top), var(--drop-pop), 0 0 0 1px rgba(255, 255, 255, 0.1);
-  color-scheme: dark;
-}
-
-/* ---------- 玻璃效果 over light: frosted white panels on a soft daylight backdrop ---------- */
-:root[data-theme='glass-light'] {
-  --bg: #eef0f6;
-  --bg-sidebar: rgba(255, 255, 255, 0.42);
-  --bg-elevated: rgba(255, 255, 255, 0.74);
-  --bg-panel: rgba(255, 255, 255, 0.52);
-  --bg-floating: #f6f7fb;
-  --bg-hover: rgba(22, 26, 44, 0.05);
-  --bg-active: rgba(22, 26, 44, 0.085);
-  --bg-input: rgba(255, 255, 255, 0.72);
-  --bg-user: rgba(75, 86, 210, 0.1);
-  --bg-code: rgba(255, 255, 255, 0.62);
-  --text: #15171f;
-  --text-2: #343745;
-  --text-3: #5a5e70;
-  --text-4: #8b8fa1;
-  --border: rgba(22, 26, 44, 0.09);
-  --border-strong: rgba(22, 26, 44, 0.17);
-  --accent: #07789e;
-  --accent-rgb: 7, 120, 158;
-  --dot-rgb: 31, 30, 29;
-  --dot-alpha: 0.10;
-  --accent-fg: #ffffff;
-  --accent-hover: #06627f;
-  --accent-soft: rgba(var(--accent-rgb), 0.12);
-  --link: #3a4ecf;
-  --green: #2c7a4c;
-  --amber: #96620e;
-  --red: #bd3831;
-  --blue: #3a63c9;
-  --hairline-top: inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  --frost: blur(22px) saturate(170%);
-  --focus-border: rgba(var(--accent-rgb), 0.5);
-  --focus-ring: rgba(var(--accent-rgb), 0.85);
-  --shadow: var(--hairline-top), var(--drop);
-  --shadow-pop: var(--hairline-top), var(--drop-pop), 0 0 0 1px rgba(22, 26, 44, 0.07);
-  color-scheme: light;
 }
 
 /* Scales. Component CSS uses these, never raw px for spacing or radius
@@ -251,13 +170,4 @@
 :root[data-theme='dark'] {
   --tip-bg: #3d3d3a;
   --tip-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
-}
-/* Popovers over the deep glass backdrop: opaque enough that the page doesn't show through. */
-:root[data-theme='glass'] {
-  --glass-pop-bg: rgba(20, 22, 33, 0.95);
-}
-:root[data-theme='glass'],
-:root[data-theme='glass-light'] {
-  --tip-bg: rgba(28, 28, 30, 0.72);
-  --tip-shadow: 0 6px 20px rgba(0, 0, 0, 0.25), inset 0 0 0 0.5px rgba(255, 255, 255, 0.14);
 }

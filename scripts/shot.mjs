@@ -59,9 +59,9 @@ if (!process.env.KEEP_ONBOARDING && (await page.locator('.onboarding').count()))
   await page.click('.onboarding .skip')
   await page.waitForSelector('.onboarding', { state: 'detached' })
 }
-// UI_THEME=glass|light|dark sets the app's own theme setting.
+// UI_THEME=light|dark|system sets the app's own theme setting.
 if (process.env.UI_THEME) {
-  await page.evaluate((x) => window.fenn.updateSettings(x === 'glass' ? { theme: 'dark', glass: true } : x === 'glass-light' ? { theme: 'light', glass: true } : { theme: x, glass: false }), process.env.UI_THEME)
+  await page.evaluate((x) => window.fenn.updateSettings({ theme: x }), process.env.UI_THEME)
   await page.waitForTimeout(300)
 }
 /** Opens one of the project panel's views under 「…」 (成果, 项目资料, 项目记忆, 定时任务, 里程碑). */

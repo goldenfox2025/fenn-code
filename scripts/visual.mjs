@@ -1,5 +1,5 @@
 // Screenshot regression for one standard turn (steps line, answer, a card and
-// the action row) in all four looks. Compares against test/visual/*.png;
+// the action row) in both color schemes. Compares against test/visual/*.png;
 // UPDATE_VISUAL=1 writes new baselines. Baselines are tied to the fonts of the
 // machine that made them (the Linux CI image).
 // Usage: xvfb-run -a node scripts/visual.mjs
@@ -12,7 +12,7 @@ import { declareTestAgent } from './test-agent.mjs'
 const dir = new URL('../test/visual/', import.meta.url).pathname
 mkdirSync(dir, { recursive: true })
 const update = !!process.env.UPDATE_VISUAL
-const looks = { light: { theme: 'light', glass: false }, dark: { theme: 'dark', glass: false }, glass: { theme: 'dark', glass: true }, 'glass-light': { theme: 'light', glass: true } }
+const looks = { light: { theme: 'light' }, dark: { theme: 'dark' } }
 let failed = 0
 
 for (const [name, look] of Object.entries(looks)) {

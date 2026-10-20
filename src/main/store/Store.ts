@@ -65,6 +65,7 @@ export class Store {
       settings: normalizeTheme({ ...DEFAULT_SETTINGS, ...loaded?.settings }),
       backendSettings: loaded?.backendSettings ?? {}
     }
+    if (loaded?.settings && ('glass' in loaded.settings || loaded.settings.theme !== this.state.settings.theme)) this.touch()
     for (const p of this.state.projects) this.projectIndex.set(p.id, p)
     for (const c of this.state.conversations) this.conversationIndex.set(c.id, c)
     // Data from before the first-run guide existed: the user is already set up, so don't guide them again.

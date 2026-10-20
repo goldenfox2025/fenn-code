@@ -568,8 +568,7 @@
   min-height: 38px;
 }
 /* A menu takes focus to drive its keyboard navigation; the highlighted item shows where it is, not a ring. */
-.menu:focus-visible,
-:root[data-theme='glass'] .menu:focus-visible {
+.menu:focus-visible {
   outline: none;
   box-shadow: var(--shadow-pop);
 }

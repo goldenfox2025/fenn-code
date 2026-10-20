@@ -158,11 +158,6 @@
   opacity: 1;
   transform: none;
 }
-:root[data-theme='glass'] .tooltip,
-:root[data-theme='glass-light'] .tooltip {
-  -webkit-backdrop-filter: var(--frost);
-  backdrop-filter: var(--frost);
-}
 @media (prefers-reduced-motion: reduce) {
   .tooltip { transition: none; transform: none; }
 }
