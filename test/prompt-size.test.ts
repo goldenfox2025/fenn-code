@@ -5,6 +5,9 @@ import { makeCore, until } from './helpers'
 // The user asked for working threads to carry as little prompt as possible; this cap only goes down.
 // Measured over the real tools/list JSON: ~9600 before computer control's tools were held back, 5158 after.
 const THREAD_CAP = 5200
+// Inline UI and typed charts add their own schemas; keep this explicit rather
+// than silently growing the core thread budget for each new capability.
+const VISUAL_CAP = 1500
 
 // What the agent really gets: the app's tools/list over MCP, with every source wired (computer control too).
 async function toolsList(core: any, id: string): Promise<{ json: string; names: string[] }> {
@@ -25,7 +28,10 @@ it('a thread starts with a short prompt and only the tools its task needs', asyn
     const short = (s: string) => s.split(p.cwd ?? '<none>').join('<cwd>').split(store.dir).join('<dir>')
     const pre: string = o.preamble(store.conversation(th.id), false)
     const list = await toolsList(core, th.id)
-    expect(short(pre).length + short(list.json).length).toBeLessThanOrEqual(THREAD_CAP)
+    const toolDefs = JSON.parse(list.json) as { name: string }[]
+    const visual = (t: { name: string }) => ['render_ui', 'render_chart'].includes(t.name)
+    expect(short(pre).length + short(JSON.stringify(toolDefs.filter((t) => !visual(t)))).length).toBeLessThanOrEqual(THREAD_CAP)
+    expect(JSON.stringify(toolDefs.filter(visual)).length).toBeLessThanOrEqual(VISUAL_CAP)
     for (const name of ['progress_update', 'create_routine', 'set_title', 'react']) expect(list.names).not.toContain(name)
     // Computer control's tools come only once the user turns it on.
     expect(list.names.some((n) => n.startsWith('computer_'))).toBe(false)

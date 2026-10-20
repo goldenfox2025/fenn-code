@@ -706,6 +706,17 @@ async function classify(sessionId, raw, abort) {
 }
 
 async function turn(sessionId, s, text, abort, sawHistory) {
+  if (/#折线图|#柱状图/.test(text)) {
+    const r = await callTool(sessionId, s, 'render_chart', {
+      title: '统计图表示例', type: text.includes('#柱状图') ? 'bar' : 'line',
+      labels: ['周一', '周二', '周三', '周四', '周五', '周六'],
+      series: [{ name: '输入', values: [12, 20, null, 18, 32, 26] }, { name: '输出', values: [5, 9, 7, 11, 14, 19] }],
+      unit: 'ms', source: '演示数据，不是真实用量', ...(s.chartId ? { page_id: s.chartId } : {})
+    });
+    s.chartId = r?.page_id ?? s.chartId;
+    await stream(sessionId, '图表已附在回复中。', abort);
+    return;
+  }
   if (process.env.MOCK_TOOL_TITLE && (await toolNames(s)).includes('set_title'))
     await callTool(sessionId, s, 'set_title', { title: process.env.MOCK_TOOL_TITLE });
   if (/#计划短|#计划长/.test(text)) {

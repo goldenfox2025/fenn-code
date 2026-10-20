@@ -95,6 +95,7 @@ try {
   })))
 
   // As in Claude's composer: one list for the agent, its models and modes, and an effort slider beside it.
+  if (process.env.PACKAGE_ONLY !== 'charts') {
   const picker = () => page.locator('.composer .model-btn')
   const openPicker = () => picker().click()
   // Agents are in the chip left of the model; anything past the first few is one level down.
@@ -475,6 +476,21 @@ try {
     assert(Math.abs(bounds.width - restored.bounds.width) <= 1 && Math.abs(bounds.height - restored.bounds.height) <= 1, JSON.stringify({ before: bounds, after: restored }))
     console.log('macOS native fullscreen enter/exit and restored size passed twice')
   }
+  }
+  // Rendering from the staged app catches missing runtime libraries that a
+  // checkout's node_modules would otherwise hide. No account or model API.
+  await page.evaluate(() => window.fenn.startChat({ text: '#折线图', backendId: 'mock' }))
+  await page.locator('.sidebar .nav-item').filter({ hasText: '#折线图' }).last().click()
+  const chart = page.locator('.interactive-preview').last().frameLocator('iframe').locator('canvas')
+  await chart.waitFor({ timeout: 20000 })
+  const plotted = await chart.evaluate((el) => {
+    const c = Chart.getChart(el)
+    return { type: c?.config.type, values: c?.data.datasets[0].data }
+  })
+  assert.equal(plotted.type, 'line')
+  assert.deepEqual(plotted.values, [12, 20, null, 18, 32, 26])
+  await page.screenshot({ path: join(shots, 'offline-chart.png') })
+  console.log('Packaged offline chart rendered from outside the checkout')
   assert.deepEqual(errors, [], 'Renderer errors')
   console.log('All packaged-app smoke checks passed')
 } catch (error) {

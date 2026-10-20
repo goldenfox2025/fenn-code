@@ -13,7 +13,7 @@ export function visualWork(blocks: Block[]): 'visualization' | 'page' | undefine
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i]
     if (b.type !== 'tool' || (b.status !== 'pending' && b.status !== 'running')) continue
-    if (/(^|[/_.:\s])(render_ui|publish_page)\b/.test(b.title)) return 'visualization'
+    if (/(^|[/_.:\s])(render_ui|render_chart|publish_page)\b/.test(b.title)) return 'visualization'
     const editing = b.toolKind === 'edit' || /write|edit|create|\u4fee\u6539|\u7f16\u8f91|\u5199\u5165/i.test(b.title)
     if (editing && b.paths?.some((p) => /\.(css|html?)$/i.test(p))) return 'page'
   }

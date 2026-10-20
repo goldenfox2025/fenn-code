@@ -266,6 +266,108 @@ await check('a long chat keeps the composer on screen', async () => {
   if (!box || box.y + box.height > vp.height || box.y < 0) throw new Error(`composer at ${JSON.stringify(box)}`)
 })
 
+await check('embedded select stays still while the mouse is held and released in a long reply', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('做个可视化 #慢页面')
+  const inline = page.locator('.interactive-preview').last()
+  const frame = inline.frameLocator('iframe')
+  const select = frame.locator('#edge-left')
+  await select.waitFor()
+  await select.evaluate((el) => {
+    const root = document.querySelector('[data-fenn-ui]')
+    const before = document.createElement('div'), after = document.createElement('div')
+    before.style.height='800px';after.style.height='900px'
+    root.prepend(before);root.append(after)
+    for(let i=0;i<10;i++)el.add(new Option('Model '+i,String(i)))
+  })
+  await page.waitForFunction(()=>document.querySelector('.interactive-preview iframe')?.getBoundingClientRect().height>1700)
+  const scroll = page.locator('.scroll:has(> .transcript)')
+  await scroll.dispatchEvent('wheel')
+  const box = await select.boundingBox()
+  await scroll.evaluate((el,y)=>el.scrollTop+=y-el.clientHeight/2,box.y)
+  await page.waitForTimeout(200)
+  // Record every rendered frame; an after-click screenshot misses transient jumps.
+  await page.evaluate(()=>{
+    window.pickerPositions=[];window.recordPicker=true
+    const record=()=>{
+      const el=document.querySelector('.scroll:has(> .transcript)'),r=document.querySelector('.interactive-preview iframe').getBoundingClientRect()
+      window.pickerPositions.push({scroll:el.scrollTop,top:r.top,height:r.height})
+      if(window.recordPicker)requestAnimationFrame(record)
+    };record()
+  })
+  await select.evaluate((el)=>{
+    window.pickerPositions=[];window.recordPicker=true
+    const record=()=>{
+      const root=document.querySelector('[data-fenn-ui]')
+      window.pickerPositions.push({scroll:scrollY,top:el.getBoundingClientRect().top,height:root.getBoundingClientRect().height,overflow:root.scrollHeight})
+      if(window.recordPicker)requestAnimationFrame(record)
+    };record()
+  })
+  const target=await select.boundingBox()
+  await page.mouse.move(target.x+target.width/2,target.y+target.height/2)
+  await page.mouse.down()
+  await page.waitForTimeout(300)
+  await page.mouse.up()
+  await page.waitForTimeout(300)
+  await page.locator('.menu').waitFor()
+  await page.locator('.menu').evaluate(el=>el.scrollTop=120)
+  await page.waitForTimeout(100)
+  if(!await page.locator('.menu').isVisible())throw new Error('Scrolling choices must not close the picker')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(100)
+  await select.press('Space')
+  await page.locator('.menu').waitFor()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(100)
+  if(await select.inputValue()!=='Sol')throw new Error('Keyboard selection must update the real select')
+  const outer=await page.evaluate(()=>{window.recordPicker=false;return window.pickerPositions})
+  const inner=await select.evaluate(()=>{window.recordPicker=false;return window.pickerPositions})
+  for(const [name,samples] of [['outer',outer],['inner',inner]]){
+    const first=samples[0]
+    if(samples.some(s=>Math.abs(s.scroll-first.scroll)>1||Math.abs(s.top-first.top)>1||Math.abs(s.height-first.height)>1))
+      throw new Error('Select moved '+name+' page during pointer press: '+JSON.stringify({outer:[...new Set(outer.map(s=>JSON.stringify(s)))],inner:[...new Set(inner.map(s=>JSON.stringify(s)))]}))
+  }
+})
+
+await check('charts render offline, fit narrow replies and keep data accessible', async () => {
+  const errors=[]
+  const onError=e=>errors.push(e.message)
+  page.on('pageerror',onError)
+  try{
+    await page.click('.nav-item:has-text("新建")')
+    await send('#折线图')
+    const inline=page.locator('.interactive-preview').last(), frame=inline.frameLocator('iframe'), canvas=frame.locator('canvas')
+    await canvas.waitFor()
+    for(const [theme,width,height] of [['light',1400,900],['dark',860,650],['light',640,600]]){
+      await page.evaluate(theme=>window.fenn.updateSettings({theme}),theme)
+      await page.setViewportSize({width,height})
+      await canvas.evaluate(el=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+      const layout=await canvas.evaluate(el=>{
+        const c=Chart.getChart(el),r=el.getBoundingClientRect()
+        return {type:c?.config.type,datasets:c?.data.datasets.length,left:r.left,right:r.right,width:innerWidth,height:r.height,missing:c?.data.datasets[0].data[2]}
+      })
+      if(layout.type!=='line'||layout.datasets!==2||layout.missing!==null||layout.left<0||layout.right>layout.width+1||layout.height<200)throw new Error('Chart layout/data incorrect: '+JSON.stringify(layout))
+      await canvas.focus()
+      await canvas.press('ArrowRight')
+      if(!await canvas.evaluate(el=>Chart.getChart(el).tooltip.opacity>0))throw new Error('Chart keyboard tooltip did not open')
+      await canvas.press('Escape')
+      await frame.locator('summary').click()
+      if(await frame.locator('tbody tr, table tr').count()!==7)throw new Error('Chart data table is incomplete')
+      await frame.locator('summary').click()
+      if(shots)await page.screenshot({path:join(shots,`chart-${theme}-${width}.png`)})
+    }
+    await send('#柱状图')
+    const bar=page.locator('.interactive-preview').last().frameLocator('iframe').locator('canvas')
+    await bar.waitFor()
+    if(await bar.evaluate(el=>Chart.getChart(el)?.config.type)!=='bar')throw new Error('Bar chart did not render')
+    if(errors.length)throw new Error('Chart runtime errors: '+errors.join('; '))
+  }finally{
+    page.off('pageerror',onError)
+    await page.setViewportSize({width:1400,height:900})
+  }
+})
+
 await check('interactive pages work inline and expand into a clipped responsive preview pane', async () => {
   await page.click('.nav-item:has-text("新建")')
   await page.fill('.composer textarea', '做个可视化 #慢页面')
@@ -314,30 +416,27 @@ await check('interactive pages work inline and expand into a clipped responsive 
   if (Math.abs(proseLeft-controlsLeft)>1) throw new Error(`Embedded controls shifted from prose: ${proseLeft} vs ${controlsLeft}`)
   if(shots) await page.screenshot({path:join(shots,'rounded-focus-in-reply.png')})
 
-  // Check the actual popup, not just the closed control's focus ring. Native
-  // macOS menus otherwise align their selected text instead of their edges.
+  // The shared app menu lives outside the iframe, aligned to the actual control.
   for (const selector of ['#edge-left', '#edge-right']) {
     const select = small.locator(selector)
     if (selector === '#edge-right') await select.evaluate((el) => {
       for (let i=0;i<12;i++) el.add(new Option('Another model choice '+i, String(i)))
     })
     await select.click()
-    const picker = await select.evaluate((el) => {
-      const control = el.getBoundingClientRect()
-      const css = getComputedStyle(el, '::picker(select)')
-      const option = el.querySelector('option').getBoundingClientRect()
-      return { open:el.matches(':open'), appearance:css.appearance, width:parseFloat(css.width), height:parseFloat(css.height), left:option.left-parseFloat(css.paddingLeft)-parseFloat(css.borderLeftWidth), controlLeft:control.left, controlWidth:control.width, optionTop:option.top, optionBottom:option.bottom, viewport:innerHeight }
-    })
-    if (!picker.open || picker.appearance !== 'base-select' || Math.abs(picker.width-picker.controlWidth)>1 || Math.abs(picker.left-picker.controlLeft)>1 || picker.optionTop<0 || picker.optionBottom>picker.viewport)
-      throw new Error('Embedded select popup is misaligned: '+JSON.stringify(picker))
+    const menu=page.locator('.menu')
+    await menu.waitFor()
+    await menu.evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)))
+    const picker = await menu.boundingBox(), control=await select.boundingBox()
+    if (Math.abs(picker.width-control.width)>1 || Math.abs(picker.x-control.x)>1 || picker.y<0 || picker.y+picker.height>900)
+      throw new Error('Embedded select popup is misaligned: '+JSON.stringify({picker,control}))
     if (selector === '#edge-right' && picker.height<100) throw new Error('A long picker must show several choices, not a single cramped row')
     if (shots) await page.screenshot({path:join(shots,`aligned-picker-${selector.slice(1)}.png`)})
-    await select.press('Escape')
-    if (await select.evaluate((el)=>el.matches(':open'))) throw new Error('Escape must close the picker')
+    await page.keyboard.press('Escape')
+    await menu.waitFor({state:'detached'})
   }
   await small.locator('#edge-left').evaluate((el) => el.addEventListener('change',()=>el.dataset.changed='yes'))
   await small.locator('#edge-left').click()
-  await small.locator('#edge-left option').nth(1).click()
+  await page.locator('.menu-item').filter({hasText:'Sol'}).click()
   if (await small.locator('#edge-left').inputValue() !== 'Sol') throw new Error('Select value must remain available to generated UI code')
   if (await small.locator('#edge-left').getAttribute('data-changed') !== 'yes') throw new Error('Selecting an option must notify generated UI code')
 

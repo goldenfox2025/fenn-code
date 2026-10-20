@@ -23,6 +23,7 @@ import type { ProjectMemory } from './ProjectMemory'
 import type { ProjectFiles } from './ProjectFiles'
 import type { Artifacts } from './Artifacts'
 import { uiDocument } from './uiDocument'
+import { chartDocument } from './chartDocument'
 import type { PeerMail } from './PeerMail'
 import { obj, str } from './tools/args'
 
@@ -815,37 +816,50 @@ export class Orchestrator {
         return '文件卡片已附上。'
       }
     })
-    // Both tools share storage/versioning; their default presentation is deliberately different.
-    for (const embedded of [true, false]) common.push({
-      name: embedded ? 'render_ui' : 'publish_page',
-      description: embedded
-        ? '在回复正文中直接绘制可交互 UI（图表、对比、滑块、流程、模拟器）。这是对话内容，不是网页或打开页面的卡片；可以在调用前后继续写解释文字。html 给正文片段，可含 style、SVG 和少量 script；不要 doctype/html/head/body、整页背景、网站标题栏、重复大标题，也不要固定宽度、100vh 或固定高度的外层页面。容器按内容自动长高并跟随对话主题；字体已提供，可用 CSS 变量 --text、--text-2、--text-3、--bg、--bg-elevated、--border、--accent、--accent-fg。使用响应式布局和可键盘操作的控件。数据须有依据，示例/估算明确标注。默认 display=inline，直接嵌入正文；只有更适合独立操作时才用 display=panel。修改用 page_id 保留版本。沙箱中不能访问应用或本地文件，fetch/WebSocket 不可用。'
-        : '发布独立的完整网页、长报告或应用原型，默认在侧栏打开。html 是自包含的完整 HTML 文档，CSS/JS 写在文档中，外部脚本只能用 HTTPS CDN。若用户要嵌在对话正文中的图表、比较或交互控件，请用 render_ui，不要制作整页网页。修改传 page_id 会生成新版本。',
-      inputSchema: obj(
-        {
-          title: { type: 'string', description: '简短名字，用于无障碍标签与版本记录' },
-          html: { type: 'string', description: embedded ? '嵌入对话的 HTML/CSS/SVG/JS 片段，不是完整网页' : '完整的 HTML 文档' },
-          page_id: { type: 'string', description: '要更新的 UI 或页面 id（可选）' },
-          display: { type: 'string', enum: ['inline', 'panel'], description: embedded ? '默认 inline：正文内直接使用；panel：明确需要侧栏时使用' : '默认 panel：独立网页' }
-        },
-        ['title', 'html']
-      ),
-      run: ({ title, html, page_id, display }) => {
-        const reply = this.chat.currentReply(conversationId)
-        if (!reply) throw new Error('只能在回复过程中使用')
-        const source = String(html ?? '')
-        const { meta, version } = this.artifacts.publish(
-          conversationId,
-          String(title ?? '').slice(0, 60),
-          embedded ? uiDocument(source) : source,
-          page_id ? String(page_id) : undefined
-        )
-        const placement = display === 'inline' ? 'inline' : display === 'panel' ? 'panel' : embedded ? 'inline' : 'panel'
-        reply.blocks.push({ type: 'artifact', artifactId: meta.id, title: meta.title, version, display: placement })
-        this.chat.updateMessage(reply)
-        return { page_id: meta.id, version, display: placement }
-      }
-    })
+    // UI, charts and pages share the same artifact storage and presentation.
+    for (const mode of ['ui', 'chart', 'page']) {
+      const embedded = mode !== 'page'
+      const chart = mode === 'chart'
+      common.push({
+        name: chart ? 'render_chart' : embedded ? 'render_ui' : 'publish_page',
+        description: chart
+          ? '回复内统计图：line 折线、bar 柱状，labels 对应各系列 values，缺失值 null。支持悬停数值、图例切换、键盘查看，离线自适应主题。source 标明依据或示例/估算；禁止虚构。page_id 更新，默认 inline。'
+          : embedded
+          ? '在回复内绘制交互 UI，常规统计图优先 render_chart。html 是 HTML/CSS/SVG/JS 片段，无需整页标签、背景或标题栏。按内容长高；禁止固定外层宽高/100vh；网格用 minmax(0,1fr)，窄窗改单列。主题变量：--text、--text-2、--text-3、--bg、--bg-elevated、--border、--accent、--accent-fg。控件可键盘操作。数据标明依据/估算。默认 inline，可选 panel；page_id 更新。沙箱不能访问应用、本地文件或网络。'
+          : '发布完整 HTML 网页，默认 panel。回复内交互控件用 render_ui，统计图用 render_chart；page_id 更新。CSS/JS 内联，外部脚本仅限 HTTPS。',
+        inputSchema: obj(
+          {
+            title: { type: 'string' },
+            ...(chart ? {
+              type: { type: 'string', enum: ['line', 'bar'] },
+              labels: { type: 'array', minItems: 1, maxItems: 500, items: { type: 'string' } },
+              series: { type: 'array', minItems: 1, maxItems: 10, items: obj({ name: { type: 'string' }, values: { type: 'array', items: { type: ['number', 'null'] } } }, ['name', 'values']) },
+              unit: { type: 'string', description: '数值单位（可选）' },
+              source: { type: 'string', description: '数据依据，或明确标注示例/估算（可选）' }
+            } : { html: { type: 'string', description: embedded ? '嵌入对话的 HTML/CSS/SVG/JS 片段，不是完整网页' : '完整的 HTML 文档' } }),
+            page_id: { type: 'string' },
+            display: { type: 'string', enum: ['inline', 'panel'], description: embedded ? '默认 inline：正文内直接使用；panel：明确需要侧栏时使用' : '默认 panel：独立网页' }
+          },
+          chart ? ['title', 'type', 'labels', 'series'] : ['title', 'html']
+        ),
+        run: (args) => {
+          const { title, html, page_id, display } = args
+          const reply = this.chat.currentReply(conversationId)
+          if (!reply) throw new Error('只能在回复过程中使用')
+          const source = String(html ?? '')
+          const { meta, version } = this.artifacts.publish(
+            conversationId,
+            String(title ?? '').slice(0, 60),
+            chart ? chartDocument(args) : embedded ? uiDocument(source) : source,
+            page_id ? String(page_id) : undefined
+          )
+          const placement = display === 'inline' ? 'inline' : display === 'panel' ? 'panel' : embedded ? 'inline' : 'panel'
+          reply.blocks.push({ type: 'artifact', artifactId: meta.id, title: meta.title, version, display: placement })
+          this.chat.updateMessage(reply)
+          return { page_id: meta.id, version, display: placement }
+        }
+      })
+    }
     if (conv.kind === 'chat' && !conv.routineId) common.push({
       name: 'set_title',
       description: '为普通对话自动起一个简短、具体的话题名。在首次有明确主题的正常回复里调用，不要机械截断用户原话。手动设置的名字会被保留。',

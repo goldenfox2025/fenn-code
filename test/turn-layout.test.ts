@@ -12,6 +12,7 @@ describe('visual creation progress', () => {
     const page: Block = { type: 'tool', toolId: 'page', title: 'mcp.fenn.publish_page', status: 'pending' }
     expect(visualWork([page])).toBe('visualization')
     expect(visualWork([{ ...page, title: 'fenn/render_ui' }])).toBe('visualization')
+    expect(visualWork([{ ...page, title: 'fenn/render_chart' }])).toBe('visualization')
     expect(visualWork([{ ...page, status: 'running' }])).toBe('visualization')
     expect(visualWork([{ ...page, status: 'completed' }])).toBeUndefined()
     expect(visualWork([{ ...page, status: 'failed' }])).toBeUndefined()

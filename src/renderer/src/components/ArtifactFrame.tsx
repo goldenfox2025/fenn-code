@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 import { WorkingMark } from './WorkingMark'
+import { EmbeddedSelect } from './EmbeddedSelect'
 
 /** Same isolated renderer in a reply and the larger preview pane. */
 export function ArtifactFrame({ id, version, title, inline = false }: { id: string; version: number; title: string; inline?: boolean }) {
@@ -14,7 +15,7 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
     const root = document.documentElement
     const css = getComputedStyle(root)
     const palette = Object.fromEntries(['text', 'text-2', 'text-3', 'bg', 'bg-elevated', 'border', 'accent', 'accent-fg'].map((key) => [key, css.getPropertyValue(`--${key}`).trim()]))
-    ref.current?.contentWindow?.postMessage({ type: 'fenn:ui-theme', scheme: root.dataset.theme, palette }, '*')
+    ref.current?.contentWindow?.postMessage({ type: 'fenn:ui-theme', scheme: root.dataset.theme, palette, selectMenu: true }, '*')
   }
   useEffect(() => {
     const resize = (e: MessageEvent) => {
@@ -44,6 +45,7 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
         onLoad={() => { setLoaded(true); sendTheme() }}
         onError={() => setFailed(true)}
       />
+      <EmbeddedSelect key={`${id}:${version}`} frame={ref} />
     </div>
   )
 }

@@ -1,25 +1,46 @@
 // Matches --space-3 in the host: space for rounded focus rings and edge shadows.
 const DISPLAY_STYLE = `<style data-fenn-ui-display>[data-fenn-ui]{padding:6px}:where(button,select,input:not([type=range],[type=checkbox],[type=radio]),textarea){border-radius:6px}:focus-visible{outline-offset:-2px}</style>`
-// Keep native select semantics/events, but render its picker in Chromium rather
-// than the OS menu (macOS aligns the selected row, not the control's edges).
-const PICKER_STYLE = `<style data-fenn-ui-picker>
-@supports (appearance:base-select){
-select:not([multiple]):not([size]),select:not([multiple]):not([size])::picker(select){appearance:base-select}
-select:not([multiple]):not([size]){anchor-name:--fenn-select;anchor-scope:--fenn-select}
-select:not([multiple]):not([size])::picker(select){position-anchor:--fenn-select;position-area:bottom;inset:auto;position-try-fallbacks:flip-block,--fenn-picker-fit;width:anchor-size(width);min-width:0;max-width:calc(100vw - 12px);max-height:min(280px,100%);margin:4px 0;padding:4px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-elevated);color:var(--text);font:inherit;box-shadow:0 4px 16px #0003}
-select:not([multiple]):not([size]):has(option:nth-child(4))::picker(select){min-height:min(120px,calc(100vh - 20px))}
-@position-try --fenn-picker-fit{position-area:none;inset:6px auto auto anchor(left);max-height:calc(100vh - 20px)}
-select:not([multiple]):not([size]) option{padding:6px 10px;border-radius:4px;overflow-wrap:anywhere;white-space:normal}
-select:not([multiple]):not([size]) option:checked{background:color-mix(in srgb,var(--accent) 12%,var(--bg-elevated))}
-select:not([multiple]):not([size]) option:hover,select:not([multiple]):not([size]) option:focus{background:color-mix(in srgb,var(--accent) 18%,var(--bg-elevated))}
-}
+// Native pickers in a sandbox cannot be opened explicitly, and their default
+// mouse action scrolls tall frames into view. Use the app's existing menu.
+const PICKER_BEHAVIOR = `<script data-fenn-ui-picker-events>
+(()=>{
+ let host=false,seq=0,pending=null;
+ addEventListener('message',e=>{
+  if(e.source!==parent)return;
+  if(e.data?.type==='fenn:ui-theme')host=e.data.selectMenu===true;
+  if(e.data?.type!=='fenn:ui-select-result'||!pending||e.data.id!==pending.id)return;
+  const el=pending.el,index=e.data.index;pending=null;
+  if(!el.isConnected)return;
+  if(Number.isInteger(index)&&index>=0&&index<el.options.length&&!el.options[index].disabled&&!el.options[index].parentElement.disabled&&index!==el.selectedIndex){el.selectedIndex=index;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}))}
+  el.focus({preventScroll:true});
+ });
+ for(const type of ['pointerdown','click','keydown'])document.addEventListener(type,e=>{
+  const el=e.target;
+  if(!host||e.defaultPrevented||!(el instanceof HTMLSelectElement)||el.disabled||el.multiple||el.size>1||!el.options.length||el.options.length>2000)return;
+  if(type==='keydown'&&![' ','Enter','ArrowDown','ArrowUp'].includes(e.key))return;
+  e.preventDefault();el.focus({preventScroll:true});
+  if(type==='pointerdown')return;
+  const r=el.getBoundingClientRect(),id=++seq;
+  pending={id,el};
+  parent.postMessage({type:'fenn:ui-select',id,rect:{left:r.left,top:r.top,width:r.width,height:r.height},options:Array.from(el.options,(o,index)=>({label:o.label,index,disabled:o.disabled||o.parentElement.disabled===true,selected:o.selected,group:o.parentElement.tagName==='OPTGROUP'?o.parentElement.label:undefined}))},'*');
+ },true);
+})();
+</script>`
+const LAYOUT_STYLE = `<style data-fenn-ui-layout>
+[data-fenn-ui]{max-width:100%;overflow-x:auto}
+[data-fenn-ui] :where(div,section,article,form,fieldset){min-width:0;max-width:100%}
+[data-fenn-ui] :where(input,select,textarea,button){max-width:100%}
+[data-fenn-ui] :where(pre,table){display:block;max-width:100%;overflow:auto}
 </style>`
 
 /** Apply current display fixes to saved UI documents too; user source stays intact. */
 export function uiDisplayDocument(html: string): string {
   if (!html.includes('<main data-fenn-ui>')) return html
-  const styles = (!html.includes('data-fenn-ui-display') ? DISPLAY_STYLE : '') + (!html.includes('data-fenn-ui-picker') ? PICKER_STYLE : '')
-  return styles ? html.replace(/<\/head>/i, `${styles}</head>`) : html
+  // Replace the previous generated picker, including saved documents. The
+  // source fragment and authored CSS are preserved.
+  html = html.replace(/<style data-fenn-ui-picker>[\s\S]*?<\/style>/g, '').replace(/<script data-fenn-ui-picker-events>[\s\S]*?<\/script>/g, '')
+  const additions = (!html.includes('data-fenn-ui-display') ? DISPLAY_STYLE : '') + (!html.includes('data-fenn-ui-layout') ? LAYOUT_STYLE : '') + PICKER_BEHAVIOR
+  return html.replace(/<\/head>/i, `${additions}</head>`)
 }
 
 /** A self-contained UI fragment gets typography and colors, not a webpage shell. */

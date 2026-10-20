@@ -69,7 +69,7 @@ export function Menu({
   align?: 'left' | 'right'
   placement?: 'below' | 'above' | 'side' | 'auto'
   /** At least as wide as the anchor (form dropdowns). */
-  matchWidth?: boolean
+  matchWidth?: boolean | 'exact'
   /** Claude's model-menu look: narrow, one line per item. */
   compact?: boolean
   /** One row of small choices (emoji reactions), moved through with ← →. */
@@ -81,7 +81,7 @@ export function Menu({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const anchor = liveAnchor(opener) ?? opener
-  const [pos, setPos] = useState<{ left: number; top: number; minWidth?: number; maxHeight?: number }>({ left: -9999, top: -9999 })
+  const [pos, setPos] = useState<{ left: number; top: number; width?: number; minWidth?: number; maxWidth?: number; maxHeight?: number }>({ left: -9999, top: -9999 })
   const [active, setActive] = useState(() => {
     const sel = items.findIndex((it) => it.checked && actionable(it))
     return sel >= 0 ? sel : items.findIndex(actionable)
@@ -99,6 +99,11 @@ export function Menu({
       if (!r || (!r.width && !r.height)) r = openRect
       if (!r) return onClose()
       const element = ref.current!
+      if (matchWidth === 'exact') {
+        element.style.minWidth = '0px'
+        element.style.maxWidth = 'none'
+        element.style.width = `${Math.min(r.width, window.innerWidth - 16)}px`
+      }
       // Measure natural dimensions without the old viewport's position or
       // height limit. Restore the DOM styles before React applies the new ones.
       const previousLeft = element.style.left
@@ -131,7 +136,7 @@ export function Menu({
       const maxHeight = Math.min(m.height, room[side])
       const top = side === 'above' ? r.top - maxHeight - gap : r.bottom + gap
       left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
-      setPos({ left, top, maxHeight, minWidth: matchWidth ? r.width : undefined })
+      setPos({ left, top, maxHeight, width: matchWidth === 'exact' ? Math.min(r.width, window.innerWidth - 16) : undefined, minWidth: matchWidth === 'exact' ? 0 : matchWidth ? r.width : undefined, maxWidth: matchWidth === 'exact' ? window.innerWidth - 16 : undefined })
     }
     place()
     ref.current!.focus({ preventScroll: true })
@@ -191,7 +196,7 @@ export function Menu({
     onClose()
     onPicked?.()
     const back = liveAnchor(opener) ?? anchor
-    if (!onPicked) back.focus()
+    if (!onPicked) back.focus({ preventScroll: true })
     lastAnchor = back
     it.onClick?.()
   }
@@ -220,7 +225,7 @@ export function Menu({
     else if (e.key === 'Escape' || e.key === 'Tab') {
       onClose()
       if (parentFocus) parentFocus()
-      else (liveAnchor(opener) ?? anchor).focus()
+      else (liveAnchor(opener) ?? anchor).focus({ preventScroll: true })
     } else if (e.key.length === 1) {
       // Jump to the next item starting with the typed letter.
       const k = e.key.toLowerCase()
