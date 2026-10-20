@@ -31,11 +31,12 @@ function glowAlpha(v: number, strength: number): number {
 /**
  * A faint grid of dots behind the content that lights up softly around the pointer and
  * leaves a short fading trail where it passed. The resting grid is one canvas drawn once
- * per size or look; the glow is a second canvas that covers only the lit dots and is
- * repainted each frame in a few fills. Frames run only while something is lit or moving,
+ * per size or look; the glow normally covers only the lit dots. Under macOS vibrancy
+ * it stays fixed over the main area and redraws only the dirty patch in a few fills.
+ * Frames run only while something is lit or moving,
  * never while the window is hidden, and with reduced motion the grid stays still.
  */
-export function DotField({ strength }: { strength: number }) {
+export function DotField({ strength, fixed = false }: { strength: number; fixed?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const glowRef = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
@@ -44,8 +45,11 @@ export function DotField({ strength }: { strength: number }) {
     const ctx = canvas?.getContext('2d')
     const gtx = glow?.getContext('2d')
     if (!canvas || !glow || !ctx || !gtx) return
-    // Nothing is lit yet: no backing store (a canvas starts at 300×150).
+    // Clear geometry left by the other rendering path when glass is toggled.
+    glow.style.transform = ''
+    glow.style.width = glow.style.height = ''
     glow.width = glow.height = 0
+    let dirty: { x: number; y: number; width: number; height: number } | undefined
     const still = matchMedia('(prefers-reduced-motion: reduce)')
     const fade = FADE[strength] ?? FADE[1]
     let w = 0, h = 0, dpr = 1, cols = 0, rows = 0
@@ -79,6 +83,12 @@ export function DotField({ strength }: { strength: number }) {
       h = r.height
       canvas.width = Math.round(w * dpr)
       canvas.height = Math.round(h * dpr)
+      if (fixed) {
+        // The macOS vibrancy path keeps one surface for the whole main area.
+        // Its geometry changes only when the area or display density changes.
+        if (glow.width !== canvas.width) glow.width = canvas.width
+        if (glow.height !== canvas.height) glow.height = canvas.height
+      }
       cols = Math.ceil(w / PITCH)
       rows = Math.ceil(h / PITCH)
       heat = new Float32Array(cols * rows)
@@ -119,13 +129,18 @@ export function DotField({ strength }: { strength: number }) {
         }
       return held
     }
-    // The glow canvas covers just the lit dots: it moves to them each frame and grows in steps when
-    // the trail outgrows it, so a frame uploads a small patch however large the window is.
+    // The default glow canvas covers just the lit dots: it moves to them each frame and grows
+    // in steps when the trail outgrows it. The fixed path keeps these bounds inside one surface.
     let gw = 0, gh = 0
     const fit = (need: number, have: number) => (need <= have ? have : Math.ceil(need / GROW) * GROW)
     const paint = () => {
+      if (fixed) {
+        gtx.setTransform(1, 0, 0, 1, 0, 0)
+        if (dirty) gtx.clearRect(dirty.x, dirty.y, dirty.width, dirty.height)
+        dirty = undefined
+      }
       if (!lit.length) {
-        if (gw) {
+        if (!fixed && gw) {
           gw = gh = glow.width = glow.height = 0
           glow.style.width = glow.style.height = '0'
         }
@@ -141,20 +156,32 @@ export function DotField({ strength }: { strength: number }) {
       }
       // A cell of margin each side holds a dot's lean and size.
       const ox = (i0 - 1) * PITCH, oy = (j0 - 1) * PITCH
-      const bw = fit((i1 - i0 + 3) * PITCH, gw), bh = fit((j1 - j0 + 3) * PITCH, gh)
-      if (bw !== gw || bh !== gh) {
-        gw = bw
-        gh = bh
-        glow.width = Math.round(gw * dpr)
-        glow.height = Math.round(gh * dpr)
-        glow.style.width = `${gw}px`
-        glow.style.height = `${gh}px`
+      if (fixed) {
+        // Clear the previous patch above, then paint this one in place. Moving a
+        // promoted transparent canvas over NSVisualEffectView can leave opaque
+        // stair-step damage on macOS; a fixed surface avoids that combination.
+        const x = Math.max(0, Math.floor(ox * dpr))
+        const y = Math.max(0, Math.floor(oy * dpr))
+        const right = Math.min(glow.width, Math.ceil((i1 + 2) * PITCH * dpr))
+        const bottom = Math.min(glow.height, Math.ceil((j1 + 2) * PITCH * dpr))
+        dirty = { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) }
+        gtx.setTransform(dpr, 0, 0, dpr, 0, 0)
       } else {
-        gtx.setTransform(1, 0, 0, 1, 0, 0)
-        gtx.clearRect(0, 0, glow.width, glow.height)
+        const bw = fit((i1 - i0 + 3) * PITCH, gw), bh = fit((j1 - j0 + 3) * PITCH, gh)
+        if (bw !== gw || bh !== gh) {
+          gw = bw
+          gh = bh
+          glow.width = Math.round(gw * dpr)
+          glow.height = Math.round(gh * dpr)
+          glow.style.width = `${gw}px`
+          glow.style.height = `${gh}px`
+        } else {
+          gtx.setTransform(1, 0, 0, 1, 0, 0)
+          gtx.clearRect(0, 0, glow.width, glow.height)
+        }
+        glow.style.transform = `translate3d(${ox}px, ${oy}px, 0)`
+        gtx.setTransform(dpr, 0, 0, dpr, -ox * dpr, -oy * dpr)
       }
-      glow.style.transform = `translate3d(${ox}px, ${oy}px, 0)`
-      gtx.setTransform(dpr, 0, 0, dpr, -ox * dpr, -oy * dpr)
       // Dots of about the same strength share one path and one fill, so a frame is a few draw calls.
       const paths: Path2D[] = []
       for (const k of lit) {
@@ -264,11 +291,11 @@ export function DotField({ strength }: { strength: number }) {
       window.removeEventListener('blur', away)
       document.removeEventListener('visibilitychange', away)
     }
-  }, [strength])
+  }, [strength, fixed])
   return (
     <div className="dot-layer" aria-hidden>
       <canvas ref={ref} className="dot-field" />
-      <canvas ref={glowRef} className="dot-glow" />
+      <canvas ref={glowRef} className={fixed ? 'dot-glow fixed' : 'dot-glow'} />
     </div>
   )
 }

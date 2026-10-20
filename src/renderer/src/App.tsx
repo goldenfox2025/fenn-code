@@ -65,7 +65,7 @@ export function App() {
     <div className="app">
       <Sidebar />
       <main className="main">
-        {!!dotGrid && <DotField strength={dotGrid} />}
+        {!!dotGrid && <DotField strength={dotGrid} fixed={platform === 'darwin' && glass} />}
         <div className="topbar drag">
           {!sidebarOpen && (
             <button
