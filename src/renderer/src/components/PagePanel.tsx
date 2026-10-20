@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Code2, Copy, Download, Eye, RefreshCw, X } from 'lucide-react'
-import { api, toast, useApp } from '../store'
+import { Code2, Copy, Download, Eye, Maximize2, Minimize2, RefreshCw, X } from 'lucide-react'
+import { api, toast, toastError, useApp } from '../store'
 import { t } from '../i18n'
 import { Dropdown } from './Menu'
+import { ArtifactFrame } from './ArtifactFrame'
+import { PreviewPane } from './PreviewPane'
 
 /**
  * A page an agent published, beside the conversation. It runs in a sandboxed
@@ -13,15 +15,36 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
   const [code, setCode] = useState<string | null>(null)
   const [showCode, setShowCode] = useState(false)
   const [reload, setReload] = useState(0)
+  const [expanded, setExpanded] = useState(false)
+  const [error, setError] = useState(false)
   const close = () => useApp.getState().set({ page: null })
 
   useEffect(() => {
-    void api().artifactInfo(id).then(setInfo)
+    let active = true
+    setInfo(null)
+    setCode(null)
+    setError(false)
     setShowCode(false)
+    void api().artifactInfo(id).then((value) => {
+      if (!active) return
+      setInfo(value)
+      setError(!value)
+    }, () => { if (active) setError(true) })
+    return () => { active = false }
   }, [id, version])
   const current = version ?? info?.versions[info.versions.length - 1]?.version
   useEffect(() => {
-    if (showCode && current) void api().artifactSource(id, current).then(setCode)
+    let active = true
+    setCode(null)
+    if (showCode && current) void api().artifactSource(id, current).then((value) => {
+      if (active) setCode(value ?? t('无法加载预览'))
+    }, (error) => {
+      if (active) {
+        setCode(t('无法加载预览'))
+        toastError(error)
+      }
+    })
+    return () => { active = false }
   }, [showCode, id, current])
 
   const download = async () => {
@@ -35,9 +58,9 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
   }
 
   return (
-    <aside className="page-panel">
+    <PreviewPane expanded={expanded}>
       <div className="panel-head">
-        <span className="page-title">{info?.title ?? t('页面')}</span>
+        <span className="page-title" title={info?.title}>{info?.title ?? t('页面')}</span>
         {info && info.versions.length > 1 && (
           <Dropdown
             variant="inline"
@@ -46,15 +69,15 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
             options={info.versions.map((v) => ({ value: String(v.version), label: t('版本 {0}', v.version) }))}
           />
         )}
-        <span className="spacer" />
-        <button className="icon-btn" data-tip={showCode ? t('预览') : t('查看代码')} onClick={() => setShowCode(!showCode)}>
+        <button className="icon-btn" aria-label={showCode ? t('预览') : t('查看代码')} data-tip={showCode ? t('预览') : t('查看代码')} onClick={() => setShowCode(!showCode)}>
           {showCode ? <Eye size={15} /> : <Code2 size={15} />}
         </button>
-        <button className="icon-btn" data-tip={t('重新加载')} onClick={() => setReload(reload + 1)}>
+        <button className="icon-btn" aria-label={t('重新加载')} data-tip={t('重新加载')} onClick={() => setReload(reload + 1)}>
           <RefreshCw size={15} />
         </button>
         <button
           className="icon-btn"
+          aria-label={t('复制代码')}
           data-tip={t('复制代码')}
           onClick={async () => {
             const html = await api().artifactSource(id, current)
@@ -66,26 +89,28 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
         >
           <Copy size={15} />
         </button>
-        <button className="icon-btn" data-tip={t('下载 HTML')} onClick={download}>
+        <button className="icon-btn" aria-label={t('下载 HTML')} data-tip={t('下载 HTML')} onClick={download}>
           <Download size={15} />
         </button>
-        <button className="icon-btn" data-tip={t('关闭')} onClick={close}>
+        <button className="icon-btn" aria-label={expanded ? t('还原预览') : t('放大预览')} data-tip={expanded ? t('还原预览') : t('放大预览')} onClick={() => setExpanded(!expanded)}>
+          {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+        </button>
+        <button className="icon-btn" aria-label={t('关闭')} data-tip={t('关闭')} onClick={close}>
           <X size={16} />
         </button>
       </div>
       {showCode ? (
-        <pre className="page-code">{code}</pre>
+        <pre className="page-code">{code ?? t('正在加载预览…')}</pre>
       ) : (
-        current && (
-          <iframe
+        error ? <div className="empty" role="status">{t('无法加载预览')}</div> : current ? (
+          <ArtifactFrame
             key={`${id}-${current}-${reload}`}
-            className="page-frame"
+            id={id}
+            version={current}
             title={info?.title ?? 'page'}
-            sandbox="allow-scripts allow-forms allow-modals allow-popups"
-            src={`oc-page://page/${id}/${current}`}
           />
-        )
+        ) : <div className="empty" role="status">{t('正在加载预览…')}</div>
       )}
-    </aside>
+    </PreviewPane>
   )
 }

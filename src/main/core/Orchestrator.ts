@@ -815,16 +815,17 @@ export class Orchestrator {
     common.push({
       name: 'publish_page',
       description:
-        '发布一个独立的 HTML 页面给用户看（报告、图表、小工具、原型），显示在对话旁边。页面必须自包含：CSS 和 JS 写在页面里，外部脚本只能用 https 的 CDN。要修改已发布的页面，传入它的 page_id，会生成新版本。',
+        '创建可直接交互的可视化（图表、流程、对比、模拟器、小工具）或完整网页。默认 display=inline，嵌在回复中，用户可展开到侧栏；完整应用、长报告用 display=panel。只在能帮助理解或操作时使用，简单回答用文字。HTML/CSS 自包含，交互可用少量 JS 或 SVG；优先不依赖外部库，必要时外部脚本只能用 HTTPS CDN。内联预览约 360px 高，宽度随对话变化，使用响应式布局，避免固定宽度、重复大标题和无关装饰；控件需可键盘操作。用有层次的中性色和一个强调色，保留清晰的数据标签。数据必须来自已知事实；示例、估算必须标明。页面运行在隔离沙箱，不能读取本地文件、访问应用 API 或发网络请求。修改已发布页面时传 page_id，生成新版本。',
       inputSchema: obj(
         {
           title: { type: 'string', description: '两到四个词的名字' },
           html: { type: 'string', description: '完整的 HTML 文档' },
-          page_id: { type: 'string', description: '要更新的页面 id（可选）' }
+          page_id: { type: 'string', description: '要更新的页面 id（可选）' },
+          display: { type: 'string', enum: ['inline', 'panel'], description: 'inline（默认）：对话内交互预览；panel：完整侧栏页面' }
         },
         ['title', 'html']
       ),
-      run: ({ title, html, page_id }) => {
+      run: ({ title, html, page_id, display }) => {
         const reply = this.chat.currentReply(conversationId)
         if (!reply) throw new Error('只能在回复过程中使用')
         const { meta, version } = this.artifacts.publish(
@@ -833,7 +834,7 @@ export class Orchestrator {
           String(html ?? ''),
           page_id ? String(page_id) : undefined
         )
-        reply.blocks.push({ type: 'artifact', artifactId: meta.id, title: meta.title, version })
+        reply.blocks.push({ type: 'artifact', artifactId: meta.id, title: meta.title, version, display: display === 'panel' ? 'panel' : 'inline' })
         this.chat.updateMessage(reply)
         return { page_id: meta.id, version }
       }

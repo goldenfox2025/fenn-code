@@ -5,6 +5,7 @@ import { api, toast, toastError, useApp } from '../store'
 import { t } from '../i18n'
 import { useMenu } from './Menu'
 import { Overlay } from './Modal'
+import { PreviewPane } from './PreviewPane'
 import { FilePreview, storedView, useEditor, VIEW_KEY, type MdView } from './FilesPane'
 
 /**
@@ -18,7 +19,7 @@ export function FileViewPanel({ path, conversationId }: { path: string; conversa
     setWhere(null)
     void api().locateFile(path, conversationId).then(setWhere, () => setWhere({}))
   }, [path, conversationId])
-  return <aside className="page-panel file-view">{where && <FileView key={path} abs={path} libraryId={where.libraryId} rel={where.rel} />}</aside>
+  return <PreviewPane className="file-view">{where && <FileView key={path} abs={path} libraryId={where.libraryId} rel={where.rel} />}</PreviewPane>
 }
 
 function FileView({ abs, libraryId, rel }: { abs: string; libraryId?: string; rel?: string }) {

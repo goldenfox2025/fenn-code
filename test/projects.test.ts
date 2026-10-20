@@ -185,10 +185,12 @@ describe('pages', () => {
       store.messagesOf(c.id).flatMap((m) => m.blocks).find((b) => b.type === 'artifact') as any
     )
     await until(() => store.conversation(c.id)!.status === 'idle')
-    await core.chat.send(c.id, '改一下页面')
+    expect(first.display).toBe('inline')
+    await core.chat.send(c.id, '改一下页面 侧栏')
     const blocks = store.messagesOf(c.id).flatMap((m) => m.blocks).filter((b) => b.type === 'artifact') as any[]
     expect(blocks.map((b) => b.version)).toEqual([1, 2])
     expect(blocks[1].artifactId).toBe(first.artifactId)
+    expect(blocks[1].display).toBe('panel')
     const info = await core.artifactInfo(first.artifactId)
     expect(info!.versions).toHaveLength(2)
     expect(await core.artifactSource(first.artifactId, 1)).toContain('计数器 v1')

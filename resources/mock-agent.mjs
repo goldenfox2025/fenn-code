@@ -486,7 +486,7 @@ async function toolNames(s) {
   }
   return s.tools;
 }
-async function callTool(sessionId, s, name, args) {
+async function callTool(sessionId, s, name, args, beforeRunMs = 0) {
   const id = `mcp-${rpcSeq}`;
   notify(sessionId, {
     sessionUpdate: "tool_call",
@@ -496,6 +496,7 @@ async function callTool(sessionId, s, name, args) {
     status: "in_progress",
     rawInput: args,
   });
+  if (beforeRunMs) await new Promise((resolve) => setTimeout(resolve, beforeRunMs));
   await mcpInit(s);
   const r = await mcpPost(s, {
     jsonrpc: "2.0",
@@ -720,12 +721,13 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     const r = await callTool(sessionId, s, "publish_page", {
       title: "计数器",
       html,
+      ...(/侧栏/.test(text) ? { display: 'panel' } : {}),
       ...(s.pageId ? { page_id: s.pageId } : {}),
-    });
+    }, /#慢页面/.test(text) ? 2000 : 0);
     s.pageId = r?.page_id ?? s.pageId;
     await stream(
       sessionId,
-      v === 1 ? "做好了，页面在右边。" : "改好了，这是第 2 版。",
+      v === 1 ? "做好了，可以直接操作这个预览。" : "改好了，这是第 2 版。",
       abort,
     );
     return;

@@ -266,6 +266,62 @@ await check('a long chat keeps the composer on screen', async () => {
   if (!box || box.y + box.height > vp.height || box.y < 0) throw new Error(`composer at ${JSON.stringify(box)}`)
 })
 
+await check('interactive pages work inline and expand into a clipped responsive preview pane', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await page.fill('.composer textarea', '做个页面 #慢页面')
+  await page.keyboard.press('Enter')
+  await page.locator('.working-mark').filter({ hasText: '正在制作可视化…' }).waitFor()
+  await page.locator('.working-mark .fox-mark.thinking').waitFor()
+  const inline = page.locator('.interactive-preview').last()
+  await inline.waitFor()
+  await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
+  if (await page.locator('.page-panel').count()) throw new Error('An inline result must not open the side pane')
+  const small = inline.frameLocator('iframe')
+  await small.locator('#b').click()
+  if ((await small.locator('#n').innerText()) !== '1') throw new Error('Inline JavaScript did not run')
+  const isolated = await small.locator('body').evaluate(() => {
+    try { void parent.document.body; return false } catch { return true }
+  })
+  if (!isolated) throw new Error('Generated HTML must be isolated from the app')
+  await inline.getByRole('button', { name: '在侧栏展开' }).click()
+  const pane = page.locator('.page-panel')
+  await pane.waitFor()
+  await pane.frameLocator('iframe').locator('#b').click()
+  if ((await pane.frameLocator('iframe').locator('#n').innerText()) !== '1') throw new Error('Expanded JavaScript did not run')
+  for (const [theme, width, height] of [['light', 1400, 900], ['dark', 860, 560]]) {
+    await page.evaluate((theme) => window.fenn.updateSettings({ theme }), theme)
+    await page.setViewportSize({ width, height })
+    await page.waitForFunction(() => {
+      const pane = document.querySelector('.page-panel')
+      const frame = pane?.querySelector('iframe')
+      const head = pane?.querySelector('.panel-head')
+      if (!pane || !frame || !head) return false
+      const p = pane.getBoundingClientRect(), f = frame.getBoundingClientRect(), h = head.getBoundingClientRect()
+      const css = getComputedStyle(pane)
+      return p.left >= 0 && p.right <= innerWidth && p.bottom <= innerHeight &&
+        parseFloat(css.borderTopLeftRadius) > 0 && css.overflow === 'hidden' &&
+        Math.abs(f.top - h.bottom) <= 1 && f.bottom <= p.bottom && f.height > 100 &&
+        head.scrollWidth <= head.clientWidth
+    })
+    if (shots) await page.screenshot({ path: join(shots, `interactive-${theme}-${width}.png`) })
+  }
+  await pane.getByRole('button', { name: '放大预览', exact: true }).click()
+  await page.locator('.page-panel.maximized').waitFor()
+  await pane.getByRole('button', { name: '还原预览', exact: true }).click()
+  await pane.getByRole('button', { name: '查看代码', exact: true }).click()
+  if (!(await pane.locator('.page-code').innerText()).includes('计数器')) throw new Error('Missing page source')
+  await pane.getByRole('button', { name: '预览', exact: true }).click()
+  await pane.frameLocator('iframe').locator('#b').waitFor()
+  await pane.getByRole('button', { name: '关闭', exact: true }).click()
+  await pane.waitFor({ state: 'detached' })
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await send('改一下页面 侧栏')
+  await pane.waitFor()
+  await pane.frameLocator('iframe').getByRole('heading', { name: '计数器 v2' }).waitFor()
+  await pane.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.evaluate(() => window.fenn.updateSettings({ theme: 'system' }))
+})
+
 await check('appearance offers only opaque light, dark and system themes', async () => {
   const original = await page.evaluate(async () => (await window.fenn.snapshot()).settings.theme)
   for (const theme of ['light', 'dark', 'system']) {

@@ -38,8 +38,8 @@ export type Block =
   | { type: 'peer-message'; peerId: string; direction: 'out' | 'in' }
   /** A result the agent handed over: a file on this computer or a link. Shown as a card under the reply. */
   | { type: 'output'; kind: 'file' | 'link'; title: string; path?: string; url?: string; size?: number }
-  /** A page the agent published (see Artifacts); opens beside the conversation. */
-  | { type: 'artifact'; artifactId: string; title: string; version: number }
+  /** An interactive HTML result. Legacy blocks open in the side pane. */
+  | { type: 'artifact'; artifactId: string; title: string; version: number; display?: 'inline' | 'panel' }
   /** A question for the user with a few options, one recommended; `chosen` once answered. */
   | {
       type: 'decision'

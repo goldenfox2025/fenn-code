@@ -165,9 +165,9 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
     case 'message': {
       const list = s.messages[e.message.conversationId]
       if (!list) return // not loaded yet; will be fetched on open
-      // A page just published in the conversation on screen opens beside it, like Claude's artifacts.
+      // Inline visualizations stay in the reply; only full pages open the side pane automatically.
       const before = list.find((m) => m.id === e.message.id)?.blocks.length ?? 0
-      const fresh = e.message.blocks.slice(before).find((b) => b.type === 'artifact')
+      const fresh = e.message.blocks.slice(before).findLast((b) => b.type === 'artifact' && b.display !== 'inline')
       const r = s.route
       const onScreen =
         (r.view === 'chat' && r.conversationId === e.message.conversationId) ||
@@ -176,7 +176,7 @@ function applyEvent(e: AppEvent, set: (p: Partial<State>) => void, get: () => St
             s.projects.find((p) => p.id === r.projectId)?.conversationId === e.message.conversationId))
       return set({
         messages: { ...s.messages, [e.message.conversationId]: upsert(list, e.message) },
-        ...(fresh && fresh.type === 'artifact' && onScreen ? { page: { id: fresh.artifactId, version: fresh.version } } : {})
+        ...(fresh && fresh.type === 'artifact' && fresh.display !== 'inline' && onScreen ? { page: { id: fresh.artifactId, version: fresh.version }, fileView: null } : {})
       })
     }
     case 'message-removed': {

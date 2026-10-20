@@ -1159,4 +1159,11 @@ export const en: Record<string, string> = {
   "{0}：打开 Fenn Code 时预先启动": "{0}: start when Fenn Code opens",
   "计划 {0}/{1}": "Plan {0}/{1}",
   "总是允许": "Always allow",
+  "正在加载预览…": "Loading preview…",
+  "无法加载预览": "Unable to load preview",
+  "在侧栏展开": "Expand in side pane",
+  "放大预览": "Expand preview",
+  "还原预览": "Restore preview",
+  "正在制作可视化…": "Creating visualization…",
+  "正在编写界面…": "Building interface…",
 }

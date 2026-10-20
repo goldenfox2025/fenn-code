@@ -6,8 +6,9 @@ import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { MessageUsageLabel } from './Usage'
 import { OutputCard } from './Outputs'
+import { InteractivePreview } from './InteractivePreview'
 import { PeerCard } from './PeerCard'
-import { FoxMark } from './FoxMark'
+import { WorkingMark } from './WorkingMark'
 import {
   AppWindow,
   Check,
@@ -44,7 +45,7 @@ import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
 import { classifyError, errorLead, type ErrorKind } from '@shared/errors'
 
-import { segmentBlocks, type ToolBlock } from '../turn'
+import { segmentBlocks, visualWork, type ToolBlock } from '../turn'
 import { limitSentence, turnNote, type TurnNoteView } from '../turnNote'
 
 export function Transcript({ conversation, compact, header }: { conversation: Conversation; compact?: boolean; header?: React.ReactNode }) {
@@ -326,6 +327,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
   const streaming = m.state === 'streaming'
   const connecting = m.blocks.find((b): b is Extract<Block, { type: 'notice' }> => b.type === 'notice' && b.key === 'starting')
   const groups = segmentBlocks(m.blocks)
+  const making = visualWork(m.blocks)
   const [menu, openMenu] = useMenu({ row: true, placement: 'auto' })
   const inProjectChat = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.kind === 'project')
   if (!streaming && m.state === 'done' && groups.length === 0 && !m.reactions?.length) return null
@@ -356,7 +358,9 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
           case 'thread-card':
             return <ThreadCard key={i} threadId={g.threadId} />
           case 'artifact':
-            return <PageCard key={i} id={g.artifactId} title={g.title} version={g.version} />
+            return g.display === 'inline'
+              ? <InteractivePreview key={i} id={g.artifactId} title={g.title} version={g.version} />
+              : <PageCard key={i} id={g.artifactId} title={g.title} version={g.version} />
           case 'output':
             return <OutputCard key={i} o={{ ...g, conversationId: m.conversationId }} />
           case 'decision':
@@ -367,7 +371,7 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
             return null
         }
       })}
-      {streaming && <WorkingMark since={m.createdAt} label={connecting?.text} />}
+      {streaming && <WorkingMark since={m.createdAt} label={connecting?.text ?? (making === 'visualization' ? t('正在制作可视化…') : making === 'page' ? t('正在编写界面…') : undefined)} />}
       {/* A / command the agent carried out without a word (Grok's /always-approve). */}
       {!streaming && m.state === 'done' && !m.blocks.length && <div className="small muted">{t('没有返回内容')}</div>}
       {m.editedAt && (
@@ -1044,27 +1048,6 @@ function PlacedLine({ path }: { path: string }) {
       <button className="link" onClick={open}>
         {platform === 'darwin' ? t('在访达中打开') : platform === 'win32' ? t('在资源管理器中打开') : t('打开文件夹')}
       </button>
-    </div>
-  )
-}
-
-/**
- * Claude's working mark: three pulsing dots and the time so far, always at the
- * very bottom of the turn, where the next words will appear. It takes the
- * place of the action row, so nothing moves when the turn ends.
- */
-function WorkingMark({ since, label }: { since: number; label?: string }) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    const timer = setInterval(() => tick((n) => n + 1), 1000)
-    return () => clearInterval(timer)
-  }, [])
-  const s = Math.max(0, Math.round((Date.now() - since) / 1000))
-  return (
-    <div className="working-mark" role="status">
-      <FoxMark thinking />
-      {label && <span>{label}</span>}
-      <span className="working-time">{s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}</span>
     </div>
   )
 }
