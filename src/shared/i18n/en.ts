@@ -1166,4 +1166,6 @@ export const en: Record<string, string> = {
   "还原预览": "Restore preview",
   "正在制作可视化…": "Creating visualization…",
   "正在编写界面…": "Building interface…",
+  "难点": "Obstacle",
+  "计划已完成": "Plan complete",
 }

@@ -74,11 +74,17 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     const el = scroller.current
     if (!el) return
     const ro = new ResizeObserver(() => {
+      // The plan above shares the transcript's reading column, including the
+      // room a non-overlay scrollbar takes away from it.
+      el.parentElement?.style.setProperty('--transcript-gutter', `${el.offsetWidth - el.clientWidth}px`)
       if (stick.current) el.scrollTop = el.scrollHeight
     })
     ro.observe(el)
     if (el.firstElementChild) ro.observe(el.firstElementChild)
-    return () => ro.disconnect()
+    return () => {
+      ro.disconnect()
+      el.parentElement?.style.removeProperty('--transcript-gutter')
+    }
   }, [])
 
   // Only the user's own scrolling decides whether to follow the bottom; a jump in height

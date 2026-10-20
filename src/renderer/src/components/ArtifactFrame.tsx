@@ -9,6 +9,7 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
   const [since] = useState(Date.now)
   const ref = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(160)
+  const [fluid, setFluid] = useState(false)
   const sendTheme = () => {
     const root = document.documentElement
     const css = getComputedStyle(root)
@@ -19,7 +20,10 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
     const resize = (e: MessageEvent) => {
       if (!inline || e.source !== ref.current?.contentWindow || e.data?.type !== 'fenn:ui-size') return
       const next = e.data.height
-      if (typeof next === 'number' && Number.isFinite(next)) setHeight(Math.max(40, Math.min(12000, Math.ceil(next))))
+      if (typeof next === 'number' && Number.isFinite(next)) {
+        setFluid(true)
+        setHeight(Math.max(40, Math.min(12000, Math.ceil(next))))
+      }
     }
     window.addEventListener('message', resize)
     const observer = new MutationObserver(sendTheme)
@@ -27,7 +31,7 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
     return () => { window.removeEventListener('message', resize); observer.disconnect() }
   }, [inline])
   return (
-    <div className={'artifact-surface' + (inline ? ' inline' : '')}>
+    <div className={'artifact-surface' + (inline ? ' inline' : '') + (fluid ? ' ui-padded' : '')}>
       {failed ? <div className="artifact-loading" role="status">{t('无法加载预览')}</div> : !loaded && <div className="artifact-loading"><WorkingMark since={since} label={t('正在加载预览…')} /></div>}
       <iframe
         ref={ref}

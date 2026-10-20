@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { uiDocument } from '../src/main/core/uiDocument'
+import { uiDisplayDocument, uiDocument } from '../src/main/core/uiDocument'
 
 describe('embedded conversation UI documents', () => {
+  it('repairs saved UI documents at display time without nesting wrappers', () => {
+    const saved = '<html><head><style>.card{border-radius:12px}</style></head><body><main data-fenn-ui>Saved UI</main></body></html>'
+    const fixed = uiDisplayDocument(saved)
+    expect(fixed).toContain('data-fenn-ui-display')
+    expect(fixed).toContain('outline-offset:-2px')
+    expect(fixed).toContain('.card{border-radius:12px}')
+    expect(uiDisplayDocument(fixed)).toBe(fixed)
+    const page = '<html><head></head><body>Standalone page</body></html>'
+    expect(uiDisplayDocument(page)).toBe(page)
+  })
   it('keeps a fragment executable with typography, theme variables and a size bridge', () => {
     const fragment = '<button id="choice">Choose</button><script>choice.onclick=()=>choice.textContent="Chosen"</script>'
     const doc = uiDocument(fragment)

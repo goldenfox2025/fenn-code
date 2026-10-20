@@ -390,6 +390,13 @@ export class AcpBackend implements AgentBackend {
       sessionUpdate: async ({ sessionId, update, _meta }) => {
         // Even a replayed or quiet update says how full the context is now.
         this.metaContext(sessionId, _meta)
+        // Session metadata is not replayed reply text; late title updates also
+        // remain relevant while a quiet slash command is running.
+        if (update.sessionUpdate === 'session_info_update') {
+          const event = translateUpdate(update)
+          if (event) this.host.emit(sessionId, event)
+          return
+        }
         if (this.replaying.has(sessionId) || this.quiet.has(sessionId)) return
         if (update.sessionUpdate === 'tool_call') {
           this.calls.set(`${sessionId}:${update.toolCallId}`, { title: update.title, kind: update.kind, rawInput: update.rawInput, _meta: update._meta })
@@ -954,6 +961,8 @@ function toolPaths(u: { locations?: { path: string }[] | null; content?: acp.Too
 
 function translateUpdate(u: acp.SessionNotification['update']): AgentEvent | null {
   switch (u.sessionUpdate) {
+    case 'session_info_update':
+      return typeof u.title === 'string' && u.title.trim() ? { kind: 'session.title', title: u.title.trim() } : null
     case 'agent_message_chunk':
       return u.content.type === 'text' ? { kind: 'message.delta', text: u.content.text } : null
     case 'agent_thought_chunk':

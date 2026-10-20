@@ -2,7 +2,9 @@
 .plan-line {
   flex: none;
   /* The transcript's column, so its edges line up with the turns below. */
-  width: calc(min(100%, var(--turn-width) + 2 * var(--turn-gutter)) - 2 * var(--turn-gutter));
+  width: calc(min(100% - var(--transcript-gutter, 0px), var(--turn-width) + 2 * var(--turn-gutter)) - 2 * var(--turn-gutter));
+  position: relative;
+  left: calc(-0.5 * var(--transcript-gutter, 0px));
   margin: calc(-1 * var(--space-3)) auto var(--space-2);
   font-size: 12.5px;
   color: var(--text-3);
@@ -19,9 +21,6 @@
   border-radius: inherit;
   color: inherit;
 }
-.plan-summary .chev {
-  margin-left: auto;
-}
 .plan-summary:hover {
   background: var(--bg-hover);
   color: var(--text-2);
@@ -33,16 +32,24 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
+.plan-text {
+  flex: 1;
+  text-align: left;
+}
+.plan-count {
+  flex: none;
+  min-width: 5ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .plan-blocker {
   display: inline-flex;
+  flex: none;
+  width: 4em;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--space-2);
   color: var(--amber);
-}
-.plan-blocker::before {
-  content: '·';
-  color: var(--text-3);
-  margin-right: var(--space-1);
 }
 .plan-line .chev {
   flex: none;

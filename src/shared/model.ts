@@ -169,7 +169,7 @@ export interface Conversation {
   checklist?: string
   /** Obstacles the agent reported, oldest first; the last one without resolvedAt is the current one. */
   blockers?: Blocker[]
-  /** The title was made by the app (not typed by the user), so it may be improved later. */
+  /** The title was made by the app or agent (not typed by the user), so it may be improved later. */
   titleAuto?: boolean
   /** The app already offered this finished thread for the project's progress board. */
   progressSuggested?: boolean

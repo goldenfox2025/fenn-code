@@ -1344,6 +1344,14 @@ export class ChatService {
       return
     }
     // The agent changed its own options (e.g. left plan mode): show what is in effect now.
+    if (event.kind === 'session.title') {
+      const conv = this.store.conversation(conversationId)
+      const title = [...event.title.trim().replace(/\s+/g, ' ')].slice(0, 120).join('')
+      // A manual name, a project heading or a routine's name stays authoritative.
+      if (title && conv?.kind === 'chat' && !conv.routineId && conv.titleAuto !== false && conv.title !== title)
+        this.patchConversation(conversationId, { title, titleAuto: true })
+      return
+    }
     if (event.kind === 'options') {
       const conv = this.store.conversation(conversationId)
       // Typed by the user (Grok's /always-approve off): it is their choice now, and a restart keeps it.

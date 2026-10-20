@@ -112,14 +112,14 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
         <span className="plan-text">
           {steps.length
             ? allDone
-              ? t('计划已完成 {0}/{1}', done, steps.length)
-              : `${current?.text ?? t('计划')} · ${done}/${steps.length}`
-            : (current?.text ?? t('计划'))}
+              ? t('计划已完成')
+              : open ? t('计划') : (current?.text ?? t('计划'))
+            : (open ? t('计划') : current?.text ?? t('计划'))}
         </span>
+        {steps.length > 0 && <span className="plan-count">{done}/{steps.length}</span>}
         {blocker && (
-          <span className="plan-blocker" data-tip={blocker.text}>
-            <CircleAlert size={13} />
-            {t('难点：{0}', blocker.text)}
+          <span className="plan-blocker" data-tip={!open ? blocker.text : undefined} aria-hidden={open || undefined} aria-label={!open ? t('难点：{0}', blocker.text) : undefined}>
+            {!open && <><CircleAlert size={13} />{t('难点')}</>}
           </span>
         )}
         <ChevronRight size={14} className="chev" />

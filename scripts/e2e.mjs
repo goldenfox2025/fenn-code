@@ -280,7 +280,7 @@ await check('interactive pages work inline and expand into a clipped responsive 
   const small = inline.frameLocator('iframe')
   await small.locator('#b').click()
   if ((await small.locator('#n').innerText()) !== '1') throw new Error('Inline JavaScript did not run')
-  await page.waitForFunction(() => document.querySelector('.interactive-preview iframe')?.getBoundingClientRect().height < 200)
+  await page.waitForFunction(() => document.querySelector('.interactive-preview iframe')?.getBoundingClientRect().height < 300)
   const collapsedHeight = await inline.locator('iframe').evaluate((el) => el.getBoundingClientRect().height)
   await small.getByRole('button', { name: '展开说明' }).click()
   await page.waitForFunction((before) => document.querySelector('.interactive-preview iframe').getBoundingClientRect().height > before + 50, collapsedHeight)
@@ -298,6 +298,21 @@ await check('interactive pages work inline and expand into a clipped responsive 
   }
   await page.waitForFunction(() => document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).every((a) => !a.pending && a.playState !== 'running'))
   if (shots) await page.screenshot({ path: join(shots, 'embedded-in-reply.png') })
+
+  for (const selector of ['#edge-left', '#edge-right']) {
+    await page.keyboard.press('Tab')
+    await small.locator(selector).focus()
+    const paint = await small.locator(selector).evaluate((el) => {
+      const r = el.getBoundingClientRect(), css = getComputedStyle(el)
+      const extra = Math.max(0, parseFloat(css.outlineWidth) + parseFloat(css.outlineOffset))
+      return { left: r.left-extra, right: r.right+extra, top: r.top-extra, bottom:r.bottom+extra, width:innerWidth, height:innerHeight, radius:parseFloat(css.borderRadius) }
+    })
+    if (paint.left < 0 || paint.top < 0 || paint.right > paint.width || paint.bottom > paint.height || paint.radius <= 0) throw new Error('Rounded focus outline is clipped: ' + JSON.stringify(paint))
+  }
+  const proseLeft = await inline.evaluate((el) => el.parentElement.querySelector('.md').getBoundingClientRect().left)
+  const controlsLeft = (await small.locator('.demo-grid').boundingBox()).x
+  if (Math.abs(proseLeft-controlsLeft)>1) throw new Error(`Embedded controls shifted from prose: ${proseLeft} vs ${controlsLeft}`)
+  if(shots) await page.screenshot({path:join(shots,'rounded-focus-in-reply.png')})
 
   const isolated = await small.locator('body').evaluate(() => {
     try { void parent.document.body; return false } catch { return true }
@@ -903,10 +918,32 @@ await check('a chat shows its plan under the title, opening to the full plan and
   const line = page.locator('.plan-line')
   await line.waitFor({ timeout: 5000 })
   const summary = await line.locator('.plan-summary').innerText()
-  if (!summary.includes('3/3') || !summary.includes('文档和接口对不上')) throw new Error('plan line reads: ' + summary)
+  if (!summary.includes('3/3') || !summary.includes('难点') || summary.includes('文档和接口对不上')) throw new Error('plan line reads: ' + summary)
   await line.locator('.plan-summary').click()
   await line.locator('.plan-body .checklist').waitFor({ timeout: 2000 })
   if (!(await line.locator('.plan-current-blocker').innerText()).includes('文档和接口对不上')) throw new Error('current obstacle missing')
+  if ((await line.locator('.plan-summary').innerText()).includes('难点')) throw new Error('Expanded obstacle is repeated in the summary')
+  for (const [width,height] of [[1400,900],[860,560]]) {
+    await page.setViewportSize({width,height})
+    await page.waitForFunction(() => {
+      const p = document.querySelector('.plan-line'), t = document.querySelector('.transcript')
+      if (!p||!t) return false
+      const r = p.getBoundingClientRect(), tr = t.getBoundingClientRect(), css = getComputedStyle(t)
+      return Math.abs(r.left-(tr.left+parseFloat(css.paddingLeft)))<=1 && Math.abs(r.right-(tr.right-parseFloat(css.paddingRight)))<=1
+    })
+  }
+  await page.setViewportSize({width:1400,height:900})
+
+  const position = () => line.locator('.plan-blocker').evaluate((el) => ({ x: el.getBoundingClientRect().x, width: el.getBoundingClientRect().width }))
+  let shortPosition
+  for (const text of ['#计划短', '#计划长']) {
+    await send(text)
+    await line.locator('.plan-body').waitFor()
+    if ((await line.locator('.plan-summary .plan-text').innerText()) !== '计划') throw new Error('Expanded plan repeats the current step')
+    await line.locator('.plan-summary').click()
+    if (text === '#计划短') shortPosition = await position()
+    else if (JSON.stringify(await position()) !== JSON.stringify(shortPosition)) throw new Error('The obstacle shifts with the preceding step length')
+  }
 })
 
 await check('a chat can be renamed from the sidebar', async () => {

@@ -4,6 +4,9 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+.scroll:has(> .transcript) {
+  scrollbar-gutter: stable;
+}
 .transcript {
   max-width: calc(var(--turn-width) + 2 * var(--turn-gutter));
   margin: 0 auto;

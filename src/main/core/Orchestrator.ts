@@ -128,6 +128,8 @@ export class Orchestrator {
         `</fenn-context>`
       )
     } else if (conv.kind === 'chat') parts.push(`<fenn-context>`, PLAN_HINT, QUIET, this.instructions(conv), `</fenn-context>`)
+    if (conv.kind === 'chat' && !conv.routineId && conv.titleAuto !== false)
+      parts.splice(parts.length - 1, 0, '当对话首次出现明确主题时，在正常回复这一轮中用 set_title 起一个简短、具体的话题名（约 6–16 个汉字或 3–7 个英文词），不要把首条消息机械截断。只有问候时等到有具体主题再起名；不用另起回复来命名。用户手动改过的名字不要覆盖。')
     // The notes above are in Chinese; an English UI should still get English replies.
     if (getLang() === 'en' && parts.length)
       parts.splice(1, 0, `The user's app is set to English. Always reply in the language the user writes in (English when unsure), even though these notes are in Chinese.`)
@@ -842,6 +844,20 @@ export class Orchestrator {
         reply.blocks.push({ type: 'artifact', artifactId: meta.id, title: meta.title, version, display: placement })
         this.chat.updateMessage(reply)
         return { page_id: meta.id, version, display: placement }
+      }
+    })
+    if (conv.kind === 'chat' && !conv.routineId) common.push({
+      name: 'set_title',
+      description: '为普通对话自动起一个简短、具体的话题名。在首次有明确主题的正常回复里调用，不要机械截断用户原话。手动设置的名字会被保留。',
+      inputSchema: obj({ title: { type: 'string' } }, ['title']),
+      aliases: { title: ['name', 'text'] },
+      run: ({ title }) => {
+        const current = this.store.requireConversation(conv.id)
+        if (current.titleAuto === false) return { kept: true, title: current.title }
+        const name = [...str(title, 'title').trim().replace(/\s+/g, ' ')].slice(0, 120).join('')
+        if (!name) throw new Error('标题不能为空')
+        this.chat.patchConversation(conv.id, { title: name, titleAuto: true })
+        return { title: name }
       }
     })
     if (!project) return common

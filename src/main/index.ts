@@ -36,6 +36,7 @@ import { BackendManager } from "./backends/BackendManager";
 import { builtinPlugins, loadPlugins } from "./backends/registry";
 import { openTerminal } from "./backends/terminal";
 import { AppCore } from "./core/AppCore";
+import { uiDisplayDocument } from "./core/uiDocument";
 import { Notifier } from "./core/Notifier";
 import type { DisplayInfo, ScreenSource } from "./computer/ComputerControl";
 import { inputDriver, type Coords } from "./computer/drivers";
@@ -688,7 +689,8 @@ app.whenReady().then(async () => {
     // oc-page://page/<id>/<version>, or oc-page://board/<card id>/<updated>?<the look's colors> for an html card on the home board
     const url = new URL(req.url)
     const [, id, version] = url.pathname.split('/')
-    const html = url.host === 'board' ? boardPage(core.snapshot().boardWidgets?.find((w) => w.id === id)?.body, url.searchParams) : core.artifacts.html(id, Number(version) || undefined)
+    const source = url.host === 'board' ? boardPage(core.snapshot().boardWidgets?.find((w) => w.id === id)?.body, url.searchParams) : core.artifacts.html(id, Number(version) || undefined)
+    const html = source && url.host !== 'board' ? uiDisplayDocument(source) : source
     return new Response(html ?? 'not found', {
       status: html ? 200 : 404,
       headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': PAGE_CSP }

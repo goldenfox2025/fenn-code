@@ -179,6 +179,12 @@ const handlers = {
     const abort = { aborted: false };
     s.abort = abort;
     s.turns++;
+    // A title can arrive asynchronously after a turn (as real ACP agents report it).
+    if (process.env.MOCK_SESSION_TITLE) {
+      const sessionTitle = process.env.MOCK_SESSION_TITLE;
+      if (process.env.MOCK_LATE_TITLE) s.pendingTitle = sessionTitle;
+      else notify(sessionId, { sessionUpdate: 'session_info_update', title: sessionTitle });
+    }
     const raw = prompt
       .filter((p) => p.type === "text")
       .map((p) => p.text)
@@ -319,6 +325,11 @@ const handlers = {
       };
     if (mode === "none") return { stopReason: abort.aborted ? "cancelled" : "end_turn" };
     // MOCK_USAGE=meta: as Grok reports it: no usage_update, the context in each update's _meta.totalTokens.
+    if (s.pendingTitle) {
+      const title = s.pendingTitle;
+      s.pendingTitle = undefined;
+      setTimeout(() => notify(sessionId, { sessionUpdate: 'session_info_update', title }), 100);
+    }
     if (mode === "meta") {
       s.context = (s.context ?? 0) + input + output;
       send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "" } }, _meta: { totalTokens: s.context } } });
@@ -695,6 +706,16 @@ async function classify(sessionId, raw, abort) {
 }
 
 async function turn(sessionId, s, text, abort, sawHistory) {
+  if (process.env.MOCK_TOOL_TITLE && (await toolNames(s)).includes('set_title'))
+    await callTool(sessionId, s, 'set_title', { title: process.env.MOCK_TOOL_TITLE });
+  if (/#计划短|#计划长/.test(text)) {
+    notify(sessionId, { sessionUpdate: 'plan', entries: [
+      { content: text.includes('#计划长') ? '检查这个特别长的任务步骤名称是否会挤动难点入口以及计划计数的位置'.repeat(4) : '检查接口', status: 'in_progress', priority: 'high' },
+      { content: '复核结果', status: 'pending', priority: 'medium' }
+    ] });
+    await stream(sessionId, '计划已更新。', abort);
+    return;
+  }
   const approve = text.trim().match(/^\/always-approve(?:\s+(on|off))?$/);
   if (approve) {
     s.alwaysApprove = approve[1] ? approve[1] === "on" : !s.alwaysApprove;
@@ -720,8 +741,8 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
 </style></head><body><div class="card"><h1>计数器 v${v}</h1><div id="n" style="font-size:48px">0</div>
 <button id="b">加一</button></div><script>let n=0;document.getElementById('b').onclick=()=>{document.getElementById('n').textContent=++n}<\/script></body></html>`;
     const html = inlineUi ? `<style>
-.demo-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}.demo-controls button{border:1px solid var(--border);border-radius:8px;padding:6px 14px;background:var(--bg-elevated);color:var(--text)}.demo-count{font-variant-numeric:tabular-nums;font-size:24px;min-width:36px}.demo-note{color:var(--text-3);font-size:12px}.demo-details{padding-top:16px;line-height:1.8}
-</style><div><strong>计数器 v${v}</strong><div class="demo-note">交互示例 · 直接在回复中操作</div><div class="demo-controls"><output id="n" class="demo-count">0</output><button id="b">加一</button><button id="more" aria-expanded="false">展开说明</button></div><div id="details" class="demo-details" hidden>这个控件与上面的说明文字属于同一条回复。<br>内容展开时，对话自然向下排版。<br>切换主题和调整窗口不会重置计数。</div></div><script>let n=0;document.getElementById('b').onclick=()=>document.getElementById('n').textContent=++n;document.getElementById('more').onclick=()=>{const d=document.getElementById('details');d.hidden=!d.hidden;document.getElementById('more').setAttribute('aria-expanded',String(!d.hidden))}<\/script>` : pageHtml;
+.demo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.demo-grid label{display:grid;gap:6px;min-width:0}.demo-grid select{width:100%;min-width:0;height:36px;border:1px solid var(--border);border-radius:10px;background:var(--bg-elevated);color:var(--text)}.demo-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}.demo-controls button{border:1px solid var(--border);border-radius:8px;padding:6px 14px;background:var(--bg-elevated);color:var(--text)}.demo-count{font-variant-numeric:tabular-nums;font-size:24px;min-width:36px}.demo-note{color:var(--text-3);font-size:12px}.demo-details{padding-top:16px;line-height:1.8}
+</style><div><strong>计数器 v${v}</strong><div class="demo-note">交互示例 · 直接在回复中操作</div><div class="demo-grid"><label>主力模型<select id="edge-left"><option>Luna</option><option>Sol</option></select></label><label>订阅阶段<select id="edge-right"><option>续费月</option><option>首月优惠</option></select></label></div><div class="demo-controls"><output id="n" class="demo-count">0</output><button id="b">加一</button><button id="more" aria-expanded="false">展开说明</button></div><div id="details" class="demo-details" hidden>这个控件与上面的说明文字属于同一条回复。<br>内容展开时，对话自然向下排版。<br>切换主题和调整窗口不会重置计数。</div></div><script>let n=0;document.getElementById('b').onclick=()=>document.getElementById('n').textContent=++n;document.getElementById('more').onclick=()=>{const d=document.getElementById('details');d.hidden=!d.hidden;document.getElementById('more').setAttribute('aria-expanded',String(!d.hidden))}<\/script>` : pageHtml;
     if (inlineUi) await stream(sessionId, "这里可以直接调整参数：\n\n", abort);
     const r = await callTool(sessionId, s, inlineUi ? "render_ui" : "publish_page", {
       title: "计数器",

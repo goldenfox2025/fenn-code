@@ -401,6 +401,12 @@
 .artifact-surface.inline .page-frame {
   background: transparent;
 }
+/* The isolated document reserves this inset for focus/shadow painting. Cancel
+   it outside the frame so its content still aligns exactly with the prose. */
+.artifact-surface.inline.ui-padded {
+  width: calc(100% + 2 * var(--space-3));
+  margin: calc(-1 * var(--space-3));
+}
 .page-code {
   flex: 1;
   margin: 0;
