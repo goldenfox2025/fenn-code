@@ -266,6 +266,67 @@ await check('a long chat keeps the composer on screen', async () => {
   if (!box || box.y + box.height > vp.height || box.y < 0) throw new Error(`composer at ${JSON.stringify(box)}`)
 })
 
+await check('scrolling up inside an embedded UI stops following later height updates', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('做个可视化')
+  const inline=page.locator('.interactive-preview').last(),frame=inline.frameLocator('iframe')
+  await frame.locator('body').evaluate(()=>{
+    const tail=document.createElement('div');tail.id='growing-tail';tail.style.height='3000px';document.querySelector('[data-fenn-ui]').append(tail)
+  })
+  await page.waitForFunction(()=>[...document.querySelectorAll('.interactive-preview iframe')].at(-1)?.getBoundingClientRect().height>3000)
+  const scroll=page.locator('.scroll:has(> .transcript)')
+  await scroll.evaluate(el=>el.scrollTop=el.scrollHeight)
+  await page.waitForTimeout(100)
+  const before=await scroll.evaluate(el=>el.scrollTop),box=await inline.locator('iframe').boundingBox()
+  await page.mouse.move(box.x+box.width/2,Math.min(650,box.y+box.height-100))
+  await page.mouse.wheel(0,-260)
+  await page.waitForTimeout(150)
+  const reading=await scroll.evaluate(el=>el.scrollTop)
+  if(reading>before-80)throw new Error('The user could not scroll up inside the UI')
+  await frame.locator('#growing-tail').evaluate(el=>el.style.height='3400px')
+  await page.waitForTimeout(350)
+  const after=await scroll.evaluate(el=>el.scrollTop)
+  if(Math.abs(after-reading)>2)throw new Error('Height update stole reading position: '+JSON.stringify({before,reading,after}))
+  await page.mouse.wheel(0,5000)
+  await page.waitForTimeout(150)
+  await frame.locator('#growing-tail').evaluate(el=>el.style.height='3600px')
+  await page.waitForTimeout(200)
+  if(await scroll.evaluate(el=>el.scrollHeight-el.clientHeight-el.scrollTop)>4)throw new Error('Scrolling to the bottom must resume following')
+  await page.mouse.wheel(0,-30)
+  await page.waitForTimeout(150)
+  const near=await scroll.evaluate(el=>el.scrollTop)
+  await frame.locator('#growing-tail').evaluate(el=>el.style.height='3700px')
+  await page.waitForTimeout(200)
+  if(Math.abs(await scroll.evaluate(el=>el.scrollTop)-near)>2)throw new Error('Even a small upward scroll must stop following immediately')
+  await send('继续简单回答')
+  if(await scroll.evaluate(el=>el.scrollHeight-el.clientHeight-el.scrollTop)>4)throw new Error('A new user message must resume following its reply')
+})
+
+await check('long approval cards leave the reading viewport and composer in place', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('请重复这些内容以便检查滚动。'.repeat(130))
+  await page.fill('.composer textarea','#长批准')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(250)
+  const scroll=page.locator('.scroll:has(> .transcript)')
+  const geometry=()=>scroll.evaluate(el=>({height:el.clientHeight,top:el.getBoundingClientRect().top}))
+  const before=await geometry()
+  await page.locator('.perm').waitFor()
+  const during=await geometry(),card=await page.locator('.perm').boundingBox(),composer=await page.locator('.composer-wrap').boundingBox()
+  if(Math.abs(before.height-during.height)>1||Math.abs(before.top-during.top)>1||card.y<50||card.y+card.height>composer.y+1)throw new Error('Approval displaced the conversation: '+JSON.stringify({before,during,card,composer}))
+  for(const [width,height] of [[900,650],[640,560],[1400,900]]){
+    await page.setViewportSize({width,height})
+    await page.locator('.perm').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+    const p=await page.locator('.perm').boundingBox(),c=await page.locator('.composer-wrap').boundingBox(),actions=await page.locator('.perm .actions').boundingBox()
+    if(p.y<50||p.y+p.height>c.y+1||actions.y+actions.height>p.y+p.height||p.x<0||p.x+p.width>width)throw new Error('Long approval is not reachable in a narrow window: '+JSON.stringify({p,c,actions,width,height}))
+  }
+  if(shots)await page.screenshot({path:join(shots,'long-approval-overlay.png')})
+  await page.locator('.perm .btn.primary').click()
+  await page.locator('.perm').waitFor({state:'detached'})
+  const after=await geometry()
+  if(Math.abs(after.height-before.height)>1)throw new Error('Confirming approval resized the reading viewport')
+})
+
 await check('embedded select stays still while the mouse is held and released in a long reply', async () => {
   await page.click('.nav-item:has-text("新建")')
   await send('做个可视化 #慢页面')
@@ -1424,31 +1485,27 @@ await check('approvals come one at a time, each in the place of the last', async
   await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
 })
 
-await check('an answered card fades in its place, and a request that follows a while later rises into the same place', async () => {
+await check('sequential approval overlays never reserve or animate transcript height', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
   await page.locator('.composer-row .backend-chip').click()
   await page.locator('.menu .menu-item', { hasText: '演示 Agent' }).click()
   await page.fill('.composer textarea', '慢慢写三次')
   await page.keyboard.press('Enter')
-  const top = async (sel) => (await page.locator(sel).boundingBox())?.y
-  for (let k = 0; k < 3; k++) {
-    await page.waitForSelector('.perm:not(.leaving)', { timeout: 5000 })
-    const name = await page.locator('.perm:not(.leaving)').evaluate((e) => getComputedStyle(e).animationName)
-    if (name !== 'rise-in') throw new Error(`card ${k + 1} comes in with "${name}"`)
-    await page.waitForTimeout(300)
-    const before = await top('.perm-slot')
+  const geometry=()=>page.locator('.scroll:has(> .transcript)').evaluate(el=>({top:el.getBoundingClientRect().top,height:el.clientHeight}))
+  for(let k=0;k<3;k++){
+    await page.locator('.perm').waitFor({timeout:5000})
+    const before=await geometry()
+    if(await page.locator('.perm').evaluate(el=>getComputedStyle(el).animationName)!=='fade-in')throw new Error('Approval cards should not translate or scale the page')
     await page.click('.perm .btn.primary')
-    if (k === 2) break
-    // The agent runs the tool before it asks again: meanwhile the place stays where it was.
-    await page.waitForSelector('.perm.leaving', { state: 'detached', timeout: 2000 })
-    const held = await top('.perm-slot')
-    if (held === undefined || Math.abs(held - before) > 2) throw new Error(`while waiting for the next request the place ${held === undefined ? 'closed' : `moved ${Math.round(held - before)}px`}`)
-    await page.waitForSelector('.perm:not(.leaving)', { timeout: 5000 })
-    const after = await top('.perm-slot')
-    if (Math.abs(after - before) > 2) throw new Error(`card ${k + 2} landed ${Math.round(after - before)}px away`)
+    if(k===2)break
+    await page.locator('.perm').waitFor({state:'detached',timeout:2000})
+    const between=await geometry()
+    if(Math.abs(between.top-before.top)>1||Math.abs(between.height-before.height)>1)throw new Error('Answering an approval resized the transcript')
+    await page.locator('.perm').waitFor({timeout:5000})
+    const after=await geometry()
+    if(Math.abs(after.height-before.height)>1)throw new Error('The next approval shifted the reading area')
   }
-  // Once the turn is over, the place closes.
-  await page.waitForSelector('.perm-slot', { state: 'detached', timeout: 20000 })
+  await page.locator('.perm-slot').waitFor({state:'detached',timeout:20000})
 })
 
 await check('the new-chat page shows usage widgets that can be removed and brought back', async () => {

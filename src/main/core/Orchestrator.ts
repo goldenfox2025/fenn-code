@@ -129,6 +129,7 @@ export class Orchestrator {
         `</fenn-context>`
       )
     } else if (conv.kind === 'chat') parts.push(`<fenn-context>`, PLAN_HINT, QUIET, this.instructions(conv), `</fenn-context>`)
+    if (parts.length) parts.splice(parts.length - 1, 0, '适合时主动用 render_ui/render_chart。文档、报告、说明默认 Markdown（.md）；用户指定格式优先。')
     if (conv.kind === 'chat' && !conv.routineId && conv.titleAuto !== false)
       parts.splice(parts.length - 1, 0, '当对话首次出现明确主题时，在正常回复这一轮中用 set_title 起一个简短、具体的话题名（约 6–16 个汉字或 3–7 个英文词），不要把首条消息机械截断。只有问候时等到有具体主题再起名；不用另起回复来命名。用户手动改过的名字不要覆盖。')
     // The notes above are in Chinese; an English UI should still get English replies.

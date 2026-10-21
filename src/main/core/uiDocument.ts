@@ -9,6 +9,12 @@ const PICKER_BEHAVIOR = `<script data-fenn-ui-picker-events>
  let host=false,seq=0,pending=null;
  const display=()=>{const root=document.querySelector('main[data-fenn-ui]'),css=root&&getComputedStyle(root);const inset=css&&['paddingTop','paddingRight','paddingBottom','paddingLeft'].every(k=>Math.abs(parseFloat(css[k])-6)<0.1)?6:0;parent.postMessage({type:'fenn:ui-display',inset},'*')};
  addEventListener('DOMContentLoaded',display);
+ const scrollIntent=deltaY=>{if(Number.isFinite(deltaY)&&deltaY)parent.postMessage({type:'fenn:ui-scroll',deltaY},'*')};
+ addEventListener('wheel',e=>scrollIntent(e.deltaY),{passive:true,capture:true});
+ let touchY;
+ addEventListener('touchstart',e=>touchY=e.touches[0]?.clientY,{passive:true});
+ addEventListener('touchmove',e=>{const y=e.touches[0]?.clientY;if(y!==undefined&&touchY!==undefined)scrollIntent(touchY-y);touchY=y},{passive:true});
+ addEventListener('keydown',e=>{if(e.target.closest?.('input,textarea,select,[contenteditable=true]'))return;if(['ArrowUp','PageUp','Home'].includes(e.key))scrollIntent(-1);else if(['ArrowDown','PageDown','End'].includes(e.key))scrollIntent(1)},true);
  addEventListener('message',e=>{
   if(e.source!==parent)return;
   if(e.data?.type==='fenn:ui-theme'){host=e.data.selectMenu===true;display()}

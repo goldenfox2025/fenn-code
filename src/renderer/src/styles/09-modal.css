@@ -178,17 +178,18 @@
   background: var(--accent-fg);
 }
 
-/* permission prompt: one at a time, in a slot that keeps its place through a run of requests */
+/* A zero-height anchor: long approvals never shrink the reading viewport. */
 .perm-slot {
-  /* Holds the card's margins inside, so its height is the height to keep. */
-  display: flow-root;
-  padding: 0 var(--space-9);
-}
-.perm-slot.closing {
-  transition: min-height var(--dur-2) var(--ease);
+  position: relative;
+  flex: none;
+  height: 0;
+  z-index: 30;
 }
 .perm-stack {
-  display: flow-root;
+  position: absolute;
+  bottom: var(--space-3);
+  left: var(--space-9);
+  right: var(--space-9);
 }
 .perm-more {
   margin-left: auto;
@@ -199,17 +200,39 @@
 }
 .perm {
   max-width: 800px;
-  margin: 0 auto var(--space-5);
+  margin: 0 auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   padding: var(--space-6) 14px;
-  animation: rise-in var(--dur-2) var(--ease);
+  display: flex;
+  flex-direction: column;
+  max-height: min(420px, var(--perm-space, 50dvh));
+  overflow: hidden;
+  box-shadow: var(--shadow-pop);
+  animation: fade-in var(--dur-1) var(--ease);
 }
-/* Answered: it fades where it was, and the next card rises into the same place. */
-.perm.leaving {
-  animation: fade-out var(--dur-2) var(--ease) forwards;
-  pointer-events: none;
+.perm-heading {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-weight: 500;
+  min-height: 0;
+}
+.perm-heading > svg { flex: none; margin-top: 3px; }
+.perm-title {
+  flex: 1;
+  min-width: 100px;
+  max-height: 4.5em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.perm-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .perm .detail {
   font-family: var(--font-mono);
@@ -219,11 +242,12 @@
   border-radius: var(--radius-md);
   padding: var(--space-4) var(--space-5);
   margin: var(--space-4) 0;
-  max-height: 160px;
-  overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .perm .actions {
+  flex: none;
+  padding-top: var(--space-4);
   display: flex;
   gap: var(--space-4);
   flex-wrap: wrap;

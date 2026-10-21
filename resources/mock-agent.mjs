@@ -706,6 +706,16 @@ async function classify(sessionId, raw, abort) {
 }
 
 async function turn(sessionId, s, text, abort, sawHistory) {
+  if (text.includes('#长批准')) {
+    await sleep(1000);
+    await requestClient('session/request_permission', {
+      sessionId,
+      toolCall: { toolCallId: 'long-approval', title: '运行带有长参数的命令：' + '测试参数内容 '.repeat(180), kind: 'execute', rawInput: { command: 'command ' + '--argument=value '.repeat(400) } },
+      options: [{ optionId: 'allow', name: '允许', kind: 'allow_once' }, { optionId: 'reject', name: '拒绝', kind: 'reject_once' }]
+    });
+    await stream(sessionId, '批准请求已结束。', abort);
+    return;
+  }
   if (text.includes('#标注重叠')) {
     await callTool(sessionId, s, 'publish_page', {
       title: '阈值标注排版复现',

@@ -53,6 +53,18 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
   const loadMessages = useApp((s) => s.loadMessages)
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  const touched = useRef(-Infinity)
+  const direction = useRef(0)
+  const touchY = useRef<number | undefined>(undefined)
+  const lastUser = useRef<string | undefined>(undefined)
+  const seenConversation = useRef('')
+  const userScroll = (delta: number) => {
+    if (!Number.isFinite(delta)) return
+    touched.current = performance.now()
+    direction.current = Math.sign(delta)
+    // Stop before layout/resize callbacks get a chance to pull the viewport back.
+    if (delta <= 0) stick.current = false
+  }
 
   useEffect(() => {
     void loadMessages(conversation.id)
@@ -64,6 +76,14 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
   }, [conversation.id, conversation.unread, messages?.length])
 
   useLayoutEffect(() => {
+    if (seenConversation.current !== conversation.id) {
+      seenConversation.current = conversation.id
+      lastUser.current = undefined
+      stick.current = true
+    }
+    const newest = (messages ?? []).findLast((m) => m.role === 'user' && !m.hidden)?.id
+    if (lastUser.current && newest && newest !== lastUser.current) stick.current = true
+    lastUser.current = newest
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [messages, conversation.id, compact])
@@ -87,10 +107,17 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     }
   }, [])
 
-  // Only the user's own scrolling decides whether to follow the bottom; a jump in height
-  // between two frames (a reply cut short, a long block arriving) is not them scrolling away.
-  const touched = useRef(0)
-  const byUser = () => (touched.current = performance.now())
+  // Wheel/touch events do not bubble across sandbox boundaries. Accept intent
+  // only from one of this transcript's own frames.
+  useEffect(() => {
+    const intent = (e: MessageEvent) => {
+      if (e.data?.type !== 'fenn:ui-scroll' || typeof e.data.deltaY !== 'number') return
+      const frames = scroller.current?.querySelectorAll('iframe') ?? []
+      if ([...frames].some((f) => f.contentWindow === e.source)) userScroll(e.data.deltaY)
+    }
+    window.addEventListener('message', intent)
+    return () => window.removeEventListener('message', intent)
+  }, [])
 
   const visible = (messages ?? []).filter((m) => !m.hidden)
   let lastDay = ''
@@ -114,14 +141,24 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     <div
       className="scroll"
       ref={scroller}
-      onWheel={byUser}
-      onTouchMove={byUser}
-      onPointerDown={byUser}
-      onKeyDown={byUser}
+      onWheel={(e) => userScroll(e.deltaY)}
+      onTouchStart={(e) => { touchY.current = e.touches[0]?.clientY }}
+      onTouchMove={(e) => {
+        const next = e.touches[0]?.clientY
+        if (next !== undefined && touchY.current !== undefined) userScroll(touchY.current - next)
+        touchY.current = next
+      }}
+      onPointerDown={(e) => userScroll(e.target === e.currentTarget ? 0 : -1)}
+      onKeyDown={(e) => {
+        if ((e.target as Element).closest('input,textarea,select,[contenteditable=true]')) return
+        if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) userScroll(-1)
+        else if (['ArrowDown', 'PageDown', 'End'].includes(e.key)) userScroll(1)
+      }}
       onScroll={(e) => {
         const el = e.currentTarget
-        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-        if (atBottom || performance.now() - touched.current < 800) stick.current = atBottom
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 4
+        // Layout clamping and iframe resizing are not a request to resume.
+        if (atBottom && direction.current >= 0 && performance.now() - touched.current < 500) stick.current = true
       }}
     >
       <div className="transcript">
