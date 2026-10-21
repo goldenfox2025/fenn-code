@@ -330,6 +330,44 @@ await check('embedded select stays still while the mouse is held and released in
   }
 })
 
+await check('threshold annotations reserve a lane instead of overlapping the preceding title', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('#标注重叠')
+  const pane=page.locator('.page-panel'),frame=pane.frameLocator('iframe')
+  await frame.locator('#limit').waitFor()
+  const measure=()=>frame.locator('.row').evaluate(row=>{
+    const textRect=el=>{const range=document.createRange();range.selectNodeContents(el);return range.getBoundingClientRect()}
+    const title=textRect(row.querySelector('h3')),label=textRect(row.querySelector('#limit')),bar=row.querySelector('.track').getBoundingClientRect(),note=row.querySelector('.note').getBoundingClientRect()
+    return {titleBottom:title.bottom,labelTop:label.top,labelBottom:label.bottom,barTop:bar.top,barBottom:bar.bottom,noteTop:note.top,margin:parseFloat(getComputedStyle(row.querySelector('.track')).marginTop)}
+  })
+  for(const size of [16,24,16]){
+    await frame.locator('body').evaluate((el,size)=>el.style.fontSize=size+'px',size)
+    await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+    const m=await measure()
+    if(m.labelTop<m.titleBottom+4||m.barTop<m.labelBottom||m.noteTop<m.barBottom)throw new Error('Threshold annotation overlaps: '+JSON.stringify(m))
+  }
+  const badge=await frame.locator('.badge').evaluate(el=>el.style.cssText)
+  await frame.locator('#update').click()
+  await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+  const updated=await measure()
+  if(updated.labelTop<updated.titleBottom+4)throw new Error('Updated threshold overlaps the title: '+JSON.stringify(updated))
+  await frame.locator('body').evaluate(()=>new Promise(r=>{let n=0;const tick=()=>++n===12?r():requestAnimationFrame(tick);tick()}))
+  if(Math.abs((await measure()).margin-updated.margin)>1)throw new Error('Annotation spacing must not accumulate on observer callbacks')
+  await frame.locator('.marker').evaluate(el=>el.style.left='80%')
+  await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+  if((await measure()).margin!==0)throw new Error('Collision-free labels must release the extra spacing')
+  await frame.locator('.marker').evaluate(el=>el.style.left='4%')
+  await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+  for(const width of [900,640,1400]){
+    await page.setViewportSize({width,height:900})
+    await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
+    const m=await measure()
+    if(m.labelTop<m.titleBottom+4||m.noteTop<m.barBottom)throw new Error('Annotation collision after window resize: '+JSON.stringify(m))
+  }
+  if(await frame.locator('.badge').evaluate(el=>el.style.cssText)!==badge)throw new Error('Unrelated positioned elements must not be rewritten')
+  if(shots){await page.screenshot({path:join(shots,'threshold-annotation-lanes.png')});await frame.locator('.row').screenshot({path:join(shots,'threshold-annotation-row.png')})}
+})
+
 await check('legacy full HTML pages use an aligned host picker instead of the native popup', async () => {
   await page.click('.nav-item:has-text("新建")')
   await send('#旧下拉')

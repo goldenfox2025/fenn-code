@@ -10,6 +10,7 @@ describe('embedded conversation UI documents', () => {
     expect(fixed).toContain('.card{border-radius:12px}')
     expect(fixed).toContain('fenn:ui-select')
     expect(fixed).toContain('preventScroll:true')
+    expect(fixed).toContain('data-fenn-ui-annotations')
     expect(uiDisplayDocument(fixed)).toBe(fixed)
     // Documents saved with the previous display fix receive the new picker too.
     expect(uiDisplayDocument(saved.replace('</head>', '<style data-fenn-ui-display></style></head>'))).toContain('data-fenn-ui-picker-events')
@@ -27,6 +28,7 @@ describe('embedded conversation UI documents', () => {
   ])('upgrades legacy document shapes without changing their source layout', (source) => {
     const doc = uiDisplayDocument(source)
     expect(doc).toContain('fenn:ui-select')
+    expect(doc).toContain('data-fenn-ui-annotations')
     expect(doc).not.toContain('data-fenn-ui-layout')
     expect(uiDisplayDocument(doc)).toBe(doc)
     if (source.startsWith('<!doctype')) expect(doc.startsWith('<!doctype')).toBe(true)

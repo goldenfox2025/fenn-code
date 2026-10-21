@@ -706,6 +706,16 @@ async function classify(sessionId, raw, abort) {
 }
 
 async function turn(sessionId, s, text, abort, sawHistory) {
+  if (text.includes('#标注重叠')) {
+    await callTool(sessionId, s, 'publish_page', {
+      title: '阈值标注排版复现',
+      html: `<!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box}body{margin:0;padding:24px;background:#262624;color:#eee;font:16px/1.5 system-ui}.row{margin-bottom:28px}h3{font-size:1.25em;margin:0 0 10px}.track{position:relative;height:28px;background:#333;border:1px solid #555;border-radius:5px}.fill{width:70%;height:100%;background:#36abc1}.marker{position:absolute;left:18%;top:-4px;height:40px;border-left:2px dashed #eee}.marker span{position:absolute;top:-26px;left:8px;font-size:.875em;font-weight:600;white-space:nowrap}.note{margin:16px 0 0;color:#aaa}.badge-card{position:relative;height:60px;margin-top:24px}.badge{position:absolute;top:0;right:0}button{font:inherit}
+</style></head><body><section class="row"><h3>Command Code GOAT</h3><div class="track"><div class="fill"></div><div class="marker"><span id="limit">官方总量 $70</span></div></div><p class="note">布局复现数据，仅检查标题、阈值与说明是否重叠。</p></section><div class="badge-card"><strong>普通卡片</strong><span class="badge">状态</span></div><button id="update">更新阈值</button><script>update.onclick=()=>{limit.textContent='更新后的官方总量 $700';document.querySelector('.marker').style.left='4%'}<\/script></body></html>`
+    });
+    await stream(sessionId, '阈值标注排版复现。', abort);
+    return;
+  }
   if (text.includes('#旧下拉')) {
     await callTool(sessionId, s, 'publish_page', {
       title: '旧页面下拉复现',
