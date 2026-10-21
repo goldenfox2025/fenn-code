@@ -825,7 +825,7 @@ export class Orchestrator {
         description: chart
           ? '回复内统计图：line 折线、bar 柱状，labels 对应各系列 values，缺失值 null。支持悬停数值、图例切换、键盘查看，离线自适应主题。source 标明依据或示例/估算；禁止虚构。page_id 更新，默认 inline。'
           : embedded
-          ? '在回复内绘制交互 UI，常规统计图优先 render_chart。html 是 HTML/CSS/SVG/JS 片段，无需整页标签、背景或标题栏。按内容长高；禁止固定外层宽高/100vh；网格用 minmax(0,1fr)，窄窗改单列。主题变量：--text、--text-2、--text-3、--bg、--bg-elevated、--border、--accent、--accent-fg。控件可键盘操作。数据标明依据/估算。默认 inline，可选 panel；page_id 更新。沙箱不能访问应用、本地文件或网络。'
+          ? '回复内交互 UI，统计图优先 render_chart。html 是 HTML/CSS/SVG/JS 片段，无需整页标签、背景或标题栏。按内容长高；禁止固定外层宽高/100vh；网格用 minmax(0,1fr)，窄窗改单列。标题、阈值标注独立占行，不用负偏移叠字。主题变量：--text、--text-2、--text-3、--bg、--bg-elevated、--border、--accent、--accent-fg。控件可键盘操作。数据标明依据/估算。默认 inline，可选 panel；page_id 更新。沙箱不能访问应用、本地文件或网络。'
           : '发布完整 HTML 网页，默认 panel。回复内交互控件用 render_ui，统计图用 render_chart；page_id 更新。CSS/JS 内联，外部脚本仅限 HTTPS。',
         inputSchema: obj(
           {

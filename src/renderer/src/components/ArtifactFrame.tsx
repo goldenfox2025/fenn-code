@@ -10,7 +10,7 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
   const [since] = useState(Date.now)
   const ref = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(160)
-  const [fluid, setFluid] = useState(false)
+  const [padded, setPadded] = useState(false)
   const sendTheme = () => {
     const root = document.documentElement
     const css = getComputedStyle(root)
@@ -19,10 +19,14 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
   }
   useEffect(() => {
     const resize = (e: MessageEvent) => {
-      if (!inline || e.source !== ref.current?.contentWindow || e.data?.type !== 'fenn:ui-size') return
+      if (!inline || e.source !== ref.current?.contentWindow) return
+      if (e.data?.type === 'fenn:ui-display') {
+        setPadded(e.data.inset === 6)
+        return
+      }
+      if (e.data?.type !== 'fenn:ui-size') return
       const next = e.data.height
       if (typeof next === 'number' && Number.isFinite(next)) {
-        setFluid(true)
         setHeight(Math.max(40, Math.min(12000, Math.ceil(next))))
       }
     }
@@ -32,14 +36,14 @@ export function ArtifactFrame({ id, version, title, inline = false }: { id: stri
     return () => { window.removeEventListener('message', resize); observer.disconnect() }
   }, [inline])
   return (
-    <div className={'artifact-surface' + (inline ? ' inline' : '') + (fluid ? ' ui-padded' : '')}>
+    <div className={'artifact-surface' + (inline ? ' inline' : '') + (padded ? ' ui-padded' : '')}>
       {failed ? <div className="artifact-loading" role="status">{t('无法加载预览')}</div> : !loaded && <div className="artifact-loading"><WorkingMark since={since} label={t('正在加载预览…')} /></div>}
       <iframe
         ref={ref}
         className="page-frame"
         title={title}
         sandbox="allow-scripts allow-forms allow-modals allow-popups"
-        src={`oc-page://page/${id}/${version}`}
+        src={`oc-page://page/${id}/${version}?display=${since}`}
         loading={inline ? 'lazy' : 'eager'}
         style={inline ? { height } : undefined}
         onLoad={() => { setLoaded(true); sendTheme() }}

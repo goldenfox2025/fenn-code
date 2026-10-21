@@ -330,6 +330,40 @@ await check('embedded select stays still while the mouse is held and released in
   }
 })
 
+await check('legacy full HTML pages use an aligned host picker instead of the native popup', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('#旧下拉')
+  const pane=page.locator('.page-panel'),frame=pane.frameLocator('iframe'),select=frame.locator('#legacy-select')
+  await select.waitFor()
+  const before=await select.boundingBox()
+  await select.click()
+  const menu=page.locator('.menu')
+  await menu.waitFor({timeout:3000})
+  await menu.evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)))
+  const after=await select.boundingBox(),box=await menu.boundingBox()
+  if(Math.abs(before.y-after.y)>1||Math.abs(box.x-after.x)>1||Math.abs(box.width-after.width)>1||box.y<after.y+after.height)
+    throw new Error('Legacy picker shifted or overlaps its control: '+JSON.stringify({before,after,box}))
+  if(shots)await page.screenshot({path:join(shots,'legacy-picker-open.png')})
+  await page.getByRole('menuitemradio',{name:'MiMo V2.6 Pro',exact:true}).click()
+  if(await select.inputValue()!=='MiMo V2.6 Pro')throw new Error('Legacy page selection did not apply')
+  if(shots)await page.screenshot({path:join(shots,'legacy-picker-after-select.png')})
+})
+
+await check('legacy inline page size messages do not pull unpadded content up or left', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('#旧下拉 内联')
+  const inline=page.locator('.interactive-preview').last(),frame=inline.frameLocator('iframe')
+  await frame.locator('#legacy-select').waitFor()
+  await frame.locator('body').evaluate(()=>parent.postMessage({type:'fenn:ui-size',height:320},'*'))
+  await page.waitForFunction(()=>[...document.querySelectorAll('.interactive-preview iframe')].at(-1).getBoundingClientRect().height===320)
+  const geometry=await inline.evaluate(el=>{
+    const outer=el.getBoundingClientRect(),surface=el.querySelector('.artifact-surface').getBoundingClientRect()
+    return {top:surface.top-outer.top,left:surface.left-outer.left,padded:el.querySelector('.artifact-surface').classList.contains('ui-padded')}
+  })
+  if(geometry.padded||Math.abs(geometry.top)>1||Math.abs(geometry.left)>1)throw new Error('Unpadded legacy page was shifted: '+JSON.stringify(geometry))
+  if(shots)await page.screenshot({path:join(shots,'legacy-inline-no-offset.png')})
+})
+
 await check('charts render offline, fit narrow replies and keep data accessible', async () => {
   const errors=[]
   const onError=e=>errors.push(e.message)

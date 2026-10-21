@@ -693,7 +693,7 @@ app.whenReady().then(async () => {
     const html = source && url.host !== 'board' ? uiDisplayDocument(source) : source
     return new Response(html ?? 'not found', {
       status: html ? 200 : 404,
-      headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': PAGE_CSP }
+      headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': PAGE_CSP, 'cache-control': 'no-store' }
     })
   })
   await tools.start();

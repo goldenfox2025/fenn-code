@@ -5,9 +5,11 @@ const DISPLAY_STYLE = `<style data-fenn-ui-display>[data-fenn-ui]{padding:6px}:w
 const PICKER_BEHAVIOR = `<script data-fenn-ui-picker-events>
 (()=>{
  let host=false,seq=0,pending=null;
+ const display=()=>{const root=document.querySelector('main[data-fenn-ui]'),css=root&&getComputedStyle(root);const inset=css&&['paddingTop','paddingRight','paddingBottom','paddingLeft'].every(k=>Math.abs(parseFloat(css[k])-6)<0.1)?6:0;parent.postMessage({type:'fenn:ui-display',inset},'*')};
+ addEventListener('DOMContentLoaded',display);
  addEventListener('message',e=>{
   if(e.source!==parent)return;
-  if(e.data?.type==='fenn:ui-theme')host=e.data.selectMenu===true;
+  if(e.data?.type==='fenn:ui-theme'){host=e.data.selectMenu===true;display()}
   if(e.data?.type!=='fenn:ui-select-result'||!pending||e.data.id!==pending.id)return;
   const el=pending.el,index=e.data.index;pending=null;
   if(!el.isConnected)return;
@@ -35,12 +37,19 @@ const LAYOUT_STYLE = `<style data-fenn-ui-layout>
 
 /** Apply current display fixes to saved UI documents too; user source stays intact. */
 export function uiDisplayDocument(html: string): string {
-  if (!html.includes('<main data-fenn-ui>')) return html
+  const embedded = /<main\b[^>]*\bdata-fenn-ui(?:\s|=|>)/i.test(html)
   // Replace the previous generated picker, including saved documents. The
   // source fragment and authored CSS are preserved.
   html = html.replace(/<style data-fenn-ui-picker>[\s\S]*?<\/style>/g, '').replace(/<script data-fenn-ui-picker-events>[\s\S]*?<\/script>/g, '')
-  const additions = (!html.includes('data-fenn-ui-display') ? DISPLAY_STYLE : '') + (!html.includes('data-fenn-ui-layout') ? LAYOUT_STYLE : '') + PICKER_BEHAVIOR
-  return html.replace(/<\/head>/i, `${additions}</head>`)
+  // Every artifact uses the same host picker, including older publish_page
+  // documents. Only embedded fragments get our spacing/layout defaults.
+  const additions = (embedded && !html.includes('data-fenn-ui-display') ? DISPLAY_STYLE : '') + (embedded && !html.includes('data-fenn-ui-layout') ? LAYOUT_STYLE : '') + PICKER_BEHAVIOR
+  if (/<\/head\s*>/i.test(html)) return html.replace(/<\/head\s*>/i, `${additions}</head>`)
+  if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (tag) => tag + additions)
+  if (/<html\b[^>]*>/i.test(html)) return html.replace(/<html\b[^>]*>/i, (tag) => `${tag}<head>${additions}</head>`)
+  // Keep a standalone document's doctype first (otherwise it enters quirks mode).
+  if (/<!doctype\b[^>]*>/i.test(html)) return html.replace(/<!doctype\b[^>]*>/i, (tag) => `${tag}<head>${additions}</head>`)
+  return additions + html
 }
 
 /** A self-contained UI fragment gets typography and colors, not a webpage shell. */

@@ -706,6 +706,17 @@ async function classify(sessionId, raw, abort) {
 }
 
 async function turn(sessionId, s, text, abort, sawHistory) {
+  if (text.includes('#旧下拉')) {
+    await callTool(sessionId, s, 'publish_page', {
+      title: '旧页面下拉复现',
+      ...(text.includes('内联') ? { display: 'inline' } : {}),
+      html: `<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;padding:24px;color:#eee;background:#262624;font:16px system-ui}label{display:grid;gap:8px}select{height:42px;border-radius:10px;background:#30302e;color:#eee;font:inherit;width:100%}select,select::picker(select){appearance:base-select}select::picker(select){background:#30302e;color:#eee;border-radius:10px}option{padding:12px}
+</style></head><body><label>你的主力模型<select id="legacy-select"><option>DeepSeek V4.1 Flash</option><option>DeepSeek V4 Pro</option><option>MiMo V2.6 Pro</option><option>MiMo V2.6 Flash</option><option>Kimi K2.7 Code</option><option>GLM-5.3 Flash</option><option>GPT-6 Luna</option><option>MiniMax M3</option></select></label><p>没有 data-fenn-ui 标记的旧完整 HTML 页面。</p></body></html>`
+    });
+    await stream(sessionId, '旧页面已打开。', abort);
+    return;
+  }
   if (/#折线图|#柱状图/.test(text)) {
     const r = await callTool(sessionId, s, 'render_chart', {
       title: '统计图表示例', type: text.includes('#柱状图') ? 'bar' : 'line',
