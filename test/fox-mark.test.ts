@@ -22,7 +22,8 @@ describe('the thinking fox mark', () => {
   it('replaces the sparkle and the working dots wherever the app shows its mark', () => {
     expect(src('views/HomeView.tsx')).toMatch(/<FoxMark size=\{32\} className="logo"/)
     expect(src('views/HomeView.tsx')).not.toMatch(/<Sparkles size=\{30\}/)
-    expect(src('components/Transcript.tsx')).toMatch(/<FoxMark thinking \/>/)
+    expect(src('components/Transcript.tsx')).toMatch(/<WorkingMark\b/)
+    expect(src('components/WorkingMark.tsx')).toMatch(/<FoxMark thinking \/>/)
     expect(src('components/Transcript.tsx')).not.toMatch(/working-dots/)
     expect(src('components/Composer.tsx')).toMatch(/<FoxMark thinking \/>/)
     expect(src('components/Onboarding.tsx')).toMatch(/<FoxMark size=\{48\}/)

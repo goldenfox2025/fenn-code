@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { uiDisplayDocument, uiDocument } from '../src/main/core/uiDocument'
 
 describe('embedded conversation UI documents', () => {
+  it('offers the host radius scale while preserving authored shapes', () => {
+    const tokens = readFileSync(join(__dirname, '../src/renderer/src/tokens.css'), 'utf8')
+    const doc = uiDocument('<style>.shape{border-radius:24px}</style><div class="shape">Custom shape</div>')
+    for (const [, name, value] of tokens.matchAll(/(--radius-(?:xs|sm|md|lg|xl|pill|circle)):\s*([^;]+);/g)) {
+      expect(doc).toContain(`${name}:${value.trim()}`)
+    }
+    expect(doc).toContain('border-radius:var(--radius-md)')
+    expect(doc).toContain('.shape{border-radius:24px}')
+  })
   it('repairs saved UI documents at display time without nesting wrappers', () => {
     const saved = '<html><head><style>.card{border-radius:12px}</style></head><body><main data-fenn-ui>Saved UI</main></body></html>'
     const fixed = uiDisplayDocument(saved)

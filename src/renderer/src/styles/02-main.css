@@ -61,7 +61,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   padding: 3px var(--space-4);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   max-width: 50%;
 }
 .chat-title:hover {
@@ -108,7 +108,7 @@
   gap: var(--space-3);
   height: 34px;
   padding: 0 14px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
   background: var(--bg-elevated);
   color: var(--text);

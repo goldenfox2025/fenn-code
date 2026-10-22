@@ -5,7 +5,7 @@ type Choice = { label: string; index: number; disabled: boolean; selected: boole
 type Picker = { id: number; anchor: HTMLElement; rect: DOMRect; options: Choice[] }
 
 /** Use the app's menu outside the sandbox, so a short iframe cannot clip it. */
-export function EmbeddedSelect({ frame }: { frame: RefObject<HTMLIFrameElement | null> }) {
+export function EmbeddedSelect({ frame, active = true }: { frame: RefObject<HTMLIFrameElement | null>; active?: boolean }) {
   const [picker, setPicker] = useState<Picker | null>(null)
   const current = useRef<Picker | null>(null)
   const finish = (index: number | null) => {
@@ -16,6 +16,7 @@ export function EmbeddedSelect({ frame }: { frame: RefObject<HTMLIFrameElement |
     frame.current?.contentWindow?.postMessage({ type: 'fenn:ui-select-result', id: p.id, index }, '*')
   }
   useEffect(() => {
+    if (!active) { finish(null); return }
     const message = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow || e.data?.type !== 'fenn:ui-select') return
       const { id, rect, options } = e.data
@@ -37,7 +38,7 @@ export function EmbeddedSelect({ frame }: { frame: RefObject<HTMLIFrameElement |
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
     return () => { window.removeEventListener('message', message); window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close) }
-  }, [frame])
+  }, [frame, active])
   if (!picker) return null
   const items: MenuItem[] = []
   let group: string | undefined

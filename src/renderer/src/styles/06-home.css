@@ -46,7 +46,7 @@
   gap: var(--space-3);
   height: 32px;
   padding: 0 var(--space-6);
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   color: var(--text-2);
   font-size: 13.5px;
@@ -144,7 +144,7 @@
   flex: none;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: var(--text-3);
 }
 .board-tone.good {
@@ -182,7 +182,7 @@
   width: 5px;
   height: 5px;
   margin: var(--space-0) 1px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: var(--text-3);
 }
 .board-list-text {
@@ -257,7 +257,7 @@
 .board-legend i {
   width: 10px;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 .board-md {
   color: var(--text);
@@ -318,7 +318,7 @@
   display: block;
   width: var(--heat-cell, 10px);
   height: var(--heat-cell, 10px);
-  border-radius: var(--space-1);
+  border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 .heat-cell.l1 {

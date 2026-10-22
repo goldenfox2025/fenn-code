@@ -154,7 +154,7 @@
 .fold {
   margin: 0 0 var(--space-6);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   overflow: hidden;
 }
@@ -511,7 +511,7 @@ button.reaction:hover {
 .status-chip {
   font-size: 12px;
   padding: 1px var(--space-4);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--bg-hover);
   color: var(--text-3);
   display: inline-flex;

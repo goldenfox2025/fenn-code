@@ -6,7 +6,7 @@
   flex: none;
   margin: 0 var(--space-4) var(--space-4) 0;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   background: var(--bg-panel);
   display: flex;
   flex-direction: column;
@@ -126,7 +126,7 @@
   display: block;
   width: 100%;
   text-align: left;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: var(--space-5) var(--space-6);
   border: 1px solid transparent;
 }

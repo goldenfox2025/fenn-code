@@ -50,7 +50,7 @@
   height: 11px;
   border-left: 1.5px solid var(--border-strong);
   border-bottom: 1.5px solid var(--border-strong);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: var(--radius-xs);
 }
 
 /* A sub-conversation's opening: where it came from and the task it was handed. */

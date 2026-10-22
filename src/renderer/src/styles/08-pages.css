@@ -47,7 +47,7 @@ button.card:hover {
   align-items: center;
   gap: var(--space-6);
   padding: var(--space-6) var(--space-6);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   width: 100%;
   text-align: left;
 }

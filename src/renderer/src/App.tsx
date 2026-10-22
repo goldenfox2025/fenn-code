@@ -5,7 +5,7 @@ import { DotField } from './components/DotField'
 import { ConfirmHost } from './components/Modal'
 import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
-import { PagePanel } from './components/PagePanel'
+import { PagePanels } from './components/PagePanel'
 import { FileViewPanel } from './components/FileViewPanel'
 import { ChatSidePane } from './components/SidePane'
 import { usePaneFit } from './components/ResizeHandle'
@@ -80,7 +80,8 @@ export function App() {
         </div>
         <div className="workspace">
           <div className="center">{view}</div>
-          {page ? <PagePanel id={page.id} version={page.version} /> : fileView ? <FileViewPanel path={fileView.path} conversationId={fileView.conversationId} /> : route.view === 'chat' && <ChatSidePane conversationId={route.conversationId} />}
+          <PagePanels />
+          {!page && (fileView ? <FileViewPanel path={fileView.path} conversationId={fileView.conversationId} /> : route.view === 'chat' && <ChatSidePane conversationId={route.conversationId} />)}
         </div>
       </main>
       <Dialogs />

@@ -1,7 +1,7 @@
 import { UI_ANNOTATIONS } from './uiAnnotations'
 
 // Matches --space-3 in the host: space for rounded focus rings and edge shadows.
-const DISPLAY_STYLE = `<style data-fenn-ui-display>[data-fenn-ui]{padding:6px}:where(button,select,input:not([type=range],[type=checkbox],[type=radio]),textarea){border-radius:6px}:focus-visible{outline-offset:-2px}</style>`
+const DISPLAY_STYLE = `<style data-fenn-ui-display>:root{--radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;--radius-pill:999px;--radius-circle:50%}[data-fenn-ui]{padding:6px}:where(button,select,input:not([type=range],[type=checkbox],[type=radio]),textarea){border-radius:var(--radius-md)}:focus-visible{outline-offset:-2px}</style>`
 // Native pickers in a sandbox cannot be opened explicitly, and their default
 // mouse action scrolls tall frames into view. Use the app's existing menu.
 const PICKER_BEHAVIOR = `<script data-fenn-ui-picker-events>
@@ -49,10 +49,12 @@ export function uiDisplayDocument(html: string): string {
   // Replace the previous generated picker, including saved documents. The
   // source fragment and authored CSS are preserved.
   html = html.replace(/<style data-fenn-ui-picker>[\s\S]*?<\/style>/g, '').replace(/<script data-fenn-ui-picker-events>[\s\S]*?<\/script>/g, '')
+  html = html.replace(/<style data-fenn-ui-display>[\s\S]*?<\/style>/g, '')
+  html = html.replace(/<style data-fenn-ui-layout>[\s\S]*?<\/style>/g, '')
   html = html.replace(/<script data-fenn-ui-annotations>[\s\S]*?<\/script>/g, '')
   // Every artifact uses the same host picker, including older publish_page
   // documents. Only embedded fragments get our spacing/layout defaults.
-  const additions = (embedded && !html.includes('data-fenn-ui-display') ? DISPLAY_STYLE : '') + (embedded && !html.includes('data-fenn-ui-layout') ? LAYOUT_STYLE : '') + PICKER_BEHAVIOR + UI_ANNOTATIONS
+  const additions = (embedded ? DISPLAY_STYLE + LAYOUT_STYLE : '') + PICKER_BEHAVIOR + UI_ANNOTATIONS
   if (/<\/head\s*>/i.test(html)) return html.replace(/<\/head\s*>/i, `${additions}</head>`)
   if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (tag) => tag + additions)
   if (/<html\b[^>]*>/i.test(html)) return html.replace(/<html\b[^>]*>/i, (tag) => `${tag}<head>${additions}</head>`)

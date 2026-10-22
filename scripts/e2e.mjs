@@ -616,6 +616,70 @@ await check('interactive pages work inline and expand into a clipped responsive 
   await page.evaluate(() => window.fenn.updateSettings({ theme: 'system' }))
 })
 
+await check('reopening a visualization and toggling source preserve its live document', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('做个可视化 预览缓存')
+  const inline = page.locator('.interactive-preview').last()
+  await inline.getByRole('button', { name: '在侧栏展开' }).click()
+  const pane = page.locator('.page-panel'), frame = pane.frameLocator('iframe')
+  await frame.locator('#b').click()
+  await frame.locator('#b').click()
+  const origin = await frame.locator('body').evaluate(() => performance.timeOrigin)
+  const sameDocument = async (what) => {
+    if (await frame.locator('#n').innerText() !== '2') throw new Error(what + ' reset interaction state')
+    if (await frame.locator('body').evaluate(() => performance.timeOrigin) !== origin) throw new Error(what + ' restarted the document')
+    if (await pane.locator('.artifact-loading').count()) throw new Error(what + ' showed a loading overlay')
+  }
+  await pane.getByRole('button', { name: '查看代码', exact: true }).click()
+  await pane.locator('.page-code').filter({ hasText: '计数器' }).waitFor()
+  await pane.getByRole('button', { name: '预览', exact: true }).click()
+  await sameDocument('Source toggle')
+  await pane.getByRole('button', { name: '关闭', exact: true }).click()
+  await pane.waitFor({ state: 'detached' })
+  await inline.getByRole('button', { name: '在侧栏展开' }).click()
+  await sameDocument('Reopen')
+  await page.evaluate(() => window.fenn.updateSettings({ theme: 'dark' }))
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark')
+  await page.evaluate(async () => {
+    if (document.activeViewTransition) await document.activeViewTransition.finished
+    await Promise.allSettled(document.getAnimations({ subtree: true }).filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished))
+  })
+  await sameDocument('Theme switch')
+  if (shots) await page.screenshot({ path: join(shots, 'reopened-ui-dark.png') })
+  await pane.getByRole('button', { name: '重新加载', exact: true }).click()
+  await frame.locator('#n').filter({ hasText: '0' }).waitFor()
+  if (await frame.locator('body').evaluate(() => performance.timeOrigin) === origin) throw new Error('Explicit refresh must create a fresh document')
+  const refreshedOrigin = await frame.locator('body').evaluate(() => performance.timeOrigin)
+  await frame.locator('#b').click()
+  await pane.getByRole('button', { name: '关闭', exact: true }).click()
+  // Old versions remain distinct; a new publish must show its new content.
+  await send('改一下可视化 侧栏')
+  await frame.getByText('计数器 v2', { exact: true }).waitFor()
+  await frame.locator('#b').click()
+  await frame.locator('#b').click()
+  const secondOrigin = await frame.locator('body').evaluate(() => performance.timeOrigin)
+  await page.locator('.interactive-preview').first().getByRole('button', { name: '在侧栏展开' }).click()
+  if (await frame.locator('#n').innerText() !== '1' || await frame.locator('body').evaluate(() => performance.timeOrigin) !== refreshedOrigin) throw new Error('Switching versions restarted the cached first version')
+  // Reopening an old version must still offer the newly published version.
+  await pane.locator('.select-btn').waitFor()
+  await page.locator('.page-card').last().click()
+  if (await frame.locator('#n').innerText() !== '2' || await frame.locator('body').evaluate(() => performance.timeOrigin) !== secondOrigin) throw new Error('Switching versions restarted the cached second version')
+  for (let i = 0; i < 3; i++) {
+    await page.click('.nav-item:has-text("新建")')
+    await send('做个可视化 缓存容量 ' + i)
+    await page.locator('.interactive-preview').last().getByRole('button', { name: '在侧栏展开' }).click()
+    await pane.frameLocator('iframe').locator('#b').waitFor()
+  }
+  if (await page.locator('.page-panel-cache').count() > 2) throw new Error('The preview cache retained more than three documents')
+  await pane.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.locator('.sidebar .nav-item').filter({ hasText: '做个可视化 预览缓存' }).click()
+  await page.locator('.interactive-preview').first().getByRole('button', { name: '在侧栏展开' }).click()
+  await frame.locator('#n').filter({ hasText: '0' }).waitFor()
+  if (await frame.locator('body').evaluate(() => performance.timeOrigin) === refreshedOrigin) throw new Error('An evicted preview should load anew instead of keeping unbounded live documents')
+  await pane.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.evaluate(() => window.fenn.updateSettings({ theme: 'system' }))
+})
+
 await check('appearance offers only opaque light, dark and system themes', async () => {
   const original = await page.evaluate(async () => (await window.fenn.snapshot()).settings.theme)
   for (const theme of ['light', 'dark', 'system']) {

@@ -61,7 +61,7 @@
   --drop-pop: 0 4px 24px rgba(0, 0, 0, 0.12);
   --shadow: var(--drop);
   --shadow-pop: var(--drop-pop), 0 0 0 1px rgba(0, 0, 0, 0.06);
-  --radius: 10px;
+  --radius: var(--radius-lg);
   --focus-border: rgba(31, 30, 29, 0.32);
   /* 3:1 against the page, as a focus indicator needs (WCAG 1.4.11). */
   --focus-ring: rgba(var(--accent-rgb), 0.8);
@@ -129,12 +129,14 @@
   --space-10: 32px;
   --space-11: 40px;
 
+  /* Compact details 4/6, controls and rows 8, cards/menus 12, large surfaces 16. */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-pill: 999px;
+  --radius-circle: 50%;
 
   --font-2xs: 11px;
   --font-xs: 12px;

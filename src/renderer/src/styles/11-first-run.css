@@ -15,7 +15,7 @@
   width: min(520px, 100%);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
   padding: 28px var(--space-10) var(--space-9);
 }
@@ -91,7 +91,7 @@
 .choice .radio {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   border: 1.5px solid var(--border-strong);
   display: grid;
   place-items: center;
@@ -154,7 +154,7 @@
   margin-top: var(--space-5);
   padding: var(--space-4) var(--space-5) var(--space-4) var(--space-6);
   border: 1px dashed var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   color: var(--text-3);
   font-size: 13px;
 }
@@ -172,7 +172,7 @@
   display: inline-flex;
   padding: 3px;
   gap: var(--space-1);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-hover);
 }
 .seg-control button {

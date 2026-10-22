@@ -9,7 +9,7 @@ const css = join(__dirname, '../src/renderer/src/styles.css')
  * Raw spacing, radius and color values still left in styles.css from before
  * the tokens. The number only ever goes down: new CSS uses tokens.css.
  */
-const LEGACY = 202
+const LEGACY = 99
 
 /** Rules that make up a turn of the conversation; these must use tokens only. */
 const TURN = /\.(turn|working-|steps|step-|placed-line|thread-card|tooltip|transcript|msg-actions|md)\b/
@@ -23,6 +23,15 @@ describe('styles use the design tokens', () => {
   it('builds a turn of the conversation from tokens alone', () => {
     const found: { rule: string; text: string }[] = rawValues(css)
     expect(found.filter((f) => TURN.test(f.rule) && !f.rule.includes('data-theme')).map((f) => `${f.rule} { ${f.text} }`)).toEqual([])
+  })
+
+  it('takes every corner radius from the shared radius scale', () => {
+    const offScale: string[] = []
+    postcss.parse(readStyles(css)).walkDecls(/^border(?:-\w+)*-radius$/, (d) => {
+      const value = d.value.replace(/var\(--radius[-\w]*\)/g, '').replace(/\b(?:0|inherit)\b/g, '').trim()
+      if (value) offScale.push(`${(d.parent as postcss.Rule).selector}: ${d.value}`)
+    })
+    expect(offScale).toEqual([])
   })
 
   it('times every transition and one-shot animation with the motion tokens', () => {

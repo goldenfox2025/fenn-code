@@ -55,7 +55,7 @@
   height: 38px;
   padding: 0 var(--space-5) 0 11px;
   border: 1px solid var(--border-strong);
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   color: var(--text);
   font: inherit;
@@ -85,7 +85,7 @@
 }
 .select {
   border: 1px solid var(--border-strong);
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--bg-input);
   padding: var(--space-4) 11px;
   outline: none;
@@ -152,7 +152,7 @@
 .switch {
   width: 36px;
   height: 20px;
-  border-radius: 10px;
+  border-radius: var(--radius-pill);
   background: var(--border-strong);
   position: relative;
   flex: none;
@@ -165,7 +165,7 @@
   height: 16px;
   top: 2px;
   left: 2px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: white;
   transition: transform var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease);
 }
@@ -316,7 +316,7 @@ body:has(.overlay .modal:not(.wide)) .toasts {
 .day {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   border: 1px solid var(--border-strong);
   font-size: 13px;
   color: var(--text-2);

@@ -53,7 +53,7 @@
   max-width: 800px;
   margin: 0 auto;
   border: 1px solid var(--border-strong);
-  border-radius: 18px;
+  border-radius: var(--radius-xl);
   background: var(--bg-input);
   box-shadow: var(--shadow);
   padding: var(--space-6) var(--space-6) var(--space-4) var(--space-7);
@@ -89,7 +89,7 @@
 .send-btn {
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;

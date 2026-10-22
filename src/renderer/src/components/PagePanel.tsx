@@ -10,7 +10,26 @@ import { PreviewPane } from './PreviewPane'
  * A page an agent published, beside the conversation. It runs in a sandboxed
  * iframe served from its own scheme, so its scripts can't touch the app.
  */
-export function PagePanel({ id, version }: { id: string; version?: number }) {
+type Page = { id: string; version?: number }
+const pageKey = (page: Page) => `${page.id}:${page.version ?? 'latest'}`
+
+/** Keep only the three most recently opened previews alive in this window. */
+export function PagePanels() {
+  const page = useApp((s) => s.page)
+  const [recent, setRecent] = useState<Page[]>([])
+  const key = page && pageKey(page)
+  const newest = recent.at(-1)
+  if (page && (!newest || pageKey(newest) !== key)) {
+    setRecent([...recent.filter((p) => pageKey(p) !== key), page].slice(-3))
+  }
+  // Updating recency must not move mounted iframe nodes: DOM reparenting can
+  // navigate a frame even when React kept its key. Hidden panes keep fixed order.
+  return [...recent].sort((a, b) => pageKey(a).localeCompare(pageKey(b))).map((p) => (
+    <PagePanel key={pageKey(p)} {...p} active={pageKey(p) === key} />
+  ))
+}
+
+function PagePanel({ id, version, active }: Page & { active: boolean }) {
   const [info, setInfo] = useState<{ title: string; versions: { version: number; createdAt: number }[] } | null>(null)
   const [code, setCode] = useState<string | null>(null)
   const [showCode, setShowCode] = useState(false)
@@ -20,23 +39,23 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
   const close = () => useApp.getState().set({ page: null })
 
   useEffect(() => {
-    let active = true
-    setInfo(null)
-    setCode(null)
+    if (!active) return
+    let live = true
     setError(false)
-    setShowCode(false)
     void api().artifactInfo(id).then((value) => {
-      if (!active) return
+      if (!live) return
       setInfo(value)
       setError(!value)
-    }, () => { if (active) setError(true) })
-    return () => { active = false }
-  }, [id, version])
+    }, () => { if (live) setError(true) })
+    return () => { live = false }
+  }, [id, version, active])
   const current = version ?? info?.versions[info.versions.length - 1]?.version
   useEffect(() => {
-    let active = true
     setCode(null)
-    if (showCode && current) void api().artifactSource(id, current).then((value) => {
+  }, [id, current])
+  useEffect(() => {
+    let active = true
+    if (showCode && current && code === null) void api().artifactSource(id, current).then((value) => {
       if (active) setCode(value ?? t('无法加载预览'))
     }, (error) => {
       if (active) {
@@ -45,7 +64,7 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
       }
     })
     return () => { active = false }
-  }, [showCode, id, current])
+  }, [showCode, id, current, code])
 
   const download = async () => {
     const html = await api().artifactSource(id, current)
@@ -58,9 +77,9 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
   }
 
   return (
-    <PreviewPane expanded={expanded}>
+    <PreviewPane expanded={expanded} hidden={!active}>
       <div className="panel-head">
-        <span className="page-title" title={info?.title}>{info?.title ?? t('页面')}</span>
+        <span className="page-title" data-tip={info?.title}>{info?.title ?? t('页面')}</span>
         {info && info.versions.length > 1 && (
           <Dropdown
             variant="inline"
@@ -99,18 +118,17 @@ export function PagePanel({ id, version }: { id: string; version?: number }) {
           <X size={16} />
         </button>
       </div>
-      {showCode ? (
-        <pre className="page-code">{code ?? t('正在加载预览…')}</pre>
-      ) : (
-        error ? <div className="empty" role="status">{t('无法加载预览')}</div> : current ? (
-          <ArtifactFrame
-            key={`${id}-${current}-${reload}`}
-            id={id}
-            version={current}
-            title={info?.title ?? 'page'}
-          />
-        ) : <div className="empty" role="status">{t('正在加载预览…')}</div>
-      )}
+      {showCode && <pre className="page-code">{code ?? t('正在加载预览…')}</pre>}
+      {error ? <div className="empty" role="status">{t('无法加载预览')}</div> : current ? (
+        <ArtifactFrame
+          key={`${id}-${current}-${reload}`}
+          id={id}
+          version={current}
+          title={info?.title ?? 'page'}
+          active={active && !showCode}
+          reload={reload}
+        />
+      ) : !showCode && <div className="empty" role="status">{t('正在加载预览…')}</div>}
     </PreviewPane>
   )
 }

@@ -70,7 +70,7 @@
   max-width: 240px;
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg);
   font-size: 13px;
 }
@@ -78,13 +78,13 @@
   width: 36px;
   height: 36px;
   object-fit: cover;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   flex: none;
 }
 .attach-icon {
   width: 36px;
   height: 36px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--bg-active);
   color: var(--text-3);
   display: inline-flex;
@@ -177,7 +177,7 @@
 .thread-list.dropping {
   outline: 2px dashed var(--accent);
   outline-offset: -6px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 .file-item .row1 {
   align-items: center;
@@ -198,7 +198,7 @@
 .hit mark {
   background: rgba(var(--accent-rgb), 0.22);
   color: inherit;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   padding: 0 1px;
 }
 .seg-row {
@@ -224,7 +224,7 @@
   padding: var(--space-5) 14px;
   border-left: 3px solid var(--border-strong);
   background: var(--bg-hover);
-  border-radius: 0 10px 10px 0;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
 }
 .thread-root-text {
   margin-top: var(--space-2);
@@ -263,7 +263,7 @@
   gap: var(--space-1);
   padding: var(--space-5) var(--space-6);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg);
 }
 .decision-opt:not(:disabled):hover {
@@ -363,6 +363,9 @@
   overflow: hidden;
   background: var(--bg-panel);
 }
+.artifact-surface[hidden] {
+  display: none;
+}
 .artifact-loading {
   position: absolute;
   inset: 0;
@@ -437,7 +440,7 @@
 .page-card-icon {
   width: 38px;
   height: 38px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   background: var(--bg-active);
   color: var(--text-2);
   display: inline-flex;
@@ -549,7 +552,7 @@
   font-size: 12px;
   color: var(--text-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 1px 7px 1px var(--space-2);
 }
 .thread-row .meta {
