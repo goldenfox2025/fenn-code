@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 
@@ -80,6 +80,7 @@ export function Menu({
   parentFocus?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const menuId = useId()
   const anchor = liveAnchor(opener) ?? opener
   const [pos, setPos] = useState<{ left: number; top: number; width?: number; minWidth?: number; maxWidth?: number; maxHeight?: number }>({ left: -9999, top: -9999 })
   const [active, setActive] = useState(() => {
@@ -245,7 +246,7 @@ export function Menu({
   }
 
   return createPortal(
-    <div className={'menu' + (compact ? ' compact' : '') + (row ? ' row' : '') + (parentFocus ? ' is-sub' : '')} role="menu" tabIndex={-1} ref={ref} style={pos} onKeyDown={onKey}>
+    <div className={'menu' + (compact ? ' compact' : '') + (row ? ' row' : '') + (parentFocus ? ' is-sub' : '')} role="menu" aria-activedescendant={items[active] && actionable(items[active]) ? `${menuId}-${active}` : undefined} tabIndex={-1} ref={ref} style={pos} onKeyDown={onKey}>
       {items.map((it, i) =>
         it.separator ? (
           <div key={i} className="menu-sep" role="separator" />
@@ -260,6 +261,7 @@ export function Menu({
         ) : (
           <button
             key={i}
+            id={`${menuId}-${i}`}
             data-index={i}
             role={it.checked !== undefined ? 'menuitemradio' : 'menuitem'}
             aria-checked={it.checked !== undefined ? it.checked : undefined}

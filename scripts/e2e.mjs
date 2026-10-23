@@ -4,7 +4,7 @@
 import { _electron as electron } from 'playwright-core'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { declareTestAgent } from './test-agent.mjs'
 
 const shots = process.argv[2]
@@ -300,6 +300,32 @@ await check('scrolling up inside an embedded UI stops following later height upd
   if(Math.abs(await scroll.evaluate(el=>el.scrollTop)-near)>2)throw new Error('Even a small upward scroll must stop following immediately')
   await send('继续简单回答')
   if(await scroll.evaluate(el=>el.scrollHeight-el.clientHeight-el.scrollTop)>4)throw new Error('A new user message must resume following its reply')
+})
+
+await check('late iframe scroll intent resumes following after the parent scroll event', async () => {
+  await page.click('.nav-item:has-text("新建")')
+  await send('做个可视化 滚动时序')
+  const frame = page.locator('.interactive-preview').last().frameLocator('iframe')
+  await frame.locator('body').evaluate(() => {
+    const tail = document.createElement('div')
+    tail.id = 'late-intent-tail'
+    tail.style.height = '2000px'
+    document.querySelector('[data-fenn-ui]').append(tail)
+  })
+  await page.waitForFunction(() => document.querySelector('.interactive-preview iframe').getBoundingClientRect().height > 2000)
+  const scroll = page.locator('.scroll:has(> .transcript)')
+  // Pause following, then let the parent's native scroll event arrive before
+  // the sandbox's asynchronous postMessage carrying downward wheel intent.
+  await scroll.dispatchEvent('wheel', { deltaY: -100 })
+  await scroll.evaluate(el => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll')) })
+  await frame.locator('body').evaluate(() => parent.postMessage({ type: 'fenn:ui-scroll', deltaY: 500 }, '*'))
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))
+  await frame.locator('#late-intent-tail').evaluate(el => el.style.height = '2400px')
+  await page.waitForFunction(() => document.querySelector('.interactive-preview iframe').getBoundingClientRect().height > 2400)
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.scroll:has(> .transcript)')
+    return el.scrollHeight - el.clientHeight - el.scrollTop <= 4
+  }, null, { timeout: 3000 })
 })
 
 await check('long approval cards leave the reading viewport and composer in place', async () => {
@@ -785,7 +811,9 @@ await check('Esc in the add-connector form closes only the form', async () => {
 
 await check('deleting asks in an in-app dialog; Esc keeps the chat, 删除 removes it', async () => {
   const rows = page.locator('.sidebar nav:not(.recent-projects) .nav-item:has(.dot)')
-  const before = await rows.count()
+  // The sidebar backfills its bounded recent list after deletion. Check the
+  // conversation itself, rather than expecting the visible row count to fall.
+  const before = await page.evaluate(async () => (await window.fenn.snapshot()).conversations.map(c => c.id))
   const openDelete = async () => {
     await rows.first().hover()
     await rows.first().locator('.trail .icon-btn').click()
@@ -797,10 +825,12 @@ await check('deleting asks in an in-app dialog; Esc keeps the chat, 删除 remov
   if (!focused) throw new Error('confirm did not focus 取消')
   await page.keyboard.press('Escape')
   await page.waitForSelector('.modal.confirm', { state: 'detached', timeout: 2000 })
-  if ((await rows.count()) !== before) throw new Error('Esc deleted the chat')
+  if ((await page.evaluate(async () => (await window.fenn.snapshot()).conversations.length)) !== before.length) throw new Error('Esc deleted the chat')
+  const removedId = (await rows.first().locator('[data-focus-key]').getAttribute('data-focus-key')).replace('chat-menu:', '')
   await openDelete()
   await page.click('.modal.confirm .btn.danger-solid')
-  await page.waitForFunction((n) => document.querySelectorAll('.sidebar nav:not(.recent-projects) .nav-item .dot').length < n, before, { timeout: 3000 })
+  await page.waitForFunction(async (ids) => (await window.fenn.snapshot()).conversations.length < ids.length, before, { timeout: 3000 })
+  if (await page.locator(`[data-focus-key="chat-menu:${removedId}"]`).count()) throw new Error('Deleted chat remains visible')
 })
 
 await check('closing New Project returns focus to the button that opened it', async () => {
@@ -952,6 +982,8 @@ await check('a chat shows its folder’s files beside it, with the files the age
   await row.waitFor({ timeout: 5000 })
   if (!(await row.locator('.tree-mark').count())) throw new Error('the changed file is not marked')
   await row.click()
+  // Earlier code/preview checks persist the Markdown mode, just like a user.
+  await page.locator('.side-pane .preview-head .seg-control button:has-text("预览")').click()
   await page.locator('.side-pane .preview-md h1:has-text("计划.md")').waitFor({ timeout: 3000 })
   if (await page.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').count()) await page.click('.preview-head .icon-btn[aria-label="返回文件列表"]')
   await page.click('.side-pane .files-tools .chip')
@@ -1122,7 +1154,7 @@ await check('/ lists the commands; /子对话 hands the text to a new sub-chat w
   await page.keyboard.press('Enter')
   await page.locator('.center .bubble .cmd-token:has-text("/compact")').waitFor({ timeout: 5000 })
   // The ring's 压缩上下文 is a button, not a message: one line in the transcript, no /compact bubble.
-  await page.waitForFunction(() => !document.querySelector('.composer .stop-btn'), null, { timeout: 8000 }).catch(() => {})
+  await page.locator('.composer .send-btn.stop').waitFor({ state: 'detached', timeout: 20000 })
   const bubbles = await page.locator('.center .bubble .cmd-token:has-text("/compact")').count()
   await page.click('.composer .context-ring')
   await page.locator('.menu .menu-item:has-text("压缩上下文")').click()
@@ -1443,7 +1475,7 @@ await check('a folder typed into a message is offered as the working folder, and
   await hint.locator('.btn').click()
   await page.waitForSelector('.folder-hint', { state: 'detached', timeout: 2000 })
   const chip = await page.locator('.folder-chip').innerText()
-  if (!chip.includes(dir.split('/').pop())) throw new Error('chip reads ' + chip)
+  if (!chip.includes(basename(dir))) throw new Error('chip reads ' + chip)
   // Saying no hides it for that folder.
   await page.click('.folder-chip')
   await page.click('.menu-item:has-text("不使用文件夹")')
@@ -1492,6 +1524,15 @@ await check('number keys pick in the model and agent menus, as in Claude', async
   for (const n of ['2', '1']) {
     await btn.click()
     await page.waitForSelector('.menu.compact')
+    // Focus stays on the menu container; assistive technology must be told
+    // which item keyboard navigation highlights, including after a move.
+    const activeItem = () => page.locator('.menu.compact').evaluate(el => {
+      const id = el.getAttribute('aria-activedescendant'), item = id && document.getElementById(id)
+      return !!item && el.contains(item) && item.classList.contains('active')
+    })
+    if (!await activeItem()) throw new Error('Menu does not expose its active item')
+    await page.keyboard.press('ArrowDown')
+    if (!await activeItem()) throw new Error('Keyboard navigation did not update the accessible active item')
     const item = page.locator('.menu.compact .menu-item:has(.menu-key:text-is("' + n + '")), .menu.compact .menu-item[aria-keyshortcuts="' + n + '"]').first()
     const name = (await item.locator('.menu-text').innerText()).split('\n')[0].trim()
     await page.keyboard.press(n)

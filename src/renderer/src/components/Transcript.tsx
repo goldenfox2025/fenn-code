@@ -64,6 +64,13 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     direction.current = Math.sign(delta)
     // Stop before layout/resize callbacks get a chance to pull the viewport back.
     if (delta <= 0) stick.current = false
+    else {
+      // A sandbox's wheel intent crosses postMessage and can arrive after the
+      // parent has already scrolled. In that order no later scroll event will
+      // resume following, so also reconcile the confirmed intent here.
+      const el = scroller.current
+      if (el && el.scrollHeight - el.scrollTop - el.clientHeight <= 4) stick.current = true
+    }
   }
 
   useEffect(() => {
