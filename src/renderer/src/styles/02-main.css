@@ -14,6 +14,9 @@
   padding: 0 var(--space-4) 0 var(--space-6);
   gap: var(--space-3);
 }
+.mac:not(.window-fullscreen) .topbar > .sidebar-toggle {
+  margin-left: 70px;
+}
 .winctl {
   display: flex;
   margin-left: var(--space-4);

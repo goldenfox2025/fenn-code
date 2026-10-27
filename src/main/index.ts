@@ -487,6 +487,9 @@ ipcMain.on("oc:window", (_e, action: string) => {
     win.isMaximized() ? win.unmaximize() : win.maximize();
   else if (action === "close") win.close();
 });
+ipcMain.handle("oc:window-state", event => ({
+  fullscreen: BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false,
+}));
 
 /** Native menus, dialogs and window borders follow the app's color scheme. */
 function followLook(settings: { theme?: string }): void {
@@ -532,6 +535,16 @@ function createWindow(): void {
       offscreen: backgroundWindow,
     },
   });
+  // Cocoa removes the traffic lights in native fullscreen. Keep the renderer's
+  // titlebar inset in sync, including reloads and windows reopened from the Dock.
+  const currentWindow = win;
+  const sendWindowState = () => {
+    if (!currentWindow.webContents.isDestroyed())
+      currentWindow.webContents.send("oc:window-state", { fullscreen: currentWindow.isFullScreen() });
+  };
+  win.on("enter-full-screen", sendWindowState);
+  win.on("leave-full-screen", sendWindowState);
+  win.webContents.on("did-finish-load", sendWindowState);
   // The taskbar draws a button from its app id's shortcut, or else from the program file, which from
   // source is electron.exe: a source run names the fox icon for its id itself.
   if (copy === "source")

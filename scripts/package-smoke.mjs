@@ -473,6 +473,9 @@ try {
             win.setFullScreen(value)
           })
         }, value)
+        await page.waitForFunction(fullscreen => document.documentElement.classList.contains('window-fullscreen') === fullscreen, value)
+        const inset = await page.locator('.sidebar-top').evaluate(el => parseFloat(getComputedStyle(el).paddingLeft))
+        assert(value ? inset < 40 : inset >= 80, `macOS titlebar inset in fullscreen=${value}: ${inset}`)
       }
     }
     // Cocoa may emit leave-full-screen before the last restored-frame update.

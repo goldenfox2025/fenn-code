@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { errorText } from '../shared/errors'
 import { API_METHODS } from '../shared/ipc'
 import type { AppEvent, FennApi } from '../shared/model'
+import { installWindowChrome } from './windowChrome'
+
+installWindowChrome()
 
 const api = Object.fromEntries(
   // A failure arrives as the core's own message, without Electron's "Error invoking remote method" wrapper.

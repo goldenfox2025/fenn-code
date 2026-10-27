@@ -142,7 +142,7 @@ body.resizing .sidebar {
   padding: 0 var(--space-4);
   flex: none;
 }
-.mac .sidebar-top {
+.mac:not(.window-fullscreen) .sidebar-top {
   padding-left: 80px;
 }
 .icon-btn {

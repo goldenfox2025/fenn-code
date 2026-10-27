@@ -66,9 +66,8 @@ export function App() {
         <div className="topbar drag">
           {!sidebarOpen && (
             <button
-              className="icon-btn"
+              className="icon-btn sidebar-toggle"
               aria-label={t('打开侧栏')}
-              style={platform === 'darwin' ? { marginLeft: 70 } : undefined}
               onClick={() => useApp.getState().set({ sidebarOpen: true })}
             >
               <PanelLeft size={17} />
