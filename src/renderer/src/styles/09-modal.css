@@ -38,6 +38,19 @@
   gap: var(--space-4);
   margin-top: 18px;
 }
+.modal.deletion-confirm { display: flex; flex-direction: column; overflow: hidden; }
+.modal.deletion-confirm > h2, .modal.deletion-confirm > .modal-actions { flex: none; }
+.modal.deletion-confirm > h2 { overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.deletion-body { min-height: 0; overflow-y: auto; overflow-wrap: anywhere; }
+.deletion-body > p { margin: 0 0 var(--space-5); }
+.deletion-folders { border-top: 1px solid var(--border); margin-top: var(--space-7); padding-top: var(--space-4); }
+.deletion-folder { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: var(--space-5); padding-block: var(--space-5); cursor: pointer; }
+.deletion-folder > input { margin: var(--space-2) 0 0; accent-color: var(--accent); }
+.deletion-folder > span { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.deletion-folder-title { color: var(--text); font-size: var(--font-sm); font-weight: 500; }
+.deletion-folder-path { color: var(--text-2); font-size: var(--font-sm); overflow-wrap: anywhere; }
+.deletion-folder-note { color: var(--text-3); font-size: var(--font-xs); }
+.deletion-error { color: var(--red); font-size: var(--font-sm); }
 .settings-nav {
   width: 200px;
   border-right: 1px solid var(--border);

@@ -300,6 +300,8 @@ export interface Project {
   /** Standing instructions every agent in the project receives. */
   instructions?: string
   cwd?: string
+  /** The working folder was created by the app rather than selected by the user. */
+  autoFolder?: boolean
   backendId: string
   /** The project chat (coordinator conversation). */
   conversationId: string
@@ -317,6 +319,25 @@ export interface Project {
   outputs?: ProjectOutput[]
   /** Human decisions waiting for coordinator follow-through, independent of resubmissions. */
   pendingReviewDecisions?: ReviewDecisionNotice[]
+}
+
+export interface DeletionTarget { kind: 'conversation' | 'project'; id: string }
+export interface DeletionFolder {
+  id: string
+  path: string
+  automatic: boolean
+  state: 'available' | 'shared' | 'protected' | 'missing'
+  usedBy: string[]
+  /** A Git common directory can only be trashed together with its owned checkouts. */
+  requiredFolderIds?: string[]
+}
+export interface DeletionPlan {
+  revision: string
+  targets: DeletionTarget[]
+  items: { kind: DeletionTarget['kind']; id: string; title: string }[]
+  folders: DeletionFolder[]
+  retainedConversations: number
+  routinesToDisable: number
 }
 
 export interface ReviewDecisionNotice {
@@ -740,6 +761,8 @@ export interface FennApi {
   upgradeBackend(backendId: string): Promise<{ ok: boolean; output: string; account: AccountStatus; /** Installed, but the program still isn't on PATH. */ notFound?: boolean }>
   updateConversation(id: string, patch: Partial<Pick<Conversation, 'title' | 'pinned' | 'resolved' | 'projectId' | 'unread' | 'cwd' | 'backendId'>>): Promise<void>
   deleteConversation(id: string): Promise<void>
+  deletionPlan(targets: DeletionTarget[]): Promise<DeletionPlan>
+  deleteSelection(targets: DeletionTarget[], revision: string, trashFolderIds: string[]): Promise<void>
   inspectDelivery(id: string, revision: string, analyzeAgain?: boolean): Promise<DeliveryReview>
   deliveryFile(id: string, revision: string, path: string): Promise<ReviewFileContent>
   acceptDelivery(id: string, revision: string): Promise<void>

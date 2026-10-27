@@ -3,6 +3,7 @@ import { CircleAlert, PanelLeft, X } from 'lucide-react'
 import { Dialogs } from './components/Dialogs'
 import { DotField } from './components/DotField'
 import { ConfirmHost } from './components/Modal'
+import { DeleteItemsHost } from './components/DeleteItemsDialog'
 import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
 import { RightSurfaces } from './components/RightSurfaces'
@@ -83,6 +84,7 @@ export function App() {
       </main>
       <Dialogs />
       <ConfirmHost />
+      <DeleteItemsHost />
       <TooltipLayer />
       {firstRun && <Onboarding />}
       <div className="toasts">

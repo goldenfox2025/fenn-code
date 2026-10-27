@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { deleteChat, routeFor } from '../actions'
+import { deleteChat, deleteChats, routeFor } from '../actions'
 import { Check, CheckSquare, ChevronDown, Clock, Folder, FolderKanban, MessageCircle, Pause, Play, Plus, Search, Trash2 } from 'lucide-react'
 import { searchable, type Conversation, type Project, type Routine, type Schedule, type SearchHit } from '@shared/model'
 import { api, toastError, useApp } from '../store'
@@ -113,14 +113,7 @@ export function ChatsPage() {
   }
   const removeChosen = async () => {
     if (!chosen.length) return
-    if (!(await confirmDialog(t('删除选中的 {0} 个对话？此操作无法撤销。', chosen.length)))) return
-    try {
-      for (const c of chosen) await api().deleteConversation(c.id)
-      stop()
-    } catch (e) {
-      // Those already deleted leave the list; the rest stay picked to try again.
-      toastError(e)
-    }
+    if (await deleteChats(chosen)) stop()
   }
   const removeOne = (c: Conversation) => deleteChat(c)
   return (

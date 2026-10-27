@@ -12,6 +12,7 @@ Use the existing product tokens and shared controls before introducing another l
 | Project/chat pane expand and restore control | `PaneSizeButton` in `PreviewPane.tsx`; both entry points retain the same `FilesPane` instance while changing width |
 | Preview/ordinary chat pane dimensions and floating behavior | `PreviewPane.tsx`, `ResizeHandle.tsx`, `.page-panel` rules in `../styles/10-composer-extras.css` |
 | Modal naming, focus containment, Escape and focus restoration | `Modal.tsx` |
+| Conversation, project and bulk deletion confirmation | `DeleteItemsDialog.tsx`, `../styles/09-modal.css`; directory ownership, shared-folder protection and system Trash execution in `../../../main/core/DeletionService.ts` |
 | Panel loading/empty/error presentation | `PanelState.tsx` and `../styles/07-panel.css` |
 | Review draft/controller, evidence and decision presentation | `reviews/README.md` |
 | Reply progress, grouped tools and settled reply actions | `transcript/README.md` |

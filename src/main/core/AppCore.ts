@@ -41,6 +41,8 @@ import { MODEL_PROBE_TIMEOUT_MS, type BackendModelCatalog } from '../../shared/m
 import { classifyError } from '../../shared/errors'
 import { BrowserTools } from '../browser/BrowserTools'
 import { BrowserPermissions } from '../browser/BrowserPermissions'
+import { containsFolder, DeletionService, type DeletionScope } from './DeletionService'
+import type { DeletionTarget } from '../../shared/model'
 
 /**
  * How long the computer-access card waits. computer_request_access returns before an agent's own tool deadline
@@ -65,6 +67,7 @@ export class AppCore {
   computer?: ComputerControl
   readonly browser: BrowserTools
   readonly browserPolicy: BrowserPermissions
+  private readonly deletions: DeletionService
   private readonly secrets: { seal(v: string): string; unseal(v: string): string }
 
   constructor(
@@ -130,6 +133,22 @@ export class AppCore {
     )
     this.scheduler = new Scheduler(store, this)
     this.orchestrator.extraServers = () => this.connectorServers()
+    this.deletions = new DeletionService(store, {
+      folderOf: conversation => this.chat.folderOf(conversation),
+      protected: path => this.unsafeFolder(path) || containsFolder(path, this.store.dir) || [this.documentsDir, this.autoFolderRoot()].some(root => containsFolder(root, path) && containsFolder(path, root)),
+      stop: async ids => {
+        for (const id of ids) {
+          await this.chat.stopTurn(id)
+          for (const command of this.store.conversation(id)?.background ?? []) if (!command.endedAt) await this.chat.stopCommand(id, command.id).catch(() => {})
+          this.chat.forgetSession(id)
+        }
+      },
+      remove: scope => this.removeSelection(scope),
+      trash: async path => {
+        if (!this.shellTrash) throw new Error(t('系统回收站不可用，文件夹已保留。'))
+        await this.shellTrash(path)
+      }
+    })
     if (extras.computer) {
       const computer = new ComputerControl({
         ...extras.computer,
@@ -190,6 +209,7 @@ export class AppCore {
   }
 
   private refuseFolder(path: string | undefined): void {
+    this.deletions?.assertFolderAvailable(path)
     if (this.unsafeFolder(path)) throw new Error(t('不能在 {0} 里工作：这里是主目录、磁盘根目录或 Fenn Code 的数据目录。请选一个具体的文件夹。', path!))
   }
 
@@ -203,6 +223,11 @@ export class AppCore {
   private adoptFolder(conversationId: string, folder: string): void {
     const conv = this.store.conversation(conversationId)
     if (!conv || conv.kind !== 'chat' || this.chat.folderOf(conv) || this.unsafeFolder(folder)) return
+    // A late permission event must not adopt a folder already being recycled.
+    try {
+      this.deletions.assertConversationAvailable(conversationId)
+      this.deletions.assertFolderAvailable(folder)
+    } catch { return }
     this.chat.patchConversation(conversationId, { cwd: folder, autoFolder: undefined })
     this.rememberFolder(folder)
     this.adopted.add(conversationId)
@@ -268,6 +293,9 @@ export class AppCore {
       const target = uniqueDir(root, folderSafeName(project.name, t('新项目')))
       mkdirSync(target, { recursive: true })
       await this.updateProject(id, { cwd: target })
+      const owned = { ...this.store.requireProject(id), autoFolder: true }
+      this.store.putProject(owned)
+      this.publish({ type: 'project', project: owned })
       return target
     }
     const conv = this.store.requireConversation(id)
@@ -526,6 +554,7 @@ export class AppCore {
   }
 
   async send(conversationId: string, text: string, attachments?: Attachment[], referenceIds?: string[]): Promise<void> {
+    this.deletions.assertConversationAvailable(conversationId)
     const references = resolveReferences(this.store, conversationId, referenceIds)
     await this.takePendingBackend(conversationId)
     const conv = this.store.conversation(conversationId)
@@ -916,10 +945,12 @@ export class AppCore {
   }
 
   async deleteConversation(id: string): Promise<void> {
-    // A project's own chat goes only with its project: without it the project can't open.
-    const c = this.store.conversation(id)
-    if (c?.kind === 'project' && this.store.project(c.projectId)) throw new Error(t('这是项目的主对话，不能单独删除。要删除，请删除整个项目。'))
-    return this.dropConversation(id)
+    return this.deletions.execute([{ kind: 'conversation', id }])
+  }
+
+  async deletionPlan(targets: DeletionTarget[]) { return this.deletions.plan(targets) }
+  async deleteSelection(targets: DeletionTarget[], revision: string, trashFolderIds: string[]) {
+    return this.deletions.execute(targets, revision, trashFolderIds)
   }
 
   async inspectDelivery(id: string, revision: string, analyzeAgain = false) {
@@ -1015,6 +1046,7 @@ export class AppCore {
     const backendId = this.resolveBackend(p.backendId)
     this.refuseFolder(p.cwd)
     this.rememberFolder(p.cwd)
+    const autoFolder = !p.cwd
     // A project the user gave no folder gets its own under the default folder, named after it.
     if (!p.cwd) {
       const root = this.autoFolderRoot()
@@ -1029,6 +1061,7 @@ export class AppCore {
       description: p.description,
       instructions: p.instructions,
       cwd: p.cwd,
+      autoFolder: autoFolder || undefined,
       backendId,
       conversationId: conv.id,
       createdAt: now,
@@ -1043,7 +1076,7 @@ export class AppCore {
     const p = this.store.project(id)
     if (!p) return
     if (patch.cwd) this.refuseFolder(patch.cwd)
-    const next = { ...p, ...patch, updatedAt: Date.now() }
+    const next = { ...p, ...patch, ...('cwd' in patch ? { autoFolder: undefined } : {}), updatedAt: Date.now() }
     this.store.putProject(next)
     this.publish({ type: 'project', project: next })
     if (patch.name) this.chat.patchConversation(p.conversationId, { title: patch.name })
@@ -1108,12 +1141,22 @@ export class AppCore {
   }
 
   async deleteProject(id: string): Promise<void> {
-    for (const c of this.store.conversations.filter((c) => c.projectId === id)) {
-      if (c.kind === 'chat') this.chat.patchConversation(c.id, { projectId: undefined })
-      else await this.dropConversation(c.id)
+    return this.deletions.execute([{ kind: 'project', id }])
+  }
+
+  private async removeSelection(scope: DeletionScope): Promise<void> {
+    for (const c of this.store.conversations.filter(c => !!c.projectId && scope.projects.has(c.projectId) && !scope.conversations.has(c.id)))
+      this.chat.patchConversation(c.id, { cwd: this.chat.folderOf(c), projectId: undefined })
+    for (const id of scope.conversations) await this.dropConversation(id)
+    for (const id of scope.routines) {
+      const routine = this.store.routines.find(r => r.id === id)
+      if (routine) {
+        const next = { ...routine, enabled: false, nextRunAt: undefined }
+        this.store.putRoutine(next)
+        this.publish({ type: 'routine', routine: next })
+      }
     }
-    this.store.removeProject(id)
-    this.publish({ type: 'project-removed', id })
+    for (const id of scope.projects) { this.store.removeProject(id); this.publish({ type: 'project-removed', id }) }
   }
 
   // ---- routines (scheduler lives elsewhere; this is CRUD) ---------------------

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { deleteProject } from '../actions'
+import { deleteChat, deleteProject } from '../actions'
 import { StatusChip } from '../components/StatusChip'
 import { ResizeHandle, paneStyle, usePaneWidth, usePanelSqueezed } from '../components/ResizeHandle'
 import {
@@ -38,7 +38,6 @@ import { FilesPane, flushFileEdits } from '../components/FilesPane'
 import { ProjectSchedules } from '../components/projects/ProjectSchedules'
 import { MemoryPanel } from '../components/projects/ProjectMemory'
 import { ProjectEmpty } from '../components/projects/ProjectSection'
-import { confirmDialog } from '../components/Modal'
 import { BrowserButton } from '../components/BrowserPanel'
 import { boardCount, nextMilestone, ProgressPanel } from '../components/ProgressPanel'
 import { ThreadReview } from '../components/reviews/ThreadReview'
@@ -408,9 +407,7 @@ function ThreadView({ threadId, onBack, onClose, onOpenMain, onOpenThread, wide,
                 label: t('删除讨论串'),
                 danger: true,
                 onClick: async () => {
-                  if (!(await confirmDialog(t('删除讨论串「{0}」？', th.title)))) return
-                  void api().deleteConversation(th.id)
-                  onBack()
+                  if (await deleteChat(th)) onBack()
                 }
               }
             ])

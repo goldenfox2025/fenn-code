@@ -179,6 +179,11 @@ export function Sidebar() {
         tabIndex={0}
         onKeyDown={(e) => activateOnKey(e, () => s.navigate({ view: 'chat', conversationId: c.id }))}
         onClick={() => s.navigate({ view: 'chat', conversationId: c.id })}
+        onContextMenu={event => {
+          if (event.target instanceof Element && event.target.closest('input,textarea')) return
+          event.preventDefault()
+          chatMenu(event.currentTarget.querySelector<HTMLElement>('.trail .icon-btn') ?? event.currentTarget, c)
+        }}
         data-tip={rn.editing === 'chat:' + c.id ? undefined : c.title}
       >
         <span className={'dot ' + (c.status === 'working' ? 'working' : c.status === 'waiting' ? 'waiting' : c.unread ? 'unread' : '')} />
@@ -207,6 +212,7 @@ export function Sidebar() {
         onKeyDown={(e) => activateOnKey(e, () => s.navigate({ view: 'project', projectId: p.id }))}
         onClick={() => s.navigate({ view: 'project', projectId: p.id })}
         onContextMenu={(e) => {
+          if (e.target instanceof Element && e.target.closest('input,textarea')) return
           e.preventDefault()
           projectMenu(e.currentTarget.querySelector<HTMLElement>('.trail .icon-btn') ?? e.currentTarget, p)
         }}

@@ -91,8 +91,8 @@ describe('small UI fixes', () => {
     expect(s.indexOf('aria-disabled', at + 1)).toBe(-1)
   })
 
-  it('reports a failed delete of chats or project files', () => {
-    expect(src('views/Pages.tsx')).toMatch(/for \(const c of chosen\) await api\(\)\.deleteConversation\(c\.id\)\s*stop\(\)\s*\} catch \(e\) \{[^}]*toastError\(e\)/)
+  // Chat deletion failures are exercised through the real dialog in deletion-ui-e2e.mjs.
+  it('reports a failed delete of project files', () => {
     expect(src('components/FilesPane.tsx')).toMatch(/const target = locate\(path\)\s*await api\(\)\.deleteLibraryPath\(target\.id, target\.path\)\s*\} catch \(e\) \{\s*return toastError\(e\)/)
   })
 })
