@@ -225,6 +225,8 @@ export class AcpBackend implements AgentBackend {
   private proc?: ChildProcess
   private conn?: acp.ClientSideConnection
   private starting?: Promise<void>
+  /** Pending requests must end even if the SDK is still handling an inbound permission. */
+  private lifetime?: { closed: Promise<never>; reject(error: Error): void }
   private modelSelectors = new Map<string, ModelSelector>()
   /** Compactions already shown as a step. */
   private compactions = new Set<string>()
@@ -322,7 +324,9 @@ export class AcpBackend implements AgentBackend {
       if (errTail.length > 40) errTail.shift()
       this.host.log('debug', `[${this.name} stderr] ${chunk.trimEnd()}`)
     })
+    let rejectClosed!: (error: Error) => void
     const exited = new Promise<never>((_, reject) => {
+      rejectClosed = reject
       proc.once('error', (e: NodeJS.ErrnoException) =>
         reject(
           new Error(
@@ -353,6 +357,7 @@ export class AcpBackend implements AgentBackend {
         if (!wasUs) this.host.sessionsLost()
       })
     })
+    this.lifetime = { closed: exited, reject: rejectClosed }
     exited.catch(() => {})
 
     // Both directions pass through the opt-in debug log (a no-op while it is off).
@@ -653,9 +658,10 @@ export class AcpBackend implements AgentBackend {
 
   async prompt(sessionId: string, parts: PromptPart[]): Promise<TurnResult> {
     await this.start()
+    const connection = this.conn!, closed = this.lifetime!.closed
     for (let attempt = 0; ; attempt++) {
       try {
-        const res = await this.conn!.prompt({ sessionId, prompt: this.toContent(sessionId, parts) })
+        const res = await Promise.race([connection.prompt({ sessionId, prompt: this.toContent(sessionId, parts) }), closed])
         this.typedCommand(sessionId, parts)
         this.metaContext(sessionId, res._meta)
         const usage = turnUsage(res, this.quirks.inputIncludesCache)
@@ -862,7 +868,12 @@ export class AcpBackend implements AgentBackend {
 
   async dispose(reason?: string): Promise<void> {
     const p = this.proc
-    if (p && reason) this.stopReasons.set(p, reason)
+    if (p && reason) {
+      this.stopReasons.set(p, reason)
+      // RPC can reject on pipe closure before the process exit callback runs.
+      this.exitReason = reason
+    }
+    if (p) this.lifetime?.reject(new Error(reason || t('已停止')))
     this.proc = undefined
     this.workspaces.closeAll()
     this.open.clear()

@@ -88,7 +88,7 @@ select {
   display: none;
 }
 
-/* A pane's drag handle: a wide invisible strip with a thin line on hover, as in Claude. */
+/* Invisible resize hit area. Never paint a full-height hover or drag guide. */
 .resize-handle {
   position: absolute;
   top: 0;
@@ -108,8 +108,8 @@ select {
 .resize-handle::after {
   content: '';
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: calc(50% - var(--space-6));
+  height: 24px;
   left: calc((var(--resize-hit) - var(--resize-line)) / 2);
   width: var(--resize-line);
   background: var(--resize-line-color);
@@ -119,13 +119,12 @@ select {
 .resize-handle.edge-left::after {
   left: 0;
 }
-.resize-handle:hover::after,
-.resize-handle.active::after,
 .resize-handle:focus-visible::after {
   opacity: 1;
 }
 .resize-handle:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 body.resizing,
 body.resizing * {
@@ -208,6 +207,7 @@ body.resizing .sidebar {
   color: var(--text);
   min-width: 0;
 }
+.search:focus-within { border-color: var(--focus-ring); box-shadow: 0 0 0 1px var(--focus-ring); }
 
 .nav {
   padding: var(--space-1) var(--space-4);

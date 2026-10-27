@@ -4,18 +4,21 @@
  * styles.css builds on these; see test/style-tokens.test.ts.
  */
 :root {
-  /* Motion: every transition and entrance takes its timing from here (test/style-tokens.test.ts).
-     One curve that starts quickly and settles softly, as Claude's interface moves. */
-  --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Shared motion roles, informed by open-claude-ui's CDS analysis. */
+  --ease: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-feedback: 60ms;
   --dur-1: 120ms; /* hover, press, fades */
-  --dur-2: 180ms; /* menus, chevrons, small moves */
-  --dur-3: 260ms; /* panes, dialogs, the look changing */
+  --dur-2: 200ms; /* disclosures and small moves; pane exit */
+  --dur-3: 300ms; /* panes and dialogs entering */
   /* Loops: things that keep moving while work goes on. One spinner speed everywhere. */
   --ease-loop: ease-in-out;
   --dur-spin: 1.2s; /* spinners */
   --dur-pulse: 1.4s; /* a breathing dot; the working dots */
   --dur-shimmer: 1.8s; /* words that shimmer while work is under way */
   --dur-flash: 1.6s; /* a search hit lighting up once */
+  --dur-fox-blink: 7s;
+  --dur-fox-listen: 11s;
   --stagger: 0.15s; /* between the working dots */
   --fox-eye: #ff4fa8; /* the fox's eye, the icon's pink, in every look */
   /* Pane widths (the user can drag them; see ResizeHandle). */
@@ -23,19 +26,19 @@
   --resize-hit: 8px;
   --resize-line: 2px;
   --resize-line-color: var(--text-4);
-  --bg: #faf9f5;
-  --bg-sidebar: #f5f4ef;
+  --bg: #fcfcfb;
+  --bg-sidebar: #f6f6f4;
   --bg-elevated: #ffffff;
-  --bg-panel: #ffffff;
+  --bg-panel: #f9f9f7;
   --bg-floating: #ffffff;
   --bg-hover: rgba(31, 30, 29, 0.05);
   --bg-active: rgba(31, 30, 29, 0.08);
   --bg-input: #ffffff;
-  --bg-user: #f0ebe0;
-  --bg-code: #f5f4ef;
+  --bg-user: #f0efec;
+  --bg-code: #f6f6f4;
   --text: #141413;
   --text-2: #3d3d3a;
-  --text-3: #73726c;
+  --text-3: #6d6b67;
   --text-4: #a3a19a;
   --border: rgba(31, 30, 29, 0.1);
   --border-strong: rgba(31, 30, 29, 0.18);
@@ -52,15 +55,15 @@
      at small sizes (4.5:1) on the light looks. Icons and fills keep --accent. */
   --accent-text: #06627f;
   --link: #2c6bd6;
-  --green: #3f8a4f;
-  --amber: #b7791f;
+  --green: #34763f;
+  --amber: #936014;
   --red: #c4423b;
   --blue: #3b74c9;
   /* How far a surface floats. */
-  --drop: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
-  --drop-pop: 0 4px 24px rgba(0, 0, 0, 0.12);
+  --drop: 0 1px 2px rgba(0, 0, 0, 0.025), 0 4px 16px rgba(0, 0, 0, 0.035);
+  --drop-pop: 0 2px 6px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.1);
   --shadow: var(--drop);
-  --shadow-pop: var(--drop-pop), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-pop: var(--drop-pop);
   --radius: var(--radius-lg);
   --focus-border: rgba(31, 30, 29, 0.32);
   /* 3:1 against the page, as a focus indicator needs (WCAG 1.4.11). */
@@ -73,19 +76,19 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #262624;
-  --bg-sidebar: #1f1e1d;
-  --bg-elevated: #30302e;
-  --bg-panel: #2a2a28;
-  --bg-floating: #2a2a28;
+  --bg: #1c1c1b;
+  --bg-sidebar: #151515;
+  --bg-elevated: #2c2c2a;
+  --bg-panel: #20201f;
+  --bg-floating: #2c2c2a;
   --bg-hover: rgba(250, 249, 245, 0.06);
   --bg-active: rgba(250, 249, 245, 0.1);
-  --bg-input: #30302e;
-  --bg-user: #141413;
-  --bg-code: #1f1e1d;
-  --text: #faf9f5;
-  --text-2: #e5e3da;
-  --text-3: #a6a39a;
+  --bg-input: #262625;
+  --bg-user: #2c2c2a;
+  --bg-code: #151515;
+  --text: #eeeee9;
+  --text-2: #cdcdc7;
+  --text-3: #a6a69e;
   --text-4: #75736c;
   --border: rgba(250, 249, 245, 0.1);
   --border-strong: rgba(250, 249, 245, 0.18);
@@ -103,14 +106,14 @@
   --amber: #e0a84a;
   --red: #ec7a70;
   --blue: #7fa8ef;
-  --shadow-pop: var(--drop-pop), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-pop: var(--drop-pop);
   --focus-border: rgba(250, 249, 245, 0.32);
   --focus-ring: rgba(var(--accent-rgb), 0.55);
   color-scheme: dark;
 }
 :root[data-theme='dark'] {
-  --drop: 0 1px 2px rgba(0, 0, 0, 0.2);
-  --drop-pop: 0 6px 28px rgba(0, 0, 0, 0.45);
+  --drop: 0 1px 2px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.1);
+  --drop-pop: 0 2px 6px rgba(0, 0, 0, 0.2), 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
 /* Scales. Component CSS uses these, never raw px for spacing or radius
@@ -135,8 +138,15 @@
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  --radius-composer: 14px;
+  --radius-control: var(--radius-md);
+  --radius-menu: var(--radius-lg);
+  --radius-dialog: var(--radius-xl);
   --radius-pill: 999px;
   --radius-circle: 50%;
+
+  --control-h: 36px;
+  --control-sm: 28px;
 
   --font-2xs: 11px;
   --font-xs: 12px;
@@ -152,7 +162,10 @@
 
   /* One turn of the conversation (Turn in Transcript.tsx). */
   --turn-width: 760px;
-  --turn-gutter: 28px;
+  --node-edge: var(--space-4);
+  --node-rail-width: 24px;
+  --node-clearance: var(--space-2);
+  --turn-gutter: calc(var(--node-edge) + var(--node-rail-width) + var(--node-clearance));
   --turn-gap: var(--space-6);
   --turn-row: 28px;
   --turn-after: var(--space-6);

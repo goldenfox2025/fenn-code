@@ -9,11 +9,13 @@
   z-index: 40;
 }
 .modal {
+  overscroll-behavior: contain;
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 64px);
   overflow: auto;
   background: var(--bg-elevated);
-  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-dialog);
   box-shadow: var(--shadow-pop);
   padding: 22px var(--space-9);
 }
@@ -30,100 +32,6 @@
   font-size: 19px;
   font-weight: 500;
 }
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-bottom: 14px;
-}
-.field label {
-  font-size: 13px;
-  color: var(--text-2);
-  font-weight: 500;
-}
-.field .help {
-  font-size: 12px;
-  color: var(--text-3);
-}
-.input,
-.textarea,
-.dropdown {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  width: 100%;
-  height: 38px;
-  padding: 0 var(--space-5) 0 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--bg-input);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-}
-.dropdown:hover {
-  border-color: var(--text-4);
-}
-.dropdown:focus-visible,
-.dropdown[aria-expanded='true'] {
-  outline: none;
-  border-color: var(--focus-border);
-}
-.dropdown-value {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dropdown-chevron {
-  color: var(--text-3);
-  flex: none;
-}
-.select-btn .dropdown-value {
-  max-width: 220px;
-}
-.select {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--bg-input);
-  padding: var(--space-4) 11px;
-  outline: none;
-  width: 100%;
-}
-.input:focus,
-.textarea:focus,
-.select:focus {
-  border-color: var(--focus-border);
-}
-
-/*
- * Focus, the same quiet way everywhere: text fields only darken their own
- * border (like the composer); buttons and menu items get a soft ring, and
- * only from the keyboard. Never the browser's square default.
- */
-:focus {
-  outline: none;
-}
-:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
-:is(input, textarea, select, [contenteditable]):focus-visible {
-  box-shadow: none;
-}
-.input,
-.textarea {
-  outline: none;
-}
-.textarea {
-  display: block;
-  height: auto;
-  padding: var(--space-4) 11px;
-  resize: vertical;
-  min-height: 80px;
-  line-height: 1.5;
-}
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -135,13 +43,25 @@
   border-right: 1px solid var(--border);
   padding: 18px var(--space-5);
   flex: none;
+  background: var(--bg-panel);
 }
 .settings-body {
+  min-height: 0;
+  overflow-wrap: anywhere;
   flex: 1;
   min-width: 0;
   padding: 22px 26px;
   overflow-y: auto;
   scrollbar-gutter: stable;
+}
+.modal .settings-heading { margin: 0; padding: 0 var(--space-5) var(--space-6); font-size: var(--font-xl); font-weight: 500; }
+@media (max-width: 720px) {
+  .settings-modal { flex-direction: column; }
+  .settings-nav { display: flex; flex-wrap: wrap; gap: var(--space-1); width: 100%; padding: var(--space-6); border-right: 0; border-bottom: 1px solid var(--border); }
+  .settings-nav .settings-heading { width: 100%; padding-right: var(--space-11); }
+  .settings-nav .nav-item { flex: 1; width: auto; min-width: 0; padding-inline: var(--space-3); gap: var(--space-3); font-size: var(--font-sm); }
+  .settings-nav .nav-item > svg { flex: none; }
+  .settings-body { padding: var(--space-7); }
 }
 .row-between {
   display: flex;
@@ -163,8 +83,8 @@
   position: absolute;
   width: 16px;
   height: 16px;
-  top: 2px;
-  left: 2px;
+  top: var(--space-1);
+  left: var(--space-1);
   border-radius: var(--radius-circle);
   background: white;
   transition: transform var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease);
@@ -293,7 +213,7 @@ body:has(.overlay .modal:not(.wide)) .toasts {
 }
 .toast-icon {
   flex: none;
-  margin-top: 2px;
+  margin-top: var(--space-1);
   color: var(--red);
 }
 .toast-text {

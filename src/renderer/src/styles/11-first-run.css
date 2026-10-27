@@ -5,7 +5,7 @@
   z-index: 50;
   background: var(--bg);
   display: grid;
-  place-items: center;
+  place-items: safe center;
   overflow: auto;
   padding: var(--space-10) var(--space-7);
   -webkit-app-region: drag;
@@ -167,27 +167,6 @@
 .w-220 {
   width: 220px;
 }
-/* Segmented control (theme), like Claude's settings. */
-.seg-control {
-  display: inline-flex;
-  padding: 3px;
-  gap: var(--space-1);
-  border-radius: var(--radius-lg);
-  background: var(--bg-hover);
-}
-.seg-control button {
-  height: 30px;
-  padding: 0 14px;
-  border-radius: var(--radius-md);
-  color: var(--text-2);
-  font-size: 13.5px;
-}
-.seg-control button.on {
-  background: var(--bg-elevated);
-  color: var(--text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
-}
-
 /* ---------- a render error: the app's own small panel instead of a blank window ---------- */
 .crash {
   height: 100%;

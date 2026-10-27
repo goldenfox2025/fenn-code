@@ -31,7 +31,7 @@ import { API_METHODS, type ApiMethod, type CoreApi } from "../shared/ipc";
 declare const __OC_COMMIT__: string;
 declare const __OC_BUILT_AT__: string;
 declare const __OC_UPDATE_FEED__: string;
-import type { AppEvent, AppSettings, BoardWidgetBody } from "../shared/model";
+import type { AppEvent, AppSettings } from "../shared/model";
 import { BackendManager } from "./backends/BackendManager";
 import { builtinPlugins, loadPlugins } from "./backends/registry";
 import { openTerminal } from "./backends/terminal";
@@ -70,6 +70,14 @@ function adoptLoginShellPath(): Promise<void> {
 }
 const loginPath = adoptLoginShellPath();
 
+// A test/dev data directory also isolates Chromium caches and the single-instance lock.
+// Otherwise a local preview can focus an older installed build instead of opening the new one.
+if (process.env.FENN_DATA_DIR) {
+  const profile = join(process.env.FENN_DATA_DIR, 'electron-profile');
+  mkdirSync(profile, { recursive: true });
+  app.setPath('userData', profile);
+}
+
 // The app used to be called openclaude, then Cove, then Ancora: the newest of their data moves to the new
 // folder once (store/migrateFolder.ts). While an old copy still runs on it, or if it can't be moved,
 // the old folder is used where it is.
@@ -92,6 +100,9 @@ if (!process.env.FENN_DATA_DIR) {
 let win: BrowserWindow | null = null;
 const dataDir =
   process.env.FENN_DATA_DIR || join(app.getPath("userData"), "data");
+// An isolated packaged smoke check may stay hidden without enabling development features.
+const backgroundWindow = !!process.env.FENN_DATA_DIR && process.env.FENN_BACKGROUND_TEST === "1";
+const backgroundTest = !app.isPackaged && backgroundWindow;
 const resourcesDir = app.isPackaged
   ? process.resourcesPath
   : join(import.meta.dirname, "../../resources");
@@ -517,6 +528,8 @@ function createWindow(): void {
       preload: join(import.meta.dirname, "../preload/index.cjs"),
       sandbox: true,
       contextIsolation: true,
+      backgroundThrottling: !backgroundWindow,
+      offscreen: backgroundWindow,
     },
   });
   // The taskbar draws a button from its app id's shortcut, or else from the program file, which from
@@ -524,7 +537,13 @@ function createWindow(): void {
   if (copy === "source")
     win.setAppDetails({ appId: winAppId(copy), appIconPath: join(resourcesDir, "icon.ico"), appIconIndex: 0 });
   applyWindowTheme(store.settings);
-  win.once("ready-to-show", () => win?.show());
+  // Isolated development checks can render and inspect the UI without presenting test windows.
+  win.once("ready-to-show", () => {
+    if (backgroundWindow) return;
+    // A local maintenance launch can preserve the user's foreground work.
+    if (!app.isPackaged && process.env.FENN_SHOW_INACTIVE === "1") win?.showInactive();
+    else win?.show();
+  });
   // Only web and mail links leave the app. Anything else (file:, a relative link resolved against the
   // app itself, a custom scheme) would have the system open or run it, from text an agent wrote.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -567,6 +586,7 @@ function appIcon() {
 }
 
 function showWindow(): void {
+  if (backgroundTest) return;
   if (!win) createWindow();
   else {
     if (win.isMinimized()) win.restore();
@@ -595,12 +615,6 @@ function ensureTray(): void {
 // into a sandboxed iframe: scripts run, but can't reach the app or the network
 // beyond loading assets.
 protocol.registerSchemesAsPrivileged([{ scheme: 'oc-page', privileges: { standard: true, secure: true } }])
-/** An html card's page, starting from the app's colors so it can match the look it sits in. */
-function boardPage(body: BoardWidgetBody | undefined, colors: URLSearchParams): string | undefined {
-  if (body?.kind !== 'html') return undefined
-  const vars = [...colors].filter(([k, v]) => /^[a-z0-9-]{1,24}$/.test(k) && /^[#(),.%\w\s-]{1,60}$/.test(v)).map(([k, v]) => `--${k}:${v}`).join(';')
-  return `<!doctype html><meta charset="utf-8"><style>:root{${vars}}html,body{margin:0;background:transparent;color:var(--text);font:13px/1.5 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}</style>${body.html}`
-}
 const PAGE_CSP =
   "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https:; style-src 'unsafe-inline' https:; img-src data: blob: https:; font-src data: https:; media-src data: blob: https:; connect-src 'none'"
 
@@ -685,10 +699,10 @@ app.whenReady().then(async () => {
   applyLanguage(store.settings);
   core.onSettingsChanged = applyLanguage;
   protocol.handle('oc-page', (req) => {
-    // oc-page://page/<id>/<version>, or oc-page://board/<card id>/<updated>?<the look's colors> for an html card on the home board
+    // Only published conversation artifacts use this protocol.
     const url = new URL(req.url)
     const [, id, version] = url.pathname.split('/')
-    const html = url.host === 'board' ? boardPage(core.snapshot().boardWidgets?.find((w) => w.id === id)?.body, url.searchParams) : core.artifacts.displayHtml(id, Number(version) || undefined)
+    const html = url.host === 'page' ? core.artifacts.displayHtml(id, Number(version) || undefined) : undefined
     return new Response(html ?? 'not found', {
       status: html ? 200 : 404,
       headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': PAGE_CSP, 'cache-control': html && url.host === 'page' && Number(version) > 0 ? 'private, max-age=31536000, immutable' : 'no-store' }
@@ -785,6 +799,7 @@ app.on("before-quit", (e) => {
   store.freeze();
   tools.stop();
   core.scheduler.stop();
+  void core.browser.close();
   // An agent's program outlives the app unless it is stopped first (Antigravity's server cleans up after itself only then).
   void Promise.race([backends.disposeAll(), new Promise((r) => setTimeout(r, 6000))]).then(() => {
     agentsStopped = true;

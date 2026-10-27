@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { t } from '../i18n'
 import { lastMenuAnchor } from './Menu'
 import { imeComposing } from '../util'
@@ -63,14 +63,20 @@ function focusables(root: HTMLElement): HTMLElement[] {
  * text field, else `initialFocus`, else the dialog); Tab cycles within it; a
  * click outside or Esc closes it; closing returns focus to what opened it.
  */
-export function Overlay({ onClose, children, initialFocus }: { onClose: () => void; children: ReactNode; initialFocus?: string }) {
+export function Overlay({ onClose, children, initialFocus, label, opener: suppliedOpener }: { onClose: () => void; children: ReactNode; initialFocus?: string; label?: string; opener?: HTMLElement | null }) {
   const ref = useRef<HTMLDivElement>(null)
+  const headingId = useId()
   useLayer(onClose, ref)
   useEffect(() => {
     // A menu item that opened this may have taken its button away with the menu.
     const active = document.activeElement as HTMLElement | null
-    const opener = active && active !== document.body ? active : lastMenuAnchor()
+    const opener = suppliedOpener ?? (active && active !== document.body ? active : lastMenuAnchor())
     const root = ref.current!
+    const heading = root.querySelector<HTMLElement>('h1, h2, h3')
+    if (!label && heading) {
+      if (!heading.id) heading.id = headingId
+      root.setAttribute('aria-labelledby', heading.id)
+    }
     const first =
       (initialFocus && root.querySelector<HTMLElement>(initialFocus)) ||
       root.querySelector<HTMLElement>('input:not([type=hidden]):not([disabled]), textarea:not([disabled])') ||
@@ -106,6 +112,7 @@ export function Overlay({ onClose, children, initialFocus }: { onClose: () => vo
       ref={ref}
       role="dialog"
       aria-modal="true"
+      aria-label={label}
       onKeyDown={onKeyDown}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
@@ -170,7 +177,7 @@ export function ConfirmHost() {
     req.done(ok, text)
   }
   return (
-    <Overlay onClose={() => finish(false)} initialFocus={req.input ? '.modal.confirm input' : '.confirm-cancel'}>
+    <Overlay label={req.title || req.message} onClose={() => finish(false)} initialFocus={req.input ? '.modal.confirm input' : '.confirm-cancel'}>
       <div className={'modal confirm' + (req.code ? ' has-code' : '')} tabIndex={-1}>
         {req.title && <h2>{req.title}</h2>}
         {req.message && <p className="confirm-text">{req.message}</p>}
@@ -178,6 +185,7 @@ export function ConfirmHost() {
         {req.input && (
           <input
             className="input"
+            aria-label={req.title || req.message}
             value={text}
             placeholder={req.input.placeholder}
             onChange={(e) => setText(e.target.value)}

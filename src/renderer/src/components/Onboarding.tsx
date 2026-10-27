@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Check, FolderKanban, MessageCircle, Clock } from 'lucide-react'
 import { FoxMark } from './FoxMark'
 import { api, refreshAccount, toastError, useApp } from '../store'
@@ -11,6 +11,7 @@ import { imeComposing } from '../util'
  * Every step can be skipped; settings has all of it later.
  */
 export function Onboarding() {
+  const fieldId = useId()
   const settings = useApp((s) => s.settings)
   const backends = useApp((s) => s.backends)
   const navigate = useApp((s) => s.navigate)
@@ -110,8 +111,8 @@ export function Onboarding() {
               </li>
             </ul>
             <div className="field">
-              <label>{t('怎么称呼您')}</label>
-              <input ref={nameRef} className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t('您的名字（可以不填）')} onKeyDown={(e) => e.key === 'Enter' && !imeComposing(e) && setStep(1)} />
+              <label htmlFor={`${fieldId}-1`}>{t('怎么称呼您')}</label>
+              <input id={`${fieldId}-1`} ref={nameRef} className="input" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t('您的名字（可以不填）')} onKeyDown={(e) => e.key === 'Enter' && !imeComposing(e) && setStep(1)} />
             </div>
             <div className="modal-actions">
               <button className="btn ghost skip" disabled={finishing} onClick={() => void finish()}>
@@ -130,7 +131,7 @@ export function Onboarding() {
             <div className="choice-list">
               {backends.map((b) =>
                 installed(b.id) ? (
-                  <button key={b.id} className={'choice' + (b.id === backendId ? ' on' : '')} onClick={() => setBackendId(b.id)}>
+                  <button key={b.id} className={'choice' + (b.id === backendId ? ' on' : '')} aria-pressed={b.id === backendId} onClick={() => setBackendId(b.id)}>
                     <span className="radio">{b.id === backendId && <Check size={12} />}</span>
                     <span style={{ flex: 1, textAlign: 'left' }}>
                       <span className="title">
@@ -194,12 +195,12 @@ export function Onboarding() {
             <h1>{t('创建第一个项目')}</h1>
             <p className="muted">{t('项目适合要做一阵子的事。您在主对话里提需求，agent 会把具体的工作分到讨论串里，并记住项目的来龙去脉。')}</p>
             <div className="field">
-              <label>{t('名称')}</label>
-              <input className="input" autoFocus value={project.name} onChange={(e) => setProject({ ...project, name: e.target.value })} placeholder={t('例如：家庭装修、毕业论文')} />
+              <label htmlFor={`${fieldId}-2`}>{t('名称')}</label>
+              <input id={`${fieldId}-2`} className="input" autoFocus value={project.name} onChange={(e) => setProject({ ...project, name: e.target.value })} placeholder={t('例如：家庭装修、毕业论文')} />
             </div>
             <div className="field">
-              <label>{t('描述')}</label>
-              <input className="input" value={project.description} onChange={(e) => setProject({ ...project, description: e.target.value })} placeholder={t('这个项目要做什么（可以不填）')} />
+              <label htmlFor={`${fieldId}-3`}>{t('描述')}</label>
+              <input id={`${fieldId}-3`} className="input" value={project.description} onChange={(e) => setProject({ ...project, description: e.target.value })} placeholder={t('这个项目要做什么（可以不填）')} />
             </div>
             <div className="modal-actions">
               <button className="btn ghost" onClick={() => setStep(1)}>

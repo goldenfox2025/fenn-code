@@ -4,7 +4,13 @@
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
+  flex: none;
+  position: relative;
 }
+.model-controls { display: inline-flex; align-items: center; gap: 1px; width: max-content; flex: none; }
+.model-group.compact .model-controls { position: absolute; right: 0; visibility: hidden; pointer-events: none; }
+.composer-row > :not(.spacer) { flex-shrink: 0; }
+.composer-row > .folder-chip { max-width: min(140px, 30%); }
 .model-group .model-btn {
   min-width: 0;
 }
@@ -48,9 +54,9 @@
   padding: 14px var(--space-7) var(--space-5);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-menu);
   box-shadow: var(--shadow-pop);
-  animation: menu-in var(--dur-2) var(--ease);
+  animation: menu-in var(--dur-1) var(--ease-snap);
   user-select: none;
 }
 .effort-head {
@@ -232,9 +238,7 @@
   color: var(--text-2);
   background: transparent;
   white-space: nowrap;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
 }
 .footer-chip:hover,
 .effort-chip:hover,

@@ -1,0 +1,47 @@
+/* Background tasks use a quiet rail of rows. Only an opened command owns an
+ * output surface; files and the shared pane frame keep their existing layout. */
+.side-pane.background-side-pane { align-self: flex-start; height: auto; max-height: calc(100% - var(--space-4)); bottom: auto; box-shadow: var(--shadow); }
+.side-pane.background-side-pane > .pane-viewport { flex: 0 1 auto; }
+.side-pane.background-side-pane .panel-body { flex: 0 1 auto; }
+.side-pane.background-side-pane .background-panel { max-height: calc(100vh - 120px); }
+.side-pane .panel-body:has(> .background-panel) { overflow: hidden; display: flex; }
+.background-panel { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-6); }
+.background-heading { display: flex; align-items: center; gap: var(--space-3); min-height: 36px; margin-bottom: var(--space-3); padding-inline: var(--space-3); }
+.background-heading h3 { flex: 1; margin: 0; min-width: 0; font-size: var(--font-sm); font-weight: 500; color: var(--text-2); }
+.background-heading > span { flex: none; color: var(--text-3); font-size: var(--font-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.background-task { display: flex; align-items: center; min-width: 0; min-height: 38px; border-radius: var(--radius-md); }
+.background-task:hover, .background-task:focus-within { background: var(--bg-hover); }
+.background-task-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-5) var(--space-3); border-radius: inherit; text-align: left; }
+.background-task-open[aria-current] { background: var(--bg-active); }
+.background-task-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-sm); }
+.background-task-meta { flex: none; margin-left: var(--space-2); font-size: var(--font-xs); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-3); }
+.background-task-icon { flex: none; color: var(--text-3); }
+.background-task-icon.failed, .background-task[data-state=failed] .background-task-meta, .background-detail-meta[data-state=failed] { color: var(--red); }
+.background-task-icon.waiting, .background-task[data-state=waiting] .background-task-meta { color: var(--amber); }
+.background-stop { flex: none; margin-inline: var(--space-1); opacity: 0; }
+.background-task:is(:hover, :focus-within) .background-stop, .background-stop:disabled, .background-detail-title .background-stop { opacity: 1; }
+@media (hover: none) { .background-stop { opacity: 1; } }
+.background-more, .background-history { width: 100%; min-height: 36px; display: flex; align-items: center; gap: var(--space-4); text-align: left; border-radius: var(--radius-md); padding: var(--space-4) var(--space-3); font-size: var(--font-sm); color: var(--text-2); }
+.background-more { padding-left: calc(var(--space-3) + 15px + var(--space-4)); color: var(--text-3); }
+.background-more:hover, .background-history:hover { background: var(--bg-hover); color: var(--text); }
+.background-more > svg { transition: transform var(--dur-1) var(--ease); }
+.background-more > .expanded { transform: rotate(-90deg); }
+.background-history { margin-top: var(--space-4); }
+.background-history > span { flex: 1; }
+.background-history > .background-failures { flex: none; color: var(--red); font-size: var(--font-xs); white-space: nowrap; }
+.background-history > svg { flex: none; color: var(--text-3); }
+.background-panel .panel-empty-state { padding: var(--space-5) var(--space-3) var(--space-7); }
+.background-detail, .background-list { animation: background-enter var(--dur-1) var(--ease); }
+@keyframes background-enter { from { transform: translateX(4px); } to { transform: translateX(0); } }
+.background-detail-title { display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-5) var(--space-3) var(--space-2); }
+.background-detail-title > svg { margin-top: calc(var(--space-3) / 2); }
+.background-detail-title h4 { flex: 1; min-width: 0; margin: 0; font-size: var(--font-sm); font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.background-detail-meta { display: flex; flex-wrap: wrap; gap: var(--space-5); padding: 0 var(--space-3) var(--space-6); color: var(--text-3); font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
+.background-command-content { padding: 0 var(--space-3); }
+.background-command-code { display: block; padding-block: var(--space-4); border-top: 1px solid var(--border); color: var(--text-2); font-family: var(--font-mono); font-size: var(--font-xs); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.background-output-head { min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-3); color: var(--text-3); font-size: var(--font-xs); }
+.background-follow { display: inline-flex; gap: var(--space-2); align-items: center; color: var(--text-2); font-size: inherit; }
+.background-follow:hover { color: var(--text); }
+.background-output { margin: 0; padding: var(--space-5) var(--space-6); max-height: min(480px, 55vh); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-code); font: var(--font-xs)/1.65 var(--font-mono); color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.background-output-empty { margin: var(--space-3) 0; font-size: var(--font-sm); color: var(--text-3); }
+.background-output-error { display: flex; align-items: center; gap: var(--space-5); margin-block: var(--space-4); color: var(--red); font-size: var(--font-sm); }

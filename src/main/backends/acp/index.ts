@@ -31,6 +31,7 @@ export interface AcpPluginOptions {
   quirks?: AcpQuirks
   /** See BackendPlugin.appListing; resuming a hidden session shows it again first (AcpQuirks.unhide). */
   appListing?: AppListing
+  backgroundAsk?: BackendPlugin['backgroundAsk']
   signIn?: boolean
   login?: BackendPlugin['login']
   signature?: string
@@ -101,6 +102,7 @@ export function acpPlugin(opts: AcpPluginOptions): BackendPlugin {
     description: opts.description,
     settings: opts.settings,
     appListing: opts.appListing,
+    backgroundAsk: opts.backgroundAsk,
     signIn: opts.signIn,
     credits: opts.credits,
     login: opts.login,

@@ -9,6 +9,8 @@ import { codexRollout } from '../sessionLogs'
 import { decodeOutput } from '../workspace'
 import { nodeScript, packageDir } from '../nodeScript'
 import { t, tk } from '../../../shared/i18n'
+import { codexEphemeral, codexThreadRequest, codexMetadataRequest } from '../codexControl'
+import { codexQuota } from '../codexQuota'
 
 const versionIn = (dir: string | undefined): string | undefined => {
   if (!dir) return undefined
@@ -117,10 +119,14 @@ function runCodex(program: string, args: string[]): Promise<void> {
  * (`codex archive`, local, nothing deleted; Desktop's Archived view still has it) and showing it
  * unarchives it. The rollout's folder says which it is, so nothing runs when it already is so.
  */
-export function codexAppListing(run: (program: string, args: string[]) => Promise<void> = runCodex): AppListing {
+export function codexAppListing(run: (program: string, args: string[]) => Promise<void> = runCodex, request = codexThreadRequest): AppListing {
   return {
     app: tk('Codex 桌面版'),
-    shown: (config) => config.CODEX_SHOW_IN_DESKTOP === '1',
+    shown: (config) => config.CODEX_SHOW_IN_DESKTOP !== '0',
+    async setTitle(config, sessionId, title) {
+      if (!await codexRollout(sessionId)) return
+      await request(codexProgram(config), 'thread/name/set', { threadId: sessionId, name: title })
+    },
     async setShown(config, sessionId, shown) {
       const at = await codexRollout(sessionId)
       // No rollout yet: a session never prompted, which Desktop doesn't list either.
@@ -144,12 +150,14 @@ export default acpPlugin({
       help: tk('可填写实际可执行文件的绝对路径。桌面应用无法执行 shell 别名；留空则从 PATH 查找。') },
     { key: 'CODEX_ACP_PATH', label: tk('Codex ACP 适配器路径'), placeholder: 'codex-acp',
       help: tk('填写 codex-acp 可执行文件的路径；留空则从 PATH 查找。') },
-    { key: 'CODEX_SHOW_IN_DESKTOP', type: 'toggle', default: '0', noRestart: true, label: tk('在 Codex 桌面版中显示 Fenn 的 Codex 对话'),
-      help: tk('关闭时，Fenn 用完一个对话的会话后会在 Codex 里把它归档（不删除，桌面版的「已归档」里还在）。正在 Fenn 里打开的对话仍会暂时出现在桌面版。') }
+    { key: 'CODEX_SHOW_IN_DESKTOP', type: 'toggle', default: '1', noRestart: true, label: tk('在 Codex 桌面版中显示 Fenn 的 Codex 对话'),
+      help: tk('默认显示主对话和讨论串，并同步标题。关闭后会归档这些会话；标题、归类等内部辅助请求始终不保存会话记录。') }
   ],
   appListing: codexAppListing(),
+  backgroundAsk: (config, text, opts) => codexEphemeral(codexProgram(config), text, opts),
   login: (config) => ({ command: config.CODEX_CLI_PATH?.trim() || 'codex', args: ['login'] }),
   account: (config) => codexAccount(config),
+  credits: async config => codexQuota(await codexMetadataRequest(codexProgram(config), 'account/rateLimits/read', {})),
   upgrade: {
     run: { command: 'npm', args: ['install', '-g', '@openai/codex@latest', '@agentclientprotocol/codex-acp@latest'] },
     // Compared with the adapter that runs (see launchedVersions), not with a global codex the app never starts.

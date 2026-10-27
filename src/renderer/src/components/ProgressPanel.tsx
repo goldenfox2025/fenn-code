@@ -104,7 +104,7 @@ export function ProgressPanel({ project }: { project: Project }) {
             </div>
           )}
         </div>
-        <button className="icon-btn sm" data-focus-key={'progress-menu:' + x.id} onClick={(e) => itemMenu(e.currentTarget, x, milestone)}>
+        <button className="icon-btn sm" data-tip={t('更多')} data-focus-key={'progress-menu:' + x.id} onClick={(e) => itemMenu(e.currentTarget, x, milestone)}>
           <MoreHorizontal size={15} />
         </button>
       </div>

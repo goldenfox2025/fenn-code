@@ -20,10 +20,12 @@
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: var(--space-6);
 }
 .card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
@@ -34,7 +36,14 @@
   flex-direction: column;
   gap: var(--space-3);
 }
-button.card:hover {
+.project-card-heading { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+.project-card-heading .title { flex: 1; min-width: 0; }
+.project-card-heading > :not(.title) { flex: none; }
+.project-card-folder { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; width: 100%; }
+.project-card { padding: 0; gap: 0; }
+.project-card-open { display: flex; flex-direction: column; gap: var(--space-3); width: 100%; min-width: 0; padding: var(--space-7); text-align: left; border-radius: inherit; }
+.project-card-restore { align-self: flex-end; margin: 0 var(--space-7) var(--space-7); }
+button.card:hover, .project-card:has(.project-card-open:hover) {
   border-color: var(--border-strong);
   box-shadow: var(--shadow);
 }
@@ -59,8 +68,8 @@ button.card:hover {
   content: '';
   position: absolute;
   top: 0;
-  left: 12px;
-  right: 12px;
+  left: var(--space-6);
+  right: var(--space-6);
   border-top: 1px solid var(--border);
 }
 .list-row:hover::before,

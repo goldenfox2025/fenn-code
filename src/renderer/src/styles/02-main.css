@@ -101,48 +101,6 @@
   background: var(--bg-active);
   color: var(--text);
 }
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  height: 34px;
-  padding: 0 14px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: 13.5px;
-  white-space: nowrap;
-}
-.btn:hover {
-  background: var(--bg-hover);
-}
-.btn.primary {
-  background: var(--text);
-  color: var(--bg);
-  border-color: transparent;
-}
-.btn.primary:hover {
-  opacity: 0.88;
-}
-.btn.accent {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-color: transparent;
-}
-.btn.danger {
-  color: var(--red);
-}
-.btn.danger-solid {
-  /* One deep red in every theme, so white text always reads. */
-  background: #c4423b;
-  border-color: transparent;
-  color: #fff;
-}
-.btn.danger-solid:hover {
-  opacity: 0.9;
-}
 .modal:focus {
   outline: none;
 }
@@ -155,8 +113,4 @@
   line-height: 1.6;
   color: var(--text-2);
   white-space: pre-wrap;
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
 }

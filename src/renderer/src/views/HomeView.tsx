@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Bot, Code2, FolderKanban, Lightbulb, PenLine, Sparkles } from 'lucide-react'
 import { FoxMark } from '../components/FoxMark'
 import { Composer } from '../components/Composer'
-import { WidgetBoard } from '../widgets/WidgetBoard'
 import type { Attachment } from '@shared/model'
 import { api, useApp } from '../store'
 import { greeting } from '../util'
@@ -43,8 +42,7 @@ export function HomeView({ folder: initialFolder }: { folder?: string }) {
     navigate({ view: 'chat', conversationId: conv.id })
   }
 
-  // Laid out like a chat, so starting one moves nothing: the composer sits where a chat's
-  // does, and the room above, where the conversation will be, holds the widgets.
+  // The welcome and composer share the same reading column as a conversation.
   return (
     <div className="home">
       <div className="scroll home-board">
@@ -53,7 +51,6 @@ export function HomeView({ folder: initialFolder }: { folder?: string }) {
             <FoxMark size={32} className="logo" />
             {greeting(settings.userName)}
           </h1>
-          <WidgetBoard />
         </div>
       </div>
       <div className="home-dock">

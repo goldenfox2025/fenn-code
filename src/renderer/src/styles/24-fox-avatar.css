@@ -1,0 +1,17 @@
+.fox-avatar { display: block; flex: none; overflow: visible; color: inherit; }
+.fox-avatar .fox-head { stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
+.fox-avatar .fox-ear { fill: currentColor; opacity: .18; }
+.fox-avatar .fox-eyes { fill: currentColor; transform-origin: 32px 37px; }
+.fox-avatar .fox-nose { fill: currentColor; }
+.fox-assistant .fox-head { fill: currentColor; }
+.fox-assistant .fox-ear { fill: var(--fox-face, var(--bg-elevated)); opacity: .65; }
+.fox-assistant .fox-cheeks { fill: var(--fox-face, var(--bg-elevated)); }
+.fox-assistant .fox-ear-left { transform-origin: 20px 24px; }
+.fox-assistant .fox-ear-right { transform-origin: 44px 24px; }
+.fox-avatar.is-alive .fox-eyes { animation: fox-avatar-blink var(--dur-fox-blink) ease-in-out infinite; }
+.fox-avatar.is-alive .fox-ear-right { animation: fox-avatar-listen var(--dur-fox-listen) ease-in-out infinite; }
+@keyframes fox-avatar-blink { 0%, 42%, 46%, 100% { transform: scaleY(1); } 44% { transform: scaleY(.15); } }
+@keyframes fox-avatar-listen { 0%, 66%, 72%, 100% { transform: rotate(0); } 68% { transform: rotate(6deg); } 70% { transform: rotate(-3deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .fox-avatar.is-alive .fox-eyes, .fox-avatar.is-alive .fox-ear-right { animation: none; }
+}

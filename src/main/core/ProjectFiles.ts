@@ -20,14 +20,14 @@ const MAX_FILE = 30_000_000
 export class ProjectFiles {
   constructor(private readonly root: string) {}
 
-  private dir(projectId: string): string {
+  directory(projectId: string): string {
     const d = join(this.root, 'projects', projectId.replace(/[^a-zA-Z0-9-]/g, ''), 'files')
     mkdirSync(d, { recursive: true })
     return d
   }
 
   list(projectId: string): ProjectFile[] {
-    const d = this.dir(projectId)
+    const d = this.directory(projectId)
     return readdirSync(d)
       .map((name) => {
         const st = statSync(join(d, name))
@@ -41,13 +41,13 @@ export class ProjectFiles {
     const clean = safeName(name)
     const buf = Buffer.from(base64, 'base64')
     if (buf.length > MAX_FILE) throw new Error(`${clean} 太大（上限 30 MB）`)
-    const f = join(this.dir(projectId), clean)
+    const f = join(this.directory(projectId), clean)
     writeFileSync(f, buf)
     return this.list(projectId).find((x) => x.name === clean)!
   }
 
   remove(projectId: string, name: string): void {
-    const f = join(this.dir(projectId), safeName(name))
+    const f = join(this.directory(projectId), safeName(name))
     if (existsSync(f)) rmSync(f)
   }
 
@@ -58,7 +58,7 @@ export class ProjectFiles {
     offset = 0,
     limit = 60_000
   ): { kind: 'text'; text: string; total: number } | { kind: 'image'; data: string; mimeType: string } {
-    const f = join(this.dir(projectId), safeName(name))
+    const f = join(this.directory(projectId), safeName(name))
     if (!existsSync(f)) throw new Error(`没有名为 ${name} 的项目文件`)
     const mime = IMAGE[extname(f).toLowerCase()]
     const buf = readFileSync(f)

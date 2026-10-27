@@ -93,6 +93,6 @@ describe('small UI fixes', () => {
 
   it('reports a failed delete of chats or project files', () => {
     expect(src('views/Pages.tsx')).toMatch(/for \(const c of chosen\) await api\(\)\.deleteConversation\(c\.id\)\s*stop\(\)\s*\} catch \(e\) \{[^}]*toastError\(e\)/)
-    expect(src('views/ProjectView.tsx')).toMatch(/deleteProjectFile\(projectId, f\.name\)\.catch\(toastError\)/)
+    expect(src('components/FilesPane.tsx')).toMatch(/const target = locate\(path\)\s*await api\(\)\.deleteLibraryPath\(target\.id, target\.path\)\s*\} catch \(e\) \{\s*return toastError\(e\)/)
   })
 })

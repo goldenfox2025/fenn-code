@@ -108,12 +108,13 @@ const CHANGES = new Set(['edit', 'delete', 'move'])
  * `formerRoots`: where the agents
  * worked before the folder was chosen (their files moved here).
  */
-export function changedFiles(root: string, messages: Message[], formerRoots: string[] = []): LibraryChange[] {
+export function changedFiles(root: string, messages: Message[], formerRoots: string[] = [], includeRelative = true): LibraryChange[] {
   const seen = new Map<string, LibraryChange>()
   for (const m of messages) {
     for (const b of m.blocks) {
       if (b.type !== 'tool' || !b.paths?.length || b.status !== 'completed' || !CHANGES.has(b.toolKind ?? '')) continue
       for (const p of b.paths) {
+        if (!includeRelative && !isAbsolute(p)) continue
         // A file made before the chat got its folder was written where the agent worked then, and moved with it.
         const from = formerRoots.find((f) => { const r = relative(resolve(f), resolve(f, p)); return isAbsolute(p) && r && !r.startsWith('..') && !isAbsolute(r) })
         const rel = from ? relative(resolve(from), p) : relative(resolve(root), resolve(root, p))

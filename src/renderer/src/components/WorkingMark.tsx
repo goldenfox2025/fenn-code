@@ -11,10 +11,10 @@ export function WorkingMark({ since, label }: { since: number; label?: string })
   }, [])
   const s = Math.max(0, Math.round((Date.now() - since) / 1000))
   return (
-    <div className="working-mark" role="status">
+    <div className="working-mark" role="status" aria-label={label || t('正在工作')}>
       <FoxMark thinking />
       {label && <span>{label}</span>}
-      <span className="working-time">{s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}</span>
+      <span className="working-time" aria-hidden="true">{s < 60 ? t('{0} 秒', s) : t('{0} 分 {1} 秒', Math.floor(s / 60), s % 60)}</span>
     </div>
   )
 }

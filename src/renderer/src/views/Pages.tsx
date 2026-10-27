@@ -28,24 +28,16 @@ export function ProjectsPage() {
     const working = threads.filter((t) => t.status === 'working').length
     const board = boardCount(p.progress)
     return (
-      <button key={p.id} className={'card' + (p.archived ? ' archived' : '')} onClick={() => navigate({ view: 'project', projectId: p.id })}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <article key={p.id} className={'card project-card' + (p.archived ? ' archived' : '')}>
+      <button className="project-card-open" onClick={() => navigate({ view: 'project', projectId: p.id })}>
+        <div className="project-card-heading">
           <FolderKanban size={15} className="muted" />
           <span className="title">{p.name}</span>
-          {p.archived && (
-            <span
-              className="link small"
-              style={{ marginLeft: 'auto' }}
-              role="button"
-              onClick={(e) => (e.stopPropagation(), void api().updateProject(p.id, { archived: false }))}
-            >
-              {t('恢复')}
-            </span>
-          )}
         </div>
         <div className="small muted" style={{ minHeight: 38 }}>
           {p.description || t('没有描述')}
         </div>
+        {p.cwd && <div className="project-card-folder small muted" data-tip={p.cwd}>{p.cwd}</div>}
         {board.total > 0 && (
           <div className="progress-bar">
             <span style={{ width: `${(board.done / board.total) * 100}%` }} />
@@ -56,6 +48,8 @@ export function ProjectsPage() {
           {board.total > 0 ? t(' · 进度 {0}/{1}', board.done, board.total) : ''} {' '}{t('· 更新于')}{' '}{relTime(p.updatedAt)}
         </div>
       </button>
+      {p.archived && <button className="link small project-card-restore" onClick={() => void api().updateProject(p.id, { archived: false })}>{t('恢复')}</button>}
+      </article>
     )
   }
   return (
@@ -299,7 +293,7 @@ export function describeSchedule(s: Schedule): string {
 }
 
 export function RoutinesPage() {
-  const routines = useApp((s) => s.routines)
+  const routines = useApp((s) => s.routines).filter(routine => !routine.widgetId)
   const projects = useApp((s) => s.projects)
   const conversations = useApp((s) => s.conversations)
   const navigate = useApp((s) => s.navigate)

@@ -3,7 +3,7 @@ import type { Block } from '@shared/model'
 export type ToolBlock = Extract<Block, { type: 'tool' }>
 
 /** The app's own coordination tools are plumbing; their effects show up as cards and status instead. */
-export const APP_TOOL = /(^|[/_.:\s])(render_ui|publish_page|ask_decision|start_thread|start_subconversation|message_thread|list_threads|read_thread|set_thread_resolved|update_status|set_title|set_resolved|react|correct_message|memory_list|memory_read|memory_write|memory_delete|set_blocker|progress_read|progress_update)\b/
+export const APP_TOOL = /(^|[/_.:\s])(render_ui|publish_page|ask_decision|start_thread|start_subconversation|message_thread|list_threads|read_thread|submit_review|inspect_delivery|review_delivery|set_thread_resolved|update_status|set_title|set_resolved|react|correct_message|memory_list|memory_read|memory_write|memory_delete|set_blocker|progress_read|progress_update)\b/
 
 /** Tools whose result is the card itself. */
 export const OUTPUT_TOOL = /(^|[/_.:\s])(attach_output|project_file_write)\b/
@@ -23,7 +23,10 @@ export function visualWork(blocks: Block[]): 'visualization' | 'page' | undefine
 export type PlanBlock = Extract<Block, { type: 'plan' }>
 
 /** Tool lines the reply shows in another form (app bookkeeping, a handed-over file's card). */
-const hiddenTool = (b: Block) => b.type === 'tool' && (APP_TOOL.test(b.title) || (OUTPUT_TOOL.test(b.title) && b.status !== 'failed'))
+const hiddenTool = (b: Block) => b.type === 'tool' && b.status !== 'failed' && (APP_TOOL.test(b.title) || OUTPUT_TOOL.test(b.title))
+
+/** Exclude empty internal replies before laying out days and completion footers. */
+export const hasReplyContent = (blocks: Block[]): boolean => blocks.some((b) => !hiddenTool(b) && (b.type !== 'text' || !!b.text.trim()))
 
 /** Tool calls in a row, shown together (text with nothing in it doesn't break a run). */
 export interface ToolRun {

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as zlib from 'node:zlib'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppListing } from '../src/shared/contract'
 import { acpPlugin } from '../src/main/backends/acp'
 import { codexAppListing } from '../src/main/backends/plugins/codex'
@@ -70,11 +70,21 @@ describe('Codex rollouts, archived or not', () => {
     expect(runs).toEqual([['unarchive', ID]])
   })
 
-  it('shares nothing with Codex Desktop unless the user turns it on', () => {
+  it('shows real conversations by default, while retaining an explicit opt-out', () => {
     const listing = codexAppListing(async () => {})
-    expect(listing.shown({})).toBe(false)
+    expect(listing.shown({})).toBe(true)
     expect(listing.shown({ CODEX_SHOW_IN_DESKTOP: '0' })).toBe(false)
     expect(listing.shown({ CODEX_SHOW_IN_DESKTOP: '1' })).toBe(true)
+  })
+
+  it('synchronizes the chosen title through the supported metadata API', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const listing = codexAppListing(async () => {}, async (_program, method, params) => { calls.push({ method, params }) })
+    await listing.setTitle!({}, ID, '项目主对话')
+    expect(calls).toEqual([]) // Never prompted: no stored thread to rename.
+    inSessions()
+    await listing.setTitle!({}, ID, '项目主对话')
+    expect(calls).toEqual([{ method: 'thread/name/set', params: { threadId: ID, name: '项目主对话' } }])
   })
 })
 
@@ -109,6 +119,34 @@ const deletes = (log: string) => {
 }
 
 describe('conversations kept out of the agent\'s own app (Codex Desktop)', () => {
+  it('internal helpers use a native no-history path rather than opening and archiving an ACP session', async () => {
+    const native = vi.fn(async () => 'helper answer')
+    const plugin = acpPlugin({ id: 'helper', name: 'Helper', isInstalled: () => true, backgroundAsk: native, launch: () => { throw new Error('ACP must not start for a native helper') } })
+    const test = await makeCore(undefined, {}, {}, [plugin])
+    try {
+      expect(await test.core.backends.ask('helper', 'Classify supplied text')).toBe('helper answer')
+      expect(native).toHaveBeenCalledOnce()
+      expect(test.store.conversations).toEqual([])
+    } finally { await test.dispose() }
+  })
+
+  it('syncs manual and generated conversation names to the same owned backend session', async () => {
+    const log = join(mkdtempSync(join(tmpdir(), 'oc-title-sync-')), 'sessions.log')
+    const { plugin } = listedMock(log)
+    const titles: string[] = []
+    plugin.appListing!.setTitle = async (_config, id, title) => { titles.push(`${id}:${title}`) }
+    const test = await makeCore(undefined, {}, {}, [plugin])
+    try {
+      await test.core.setBackendSetting('mock', 'SHOW', '1')
+      const conv = await test.core.startChat({ text: 'Hello', backendId: 'mock' })
+      await until(() => test.store.conversation(conv.id)?.status === 'idle')
+      await test.core.updateConversation(conv.id, { title: 'Readable title' })
+      const session = test.store.requireConversation(conv.id).sessionRef!.sessionId
+      await until(() => titles.includes(`${session}:Readable title`))
+      expect(test.store.requireConversation(conv.id).sessionRef!.sessionId).toBe(session)
+    } finally { await test.dispose() }
+  }, 30_000)
+
   it('archives a released session, shows it again before resuming, and follows the setting', async () => {
     const log = join(mkdtempSync(join(tmpdir(), 'oc-listing-')), 'sessions.log')
     const { plugin, calls } = listedMock(log)

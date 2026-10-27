@@ -80,6 +80,13 @@ describe('the files panel', () => {
     expect(changedFiles(root, [tool(['/data/workspaces/c1/README.md'])], ['/data/workspaces/c1']).map((c) => c.path)).toEqual(['README.md'])
   })
 
+  it('does not attribute relative working-file edits to same-named project materials', () => {
+    const root = folder()
+    const materials = folder()
+    const changes = changedFiles(materials, [tool(['README.md']), tool([join(root, 'src', 'a.ts')]), tool([join(materials, 'src', 'a.ts')])], [], false)
+    expect(changes.map(c => c.path)).toEqual(['src/a.ts'])
+  })
+
   it('adds files under a free name', () => {
     const root = folder()
     addFile(root, '', 'README.md', Buffer.from('x'))

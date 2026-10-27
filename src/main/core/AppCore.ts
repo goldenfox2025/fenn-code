@@ -1,3 +1,4 @@
+import { projectFilesLibraryId, projectFilesOwner } from '../../shared/library'
 /**
  * The application service behind window.fenn. Electron-free so it can
  * be driven from tests; main/index.ts only wires it to IPC.
@@ -7,9 +8,10 @@ import { existsSync, mkdirSync, readdirSync, rmSync, rmdirSync, statSync, writeF
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { setAcpDebugLog } from '../backends/acp/debugLog'
 import { homedir } from 'node:os'
-import { boardWidgetKey, type AppEvent, type AppSettings, type AppSnapshot, type Attachment, type BoardWidget, type Conversation, Message, NewChatOptions, Project, Routine, Schedule, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
+import { type AppEvent, type AppSettings, type AppSnapshot, type Attachment, type Conversation, Message, NewChatOptions, Project, Routine, Schedule, SearchHit, Connector, ConnectorView, AppInfo, UpdateCheck, ProgressItem, ProgressPatch, FolderCandidate, UsageSummary } from '../../shared/model'
 import { noContext, removeTurn } from '../../shared/usage'
 import { UsageCalendar } from './UsageCalendar'
+import { ConversationContext } from './ConversationContext'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import type { ToolServer } from '../tools/ToolServer'
@@ -21,6 +23,7 @@ import { addFile, changedFiles, createEntry, inside, listFolder, readPreview, re
 import { Artifacts } from './Artifacts'
 import { ComputerControl, GRANT_IDLE_MS, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
 import { ChatService, excerpt, textOf } from './ChatService'
+import { resolveReferences } from './ConversationReferences'
 import { AutoAssigner } from './AutoAssigner'
 import { folderSafeName, moveContents, uniqueDir } from './autoFolder'
 import { isUnsafeFolder } from '../../shared/unsafeFolders'
@@ -31,12 +34,13 @@ import { Scheduler } from './Scheduler'
 import { BACKENDS_EXAMPLE, PREFERRED_BACKENDS } from '../backends/registry'
 import { titleFrom } from './titles'
 import { routineTools } from './tools/routineTools'
-import { boardTools } from './tools/boardTools'
 import { applyPatch, removeItem } from './progress'
 import { FolderFinder, foldersInText, matchingFolders, rankFolders } from './folders'
 import { getLang, localeTag, t } from '../../shared/i18n'
 import { MODEL_PROBE_TIMEOUT_MS, type BackendModelCatalog } from '../../shared/model'
 import { classifyError } from '../../shared/errors'
+import { BrowserTools } from '../browser/BrowserTools'
+import { BrowserPermissions } from '../browser/BrowserPermissions'
 
 /**
  * How long the computer-access card waits. computer_request_access returns before an agent's own tool deadline
@@ -55,9 +59,12 @@ export class AppCore {
   readonly peers: PeerMail
   readonly memory: ProjectMemory
   private readonly calendar: UsageCalendar
+  private readonly context: ConversationContext
   readonly files: ProjectFiles
   readonly artifacts: Artifacts
   computer?: ComputerControl
+  readonly browser: BrowserTools
+  readonly browserPolicy: BrowserPermissions
   private readonly secrets: { seal(v: string): string; unseal(v: string): string }
 
   constructor(
@@ -86,26 +93,21 @@ export class AppCore {
     this.memory.onChange = (projectId) => this.publish({ type: 'memory-changed', projectId })
     this.files = new ProjectFiles(store.dir)
     this.artifacts = new Artifacts(store.dir)
+    this.context = new ConversationContext(store, backends, conversation => publish({type:'conversation',conversation}))
+    this.chat.turnEndListeners.add(id => this.context.maintain(id))
     this.orchestrator = new Orchestrator(store, this.chat, tools, this.memory, this.files, this.artifacts, backends)
     this.peers = new PeerMail(store, this.chat, publish)
     this.orchestrator.peers = this.peers
     this.orchestrator.progress = (projectId, patch, by) => this.applyProgress(projectId, patch, by)
     this.orchestrator.onProjectChanged = (project) => this.publish({ type: 'project', project })
     this.orchestrator.pickBackend = (preferred) => this.resolveBackend(preferred)
+    this.browserPolicy = new BrowserPermissions((id, request) => this.chat.askUser(id, request, 120_000))
+    this.browser = new BrowserTools(store.dir, () => ({ browserMode: 'auto' }), this.browserPolicy)
+    this.chat.turnStartListeners.add(id => this.browserPolicy.begin(id))
+    this.chat.turnEndListeners.add(id => this.browserPolicy.end(id))
     this.orchestrator.extraTools = (conv) => [
+      this.browser.tool(conv.id, this.browserPolicy.current(conv.id) || 'inactive'),
       ...routineTools({ store, isUnattended: (id) => this.chat.isUnattended(id), notice: (id, text, key) => this.chat.notice(id, 'info', text, key), save: (r) => this.saveRoutine(r), remove: (id) => this.deleteRoutine(id) }, conv),
-      ...boardTools(
-        {
-          store,
-          isUnattended: (id) => this.chat.isUnattended(id),
-          notice: (id, text, key) => this.chat.notice(id, 'info', text, key),
-          put: (w) => this.putBoardWidget(w),
-          remove: (id) => this.deleteBoardWidget(id),
-          saveRoutine: (r) => this.saveRoutine(r),
-          deleteRoutine: (id) => this.deleteRoutine(id)
-        },
-        conv
-      ),
       ...(this.computer?.tools(conv) ?? [])
     ]
     // What the app keeps per conversation goes with it.
@@ -113,6 +115,8 @@ export class AppCore {
       this.calendar.reset()
       this.tools.revoke(id)
       this.computer?.forget(id)
+      this.browserPolicy.end(id)
+      void this.browser.stop(id)
       this.peers.removed(id)
       this.switches.delete(id)
       this.movedNotes.delete(id)
@@ -288,7 +292,6 @@ export class AppCore {
       projects: this.store.projects,
       conversations: this.store.conversations,
       routines: this.store.routines,
-      boardWidgets: this.store.boardWidgets,
       settings: this.store.settings,
       backends: this.backends.list(),
       platform: this.platform,
@@ -522,13 +525,14 @@ export class AppCore {
     return conv
   }
 
-  async send(conversationId: string, text: string, attachments?: Attachment[]): Promise<void> {
+  async send(conversationId: string, text: string, attachments?: Attachment[], referenceIds?: string[]): Promise<void> {
+    const references = resolveReferences(this.store, conversationId, referenceIds)
     await this.takePendingBackend(conversationId)
     const conv = this.store.conversation(conversationId)
     // Writing in a resolved thread reopens it, as in Claude Projects.
     if (conv?.resolved) this.chat.patchConversation(conversationId, { resolved: false })
     // The agent's own slash commands go to it as typed (ChatService decides once the session says which it has).
-    void this.chat.send(conversationId, text, { attachments })
+    void this.chat.send(conversationId, text, { attachments, references: references.length ? references : undefined })
   }
 
   /**
@@ -563,7 +567,7 @@ export class AppCore {
     await this.takePendingBackend(conversationId)
     const { text, attachments } = splitUserMessage(lastUser)
     const variant = await this.chat.rewind(conversationId, lastUser.id)
-    void this.chat.send(conversationId, text, { attachments, variant })
+    void this.chat.send(conversationId, text, { attachments, variant, references: lastUser.references })
   }
 
   async editMessage(conversationId: string, messageId: string, text: string): Promise<void> {
@@ -572,7 +576,7 @@ export class AppCore {
     await this.takePendingBackend(conversationId)
     const { attachments } = splitUserMessage(m)
     const variant = await this.chat.rewind(conversationId, messageId)
-    void this.chat.send(conversationId, text, { attachments, variant })
+    void this.chat.send(conversationId, text, { attachments, variant, references: m.references })
   }
 
   switchVariant(conversationId: string, group: string, index: number) {
@@ -580,8 +584,14 @@ export class AppCore {
   }
 
   cancel(conversationId: string) {
+    this.browserPolicy.end(conversationId)
+    void this.browser.stop(conversationId)
     return this.chat.cancel(conversationId)
   }
+
+  async browserInfo(id: string) { return this.browser.info(id) }
+  async browserFrame(id: string) { return this.browser.frame(id) }
+  async stopBrowser(id: string) { this.browserPolicy.end(id); await this.browser.stop(id) }
 
   queuedMessage(conversationId: string, id: string, action: 'now' | 'take') {
     return this.chat.queuedMessage(conversationId, id, action)
@@ -871,6 +881,13 @@ export class AppCore {
 
   async updateConversation(id: string, patch: Partial<Conversation>): Promise<void> {
     const before = this.store.conversation(id)
+    // Workflow metadata is owned by the core, never by a generic renderer patch.
+    const { workspace: _workspace, review: _review, isolateWorkspace: _isolate, ...editable } = patch
+    patch = editable
+    if (before?.kind === 'thread' && (before.isolateWorkspace || before.review)) {
+      if (patch.resolved === true && before.review?.state !== 'accepted') throw new Error(t('请在主对话中验收这项交付。'))
+      if ('cwd' in patch) throw new Error(t('讨论串使用独立工作区，不能直接切换目录。'))
+    }
     if (before?.kind === 'chat' && 'projectId' in patch) {
       const { projectId: _ignored, ...rest } = patch
       patch = rest
@@ -903,6 +920,33 @@ export class AppCore {
     const c = this.store.conversation(id)
     if (c?.kind === 'project' && this.store.project(c.projectId)) throw new Error(t('这是项目的主对话，不能单独删除。要删除，请删除整个项目。'))
     return this.dropConversation(id)
+  }
+
+  async inspectDelivery(id: string, revision: string, analyzeAgain = false) {
+    const inspected = await this.orchestrator.reviews.inspect(id, revision)
+    const review = analyzeAgain ? { ...inspected, recommendation: undefined } : inspected
+    if (analyzeAgain) {
+      this.chat.patchConversation(id, { review })
+    }
+    if (!review.recommendation) this.orchestrator.reviews.notify(id)
+    return review
+  }
+
+  async acceptDelivery(id: string, revision: string): Promise<void> {
+    return this.orchestrator.reviews.accept(id, revision)
+  }
+
+  async deliveryFile(id: string, revision: string, path: string) {
+    return this.orchestrator.reviews.file(id, revision, path)
+  }
+
+  async returnDelivery(id: string, revision: string, feedback: string, continuation: 'thread' | 'main' = 'thread'): Promise<void> {
+    if (continuation !== 'thread' && continuation !== 'main') throw new Error('Invalid continuation')
+    return this.orchestrator.reviews.returnForChanges(id, revision, feedback, continuation)
+  }
+
+  async discussDelivery(id: string, revision: string, feedback: string): Promise<void> {
+    return this.orchestrator.reviews.discuss(id, revision, feedback)
   }
 
   private async dropConversation(id: string): Promise<void> {
@@ -942,15 +986,6 @@ export class AppCore {
 
   async cancelPeerMessage(id: string): Promise<void> {
     this.peers.cancel(id)
-  }
-
-  async react(messageId: string, conversationId: string, emoji: string): Promise<void> {
-    const m = this.store.message(conversationId, messageId)
-    if (!m) return
-    const set = new Set(m.reactions ?? [])
-    set.has(emoji) ? set.delete(emoji) : set.add(emoji)
-    m.reactions = [...set]
-    this.chat.updateMessage(m)
   }
 
   async artifactInfo(id: string) {
@@ -1117,40 +1152,25 @@ export class AppCore {
   }
 
   async deleteRoutine(id: string): Promise<void> {
-    const r = this.store.routines.find((x) => x.id === id)
     this.store.removeRoutine(id)
     this.publish({ type: 'routine-removed', id })
-    // A card it refreshed keeps its last data.
-    const w = r?.widgetId && this.store.boardWidgets.find((x) => x.id === r.widgetId)
-    if (w && w.routineId === id) this.putBoardWidget({ ...w, routineId: undefined })
-  }
-
-  // ---- home board ---------------------------------------------------------
-
-  /** Adds or replaces a card; a new one also goes on the board when the user has arranged it. */
-  putBoardWidget(w: BoardWidget): void {
-    const isNew = !this.store.boardWidgets.some((x) => x.id === w.id)
-    this.store.putBoardWidget(w)
-    this.publish({ type: 'board-widget', widget: w })
-    const layout = this.store.settings.homeWidgets
-    if (isNew && layout && !layout.includes(boardWidgetKey(w.id))) this.publish({ type: 'settings', settings: this.store.patchSettings({ homeWidgets: [...layout, boardWidgetKey(w.id)] }) })
-  }
-
-  /** Deletes a card, and the routine that refreshed it. */
-  async deleteBoardWidget(id: string): Promise<void> {
-    const w = this.store.boardWidgets.find((x) => x.id === id)
-    if (!w) return
-    this.store.removeBoardWidget(id)
-    this.publish({ type: 'board-widget-removed', id })
-    if (w.routineId) await this.deleteRoutine(w.routineId)
-    const layout = this.store.settings.homeWidgets
-    if (layout?.includes(boardWidgetKey(id))) this.publish({ type: 'settings', settings: this.store.patchSettings({ homeWidgets: layout.filter((x) => x !== boardWidgetKey(id)) }) })
   }
 
   // ---- project memory -----------------------------------------------------
 
   async listMemory(projectId: string) {
     return this.memory.list(projectId)
+  }
+  async listMemorySkills(projectId: string) {
+    const project = this.store.project(projectId)
+    if (!project) throw Error('项目不存在。')
+    return memorySkills(project.cwd).map(({ path: _path, ...skill }) => skill)
+  }
+  async composeMemory(projectId: string, input: MemoryInput) {
+    const project = this.store.project(projectId)
+    if (!project) throw Error('项目不存在。')
+    const conv = this.store.requireConversation(project.conversationId)
+    return draftMemory(input, prompt => this.backends.ask(conv.backendId, prompt, { cwd: project.cwd, modelId: conv.modelId, optionValues: conv.optionValues }), project.cwd)
   }
 
   async saveMemory(projectId: string, e: { name: string; description: string; type?: string; body: string }): Promise<void> {
@@ -1179,6 +1199,11 @@ export class AppCore {
 
   /** The working folder behind the files panel of a project or a conversation, and the conversations whose changes it shows. */
   private libraryOf(id: string): { root?: string; convs: string[] } {
+    const sourceProject = projectFilesOwner(id)
+    if (sourceProject) {
+      if (!this.store.projects.some((project) => project.id === sourceProject)) return { convs: [] }
+      return { root: this.files.directory(sourceProject), convs: this.store.conversations.filter((conversation) => conversation.projectId === sourceProject).map((conversation) => conversation.id) }
+    }
     const project = this.store.projects.find((p) => p.id === id)
     if (project) return { root: project.cwd, convs: this.store.conversations.filter((c) => c.projectId === id).map((c) => c.id) }
     const conv = this.store.conversations.find((c) => c.id === id)
@@ -1197,7 +1222,10 @@ export class AppCore {
   async libraryChanges(id: string) {
     const { root, convs } = this.libraryOf(id)
     if (!root) return []
-    return changedFiles(root, convs.flatMap((c) => this.store.messagesOf(c)), convs.map((c) => this.chat.scratchPath(c)))
+    // Relative tool paths and migrated scratch files belong to the working
+    // directory, never the separate project-materials store.
+    const materials = !!projectFilesOwner(id)
+    return changedFiles(root, convs.flatMap((c) => this.store.messagesOf(c)), materials ? [] : convs.map((c) => this.chat.scratchPath(c)), !materials)
   }
 
   async readLibraryFile(id: string, rel: string) {
@@ -1212,7 +1240,7 @@ export class AppCore {
   async locateFile(path: string, near?: string): Promise<{ libraryId?: string; rel?: string }> {
     const conv = near ? this.store.conversation(near) : undefined
     // Only the folders of the conversation the link is in (and its project): a file anywhere else opens view-only.
-    const ids = conv ? [conv.id, ...(conv.projectId ? [conv.projectId] : [])] : []
+    const ids = conv ? [conv.id, ...(conv.projectId ? [conv.projectId, projectFilesLibraryId(conv.projectId)] : [])] : []
     for (const id of ids) {
       const { root } = this.libraryOf(id)
       if (!root) continue
@@ -1518,6 +1546,7 @@ export class AppCore {
   usageCalendar(): Promise<UsageSummary> {
     return this.calendar.summary()
   }
+  organizeContext(id: string): Promise<void> { return this.context.refresh(id) }
 
   appInfo(): AppInfo {
     return { ...this.info, defaultFolder: this.defaultFolder(), updates: !!this.updateFeed }
@@ -1630,3 +1659,5 @@ function validRoutine(r: Partial<Routine>): boolean {
   return typeof r.name === 'string' && !!r.name.trim() && typeof r.prompt === 'string' && !!r.prompt.trim() &&
     scheduleOk && !!r.target && typeof r.target === 'object' && typeof r.enabled === 'boolean'
 }
+import { draftMemory, memorySkills } from '../memory/MemoryDrafts'
+import type { MemoryInput } from '../../shared/memoryInput'

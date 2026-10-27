@@ -1,12 +1,10 @@
 # Fenn Code
 
-**A desktop workspace for the AI agents you already use.** Chats, projects that split work into threads, scheduled tasks and computer control, on top of Codex, Claude Code, Grok, Antigravity, Qoder or any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) (ACP).
+**A desktop workspace for the AI agents you already use.** Chats, project threads, interactive replies, scheduled tasks and computer control, with Codex, Claude Code, Grok, Qoder, Antigravity or another agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) (ACP).
 
-[简体中文](README.zh.md) · [Download](../../releases) · [Build from source](#build-from-source)
+[简体中文](README.zh.md) · [Download](https://github.com/goldenfox2025/fenn-code/releases) · [Build from source](#build-from-source)
 
 ![Fenn Code: a project chat with its threads, and one thread asking which headline to use](docs/screenshots/en/hero.webp)
-
-> **Unofficial.** Fenn Code is an independent open-source project. It is not affiliated with, endorsed by or sponsored by Anthropic. "Claude" is a trademark of Anthropic. Fenn Code does not include or call Claude by itself; it borrows the look and workflow of the Claude desktop app and runs whichever agent you connect.
 
 ## Why Fenn Code
 
@@ -17,6 +15,8 @@ Command-line agents are good at the work but leave you with a terminal per task.
 ### Projects with threads
 
 A project has its own chat, run by a coordinator agent. It answers small questions itself and starts a **thread** for anything that takes real work. Each thread keeps a live checklist, names its current obstacle, and asks for a decision with a card when it needs one. An overview shows what is waiting on you, what is in progress and what is done, next to a progress board of milestones the agents keep up to date.
+
+Research and investigation threads share the project's context and folder. Code-changing threads receive their own branch and worktree from the project's committed HEAD; an investigation can request a code workspace and continue in the same thread. Uncommitted project changes are excluded from new worktrees. A worker submits its delivery and automatically triggers coordinator review of the actual changes, evidence, overlaps and integration impact. A compact review card sits below the thread's history and above its composer. Open its details for analysis, the integration plan and changed files, then **Approve and merge** or **Comment**. Approval integrates the checked revision. Comments go to the coordinator for discussion and do not automatically restart the worker; you can discuss the direction in the current thread or the main chat. Investigation findings can be accepted without merging experimental code. Updated deliveries and a changed integration branch require fresh review. Dirty checkouts and detected merge conflicts block merging. Worktrees are retained for follow-up work, and non-Git projects support review without a Git merge.
 
 Project memory, files and progress belong to the project, not to an agent session, so a new session (or another backend) picks up where the last one left off.
 
@@ -33,21 +33,23 @@ With computer control switched on (Settings → General), an agent whose model c
 
 ### Any ACP agent, five built in
 
-Codex, Claude Code, Grok, Antigravity and Qoder are built in, and the first one installed, in that order, is suggested as the default. Settings → Agent backends shows whether each one is installed and, where the agent reports it, signed in. It checks for updates only when you ask. Any other ACP agent is one entry in `backends.json` (see [Adding a backend](#adding-a-backend)).
+Codex, Claude Code, Grok, Qoder and Antigravity are built in. On first setup, the first installed agent in that order is suggested as the default; you can choose another in Settings → Agent backends. This page shows installation and sign-in information where the agent reports it, and checks for updates when you ask. Any other ACP agent is one entry in `backends.json` (see [Adding a backend](#adding-a-backend)).
 
-Fenn Code never installs an agent on its own. The install and upgrade buttons show the exact command and wait for you to confirm, and the model picker only lists agents that are ready to use. You can pick a model and thinking level before the first message, and a chat can switch to another agent, which receives the conversation so far (during a reply, the switch takes effect from the next message).
+Fenn Code never installs an agent on its own. The install and upgrade buttons show the exact command and wait for you to confirm. The model picker hides agents detected as uninstalled or signed out. You can pick a model and supported thinking level before the first message; choices are remembered per backend. A chat can switch to another agent, which receives the conversation so far (during a reply, the switch takes effect from the next message).
 
 If a CLI isn't on `PATH` (a shell alias, or bundled inside another app), set its path under Settings → Agent backends: Codex takes the CLI and the `codex-acp` adapter, Qoder the CLI and, for its JS entry, Node, and Antigravity its server program. With Qoder, the usage button shows your account's credits instead of tokens.
 
 ![Settings: Codex and Claude Code signed in, Grok up to date](docs/screenshots/en/backends.webp)
 
-### Outputs
+### Interactive replies and outputs
 
-Ask an agent for an interactive chart, comparison or small simulator. Controls appear between the paragraphs of its answer, inherit the conversation's colors, and grow with their content. No page card needs opening. The agent uses `render_ui` for this, and `publish_page` for a separate webpage; it can also explicitly choose the side pane. Embedded UI can be expanded manually, and keeps version history.
+Ask an agent for an interactive chart, comparison or small simulator. Controls appear inside its reply, follow the conversation's theme, and can be expanded into the side pane. The agent can also choose the side pane directly. Previews keep version history, and the side pane retains up to three recent previews to avoid reloading them each time.
 
-When an agent hands over a file or a link, it shows up as a card under its reply and in the project's **Outputs** library, with the thread it came from. Files open in their default app.
+Built-in line and bar charts support tooltips, series toggles, keyboard navigation and a data table. Their chart library ships with the app, so viewing these charts needs no CDN download. Documents and reports default to Markdown unless you request another format.
 
-![The Outputs library of a project](docs/screenshots/en/outputs.webp)
+For agents, the tools are `render_ui` for inline controls, `render_chart` for statistical charts, and `publish_page` for a standalone webpage. These tools are available through Fenn Code's MCP server.
+
+Files and links handed over by an agent appear as cards under its reply. Files open inside Fenn Code for inspection; working files are also available in the project's **Library**. Added project documents remain accessible from the project panel's menu. There is no separate Outputs tab.
 
 ### Scheduled tasks
 
@@ -59,16 +61,20 @@ Run a prompt once, every few minutes, daily, weekly or on a cron schedule, and h
 
 Light, dark or follow the system, in English or Simplified Chinese. The language follows your system until you pick one in Settings → Appearance.
 
-Also included: attachments, editing and regenerating with version history, token and cost usage as the agent reports it (over ACP or in its own session log, never estimated), chats grouped by working folder, sub-conversations the agent can hand side work to, working folders with file and terminal tools, MCP connectors, full-text search, desktop notifications, and a new-chat page with usage figures, an activity heatmap, your most used models and cards that agents can put there and refresh on a schedule.
+Also included: attachments, editing and regenerating with version history, chats grouped by working folder, sub-conversations the agent can hand side work to, working folders with file and terminal tools, MCP connectors, full-text search, desktop notifications.
+
+Usage follows the backend: Qoder shows account credits; other backends show reported tokens and context figures where available. API-equivalent cost is labeled as a list-price estimate, not an account bill. Reply timing includes first response, output speed and observed time per output token (TPOT) when enough data is available. These are client observations, not GPU timings; missing token counts are not guessed.
 
 ## Quick start
 
-1. From [Releases](../../releases), download the Windows installer (`Fenn-Code-Setup-<version>.exe`) or the portable `Fenn-Code-<version>-win.zip` (unzip it anywhere and run `FennCode.exe`). Releases carry Windows x64 builds. For macOS, each CI run also produces unsigned zips for Apple Silicon and Intel (`Fenn-Code-<version>-mac-arm64.zip` / `-mac-x64.zip`, under the run's artifacts); see [opening an unsigned build on macOS](#opening-an-unsigned-build-on-macos). On Linux, [build from source](#build-from-source). The build is not code-signed, so Windows SmartScreen may ask first: choose **More info → Run anyway**.
+This README describes the current source. Tagged releases can lag behind; check their release notes or [build from source](#build-from-source).
+
+1. On Windows, download the installer (`Fenn-Code-Setup-<version>.exe`) or portable `Fenn-Code-<version>-win.zip` from [Releases](https://github.com/goldenfox2025/fenn-code/releases). For the portable version, unzip it and run `FennCode.exe`. Published releases carry Windows x64 builds. On macOS and Linux, [build from source](#build-from-source). Windows builds are not code-signed; SmartScreen may ask you to choose **More info → Run anyway**.
 2. Install and sign in to at least one agent, in a terminal or with the **Install** and **Sign in** buttons in Settings → Agent backends:
 
    | Agent | Install | Sign in | Status |
    |---|---|---|---|
-   | Codex (suggested) | `npm install -g @openai/codex @agentclientprotocol/codex-acp` | `codex login` | Tested end to end on Windows 11 |
+   | Codex | `npm install -g @openai/codex @agentclientprotocol/codex-acp` | `codex login` | Tested end to end on Windows 11 |
    | Claude Code | `npm install -g @anthropic-ai/claude-code @agentclientprotocol/claude-agent-acp` | `claude auth login` | Supported through `claude-agent-acp`; connection verified (start-up and model list), full chat not yet tested |
    | Grok | `npm install -g @xai-official/grok` | **Sign in** in Settings (grok.com account), or an xAI API key | Supported |
    | Antigravity | **Install** in Settings (downloads Google's `agy_acp_server` into `~/.agy-acp-server`) | **Sign in** in Settings (Google account), or a Gemini API key | Supported |
@@ -82,24 +88,29 @@ Also included: attachments, editing and regenerating with version history, token
 | Platform | Status |
 |---|---|
 | Windows 11 (x64) | Prebuilt release. Tested, including computer control. Windows 10 should work but has not been tested. |
-| macOS | Build from source. Not yet verified on real machines; feedback welcome. There is no Apple signing identity, so builds are signed ad hoc and Gatekeeper blocks a copy you downloaded (see below). Computer control needs the Accessibility and Screen Recording permissions. |
+| macOS | Build from source for Apple Silicon or Intel. Support is under active testing; CI results do not establish full desktop compatibility. Builds use ad-hoc signing and are not notarized. Computer control needs Accessibility and Screen Recording permissions. |
 | Linux | Build from source. Not yet verified on real desktop machines; feedback welcome. Computer control needs an X11 session and `xdotool` (Wayland isn't supported). |
 
 ### Opening an unsigned build on macOS
 
-An app you built on the same Mac normally opens directly. A copy that was downloaded (for example a CI artifact, or one someone sent you) is quarantined, and macOS says it can't be opened or is damaged. On macOS 15 and later, right-click → **Open** no longer gets past this. Either remove the quarantine flag in Terminal:
+For testing, successful [build workflow runs](https://github.com/goldenfox2025/fenn-code/actions/workflows/build.yml) may provide macOS ZIP artifacts for Apple Silicon and Intel. These have no Apple Developer ID signature or notarization; building on your own Mac is the recommended route.
+
+Gatekeeper may block a downloaded copy or report it as damaged. For a build you trust, first try opening it, then choose **Open Anyway** in **System Settings → Privacy & Security**. If it is quarantined, you can remove that flag in Terminal:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/Fenn Code.app"
 ```
 
-or try to open the app once, then go to **System Settings → Privacy & Security**, choose **Open Anyway** next to the message about Fenn Code, and confirm.
-
-A zip packaged on Linux or Windows carries no signature at all. If an Apple Silicon Mac still says it is damaged after the step above, sign it ad hoc yourself: `codesign --force --deep -s - "/Applications/Fenn Code.app"`.
-
 ## Build from source
 
-You need [Node.js](https://nodejs.org) 22 or newer and git. Clone this repository, then run one command in it:
+You need [Node.js](https://nodejs.org) 22 or newer and git:
+
+```bash
+git clone https://github.com/goldenfox2025/fenn-code.git
+cd fenn-code
+```
+
+Then run the command for your OS:
 
 | OS | Command |
 |---|---|
@@ -112,22 +123,23 @@ Without the scripts: `npm install`, then `npm run dist -- --publish never` packa
 
 ## Known limits
 
-- macOS and Linux builds are not yet verified on real machines, and macOS builds are not notarized (see [above](#opening-an-unsigned-build-on-macos)).
+- macOS and Linux desktop support is still being validated. macOS artifacts have no Developer ID signature or notarization (see [above](#opening-an-unsigned-build-on-macos)).
+- Side-pane caching covers up to three recent previews. Inline UI can reload when you leave and return to a conversation; its temporary control state is not guaranteed to survive that navigation.
 - Computer control needs a model that can read images. On macOS, allow Fenn Code under System Settings → Privacy & Security → Accessibility and → Screen Recording. On Linux it needs X11 and `xdotool`.
 - Codex, Claude Code, Grok and Qoder install through npm and need Node.js on the machine.
 - Antigravity's Windows server is a large PyInstaller "onefile" program that unpacks some 330 MB to the temp folder on every start. **Start faster**, next to it in Settings → Agent backends, unpacks it once into `~/.agy-acp-server` so later starts skip that.
-- Whether an agent is signed in is shown only where the agent reports it.
+- Sign-in state is shown where the agent reports it. Installation and sign-in indicators do not prove that a full inference request will succeed.
 - Antigravity is told the chat's folder is its working directory, so its files land there; a command it runs without naming a working directory may still start in its own skills folder (`~/.gemini/antigravity-cli/skills`).
-- In Codex's default "Auto review" mode, Codex has its own reviewer model look at each call to Fenn Code's tools before it runs, which costs a model call per tool call.
+- An agent's own review and approval settings can add steps before a tool runs. Their latency and usage depend on the backend's configuration.
 - Custom and project instructions go in as the system prompt where the agent says it takes one (Grok and Antigravity do; so does Claude Code where its adapter advertises it), so they survive its compaction. Other agents, such as Codex and Qoder, get them in the first message of each session instead, and again after a compaction the app notices.
 
 ## Privacy
 
-- Fenn Code has no account, server or telemetry of its own. Your chats, projects and settings stay in its data folder; API keys you enter are encrypted with the OS keychain.
+- Fenn Code has no account, remote service or telemetry of its own. Your chats, projects and settings stay in its data folder. API keys use OS-backed encryption when available; when it is unavailable, secret values fall back to plaintext in the local configuration.
 - Ordinary chats send the agent what you write, plus, once per session, short notes from the app and your **Custom instructions** (Settings → General). Chat titles are made locally from your first message; no agent is asked to name a chat.
 - Projects keep long work going by writing to their agents themselves: the brief that starts a thread, notes between threads, a request to continue after the app restarts, and, when a session's context is nearly full, a summary of the work so far and a request to save memory before a fresh session takes over. That hand-over happens only in project conversations, after about 60 turns or 160,000 characters in one session, and costs one summary call plus one short turn. Scheduled tasks run the prompts you set. All of these go to your agent like any other message.
 - **What agents may do without asking.** Reads and edits inside a chat's working folder (links resolved, so a link can't point an "inside" path elsewhere) and web fetches go ahead. Anything else, such as reading files outside the folder, editing outside it, or running a command, asks you inline in that chat, never in a popup. Settings → General → **Allow reading files outside the working folder** (off by default) lets outside reads through too. Scheduled tasks never wait: what would need asking is skipped and their chat says so, except commands in a task whose **Allow running commands** is on (off by default).
-- **Codex Desktop.** Codex Desktop lists every Codex thread on the machine, Fenn's too. By default Fenn keeps its chats out of it: once Fenn is done with a chat's session, it archives that thread in Codex (`codex archive`, local, nothing deleted; Desktop's Archived view still has it) and unarchives it before resuming. A chat open in Fenn right now may still show in Desktop until Fenn releases it. Settings → Agent backends → Codex → **Show Fenn's Codex chats in Codex Desktop** turns sharing on. Only Fenn's own chats are touched.
+- **Codex Desktop.** Main conversations and project threads are shown by default, with their Fenn titles synchronized through Codex's metadata API. Settings → Agent backends → Codex → **Show Fenn's Codex chats in Codex Desktop** can turn this off; those conversations are then archived on release and restored when resumed. Internal text helpers use native `codex exec --ephemeral`, so they leave no conversation in either the active or archived list. Codex's own title helper also uses an ephemeral thread. Only Fenn's owned conversations are synchronized; existing unrelated account history is not modified.
 - It never installs or upgrades an agent without your confirmation, and checks for agent updates only when you ask.
 - **Log agent traffic** (Settings → About → Diagnostics) is off by default; when on, it writes every ACP message, including chat content, to the `logs` folder on your machine.
 
@@ -152,7 +164,7 @@ Without code, add the agent to `backends.json` in the app's data folder (`%APPDA
 ]
 ```
 
-`settings` become fields in Settings (secrets are encrypted with the OS keychain) and reach the agent as environment variables. `login` adds a **Sign in** button that runs the command in a terminal, and `upgrade` adds an **Upgrade** button that asks before running. Click **Reload** after editing; only the entries you changed restart.
+`settings` become fields in Settings and reach the agent as environment variables. Secret fields use the storage described in [Privacy](#privacy). `login` adds a **Sign in** button that runs the command in a terminal, and `upgrade` adds an **Upgrade** button that asks before running. Click **Reload** after editing; only the entries you changed restart.
 
 With code, add a file to `src/main/backends/plugins/`, and it is picked up automatically:
 
@@ -192,8 +204,8 @@ npm run test:e2e          # build, then UI checks with Playwright (Linux: xvfb-r
 npm run dist -- --publish never && npm run test:package   # package, then smoke-test the packaged app
 ```
 
-Tests use a demo ACP agent and never call a real one. Translations live in [`src/shared/i18n`](src/shared/i18n/README.md); adding a language mostly means adding one file. The README screenshots come from `scripts/readme-shots.mjs`, which stages a demo with no real agent or personal data. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+Automated tests use a demo ACP fixture, which is excluded from production packages. Manual tests against real backends require explicit opt-in; see [CONTRIBUTING.md](CONTRIBUTING.md). Translations live in [`src/shared/i18n`](src/shared/i18n/README.md); adding a language mostly means adding one file. The README screenshots come from `scripts/readme-shots.mjs`, which stages a demo with no real agent or personal data.
 
 ## License
 
-[MIT](LICENSE). Fenn Code is not affiliated with Anthropic, OpenAI, xAI, Google or Qoder; product names belong to their owners.
+[MIT](LICENSE).

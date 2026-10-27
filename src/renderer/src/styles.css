@@ -4,6 +4,7 @@
  */
 @import './styles/01-frame.css';
 @import './styles/02-main.css';
+@import './styles/02-controls.css';
 @import './styles/03-transcript.css';
 @import './styles/04-composer.css';
 @import './styles/05-menus.css';
@@ -23,3 +24,12 @@
 @import './styles/20-fox-mark.css';
 @import './styles/21-text-select.css';
 @import './styles/22-dot-field.css';
+@import './styles/23-project-review.css';
+@import './styles/24-fox-avatar.css';
+@import './styles/25-memory.css';
+@import './styles/26-context-overview.css';
+
+@import "./styles/27-browser.css";
+
+@import "./styles/28-conversation-nodes.css";
+@import './styles/29-background.css';

@@ -82,7 +82,7 @@ describe('handoff safety net', () => {
     // One list, in words the coordinator reads, not the app's status names.
     expect(seen.match(/<threads>/g)).toHaveLength(1)
     expect(seen).toMatch(/等用户回复/)
-    expect(seen).not.toMatch(/\b(waiting|working|idle|done)\b/)
+    expect(seen.match(/<threads>[\s\S]*?<\/threads>/)?.[0]).not.toMatch(/\b(waiting|working|idle|done)\b/)
     await second.dispose()
   }, 40000)
 

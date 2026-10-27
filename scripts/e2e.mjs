@@ -5,15 +5,21 @@ import { _electron as electron } from 'playwright-core'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import assert from 'node:assert/strict'
 import { declareTestAgent } from './test-agent.mjs'
+import { clickInFrame, pressInFrame, resizeViewport } from './electron-ui.mjs'
 
 const shots = process.argv[2]
+// The iframe input helper runs in this process; it must share the hidden-window
+// mode passed to Electron, otherwise clicks target an absent top-level surface.
+process.env.FENN_BACKGROUND_TEST = '1'
 const app = await electron.launch({
   args: ['.', '--no-sandbox'],
-  env: { ...process.env, FENN_DATA_DIR: declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-e2e-'))) }
+  env: { ...process.env, FENN_BACKGROUND_TEST: '1', FENN_DATA_DIR: declareTestAgent(mkdtempSync(join(tmpdir(), 'oc-e2e-'))) }
 })
 const page = await app.firstWindow()
-await page.setViewportSize({ width: 1400, height: 900 })
+const setViewport = (size) => resizeViewport(page, size)
+await setViewport({ width: 1400, height: 900 })
 await page.waitForSelector('.sidebar')
 // The checks use Chinese labels, whatever the machine's language.
 await page.evaluate(async () => {
@@ -33,10 +39,15 @@ if (!process.env.KEEP_ONBOARDING && (await page.locator('.onboarding').count()))
 let failed = 0
 // E2E_ONLY=<regex> runs only the matching checks (keep the ones they build on).
 const only = process.env.E2E_ONLY && new RegExp(process.env.E2E_ONLY)
-/** Opens one of the project panel's views under 「…」 (成果, 项目资料, 项目记忆, 定时任务, 里程碑). */
+/** Navigation is direct when it fits, with the remaining destinations in overflow. */
 const panelView = async (label) => {
-  await page.click('.panel-head [data-more]')
-  await page.click(`.menu .menu-item:has-text("${label}")`)
+  await page.locator('.panel .panel-head .tabs').evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const tab = page.locator('.panel-head').getByRole('tab', { name: label, exact: true })
+  if (await tab.isVisible()) await tab.click()
+  else {
+    await page.click('.panel-head [data-more]')
+    await page.click(`.menu .menu-item:has-text("${label}")`)
+  }
 }
 async function check(name, fn) {
   if (only && !only.test(name)) return
@@ -51,14 +62,6 @@ async function check(name, fn) {
   }
   if (shots) await page.screenshot({ path: join(shots, `e2e-${name.replace(/\W+/g, '-')}.png`) }).catch(() => {})
 }
-/** Opens the thread a forwarded line points to. The line moves when the thread card above it changes (its step line comes and goes as the thread works), so a click a move made miss is tried again. */
-const openForwarded = async (line) => {
-  await page.click(line)
-  for (let i = 0; i < 5 && !(await page.locator('.panel .thread-view').count()); i++) {
-    await page.waitForTimeout(300)
-    await page.click(line)
-  }
-}
 const send = async (text) => {
   await page.fill('.composer textarea', text)
   await page.keyboard.press('Enter')
@@ -67,14 +70,15 @@ const send = async (text) => {
   await page.waitForSelector('.working-mark', { state: 'detached', timeout: 20000 })
 }
 
-await check('thanks in a project chat shows the coordinator 👍 on the message', async () => {
+await check('thanks in a project chat receives a reply without reaction controls', async () => {
   await page.click('.nav-item:has-text("项目")')
   await page.click('.page-head .btn')
   await page.fill('.modal input', '端到端')
   await page.click('.modal-actions .btn.primary')
   await page.waitForSelector('.panel')
   await send('谢谢')
-  await page.waitForSelector('.msg-user .reactions .reaction:has-text("👍")', { timeout: 15000 })
+  await page.waitForSelector('.msg-assistant:has-text("不客气")', { timeout: 15000 })
+  assert.equal(await page.locator('.reactions').count(), 0)
 })
 
 await check('the sidebar and the thread panel resize from their inner edge, remember it, reset on double-click, and the sidebar folds away when dragged narrow', async () => {
@@ -131,7 +135,7 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   await drag('.sidebar > .resize-handle', 600)
   await drag('.panel:visible > .resize-handle', -2000)
   for (const w of [1100, 900]) {
-    await page.setViewportSize({ width: w, height: 900 })
+    await setViewport({ width: w, height: 900 })
     await page.waitForTimeout(300)
     near(await width('.sidebar'), 440, `at ${w}px the sidebar keeps its width`)
     const center = await width('.center .workspace > .center')
@@ -140,7 +144,7 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
     if (!composer || composer.width < 300) throw new Error(`at ${w}px the composer is gone`)
   }
   if (await page.locator('.panel:visible').count()) throw new Error('panel still beside the conversation at 900px')
-  await page.click('[data-tip="打开讨论串"]')
+  await page.click('[data-panel-toggle]')
   await page.waitForSelector('.panel.floating')
   // The floating panel covers the conversation: nothing may show through it.
   const panelBg = await page.$eval('.panel.floating', (el) => getComputedStyle(el).backgroundColor)
@@ -148,22 +152,22 @@ await check('the sidebar and the thread panel resize from their inner edge, reme
   if (alpha !== undefined && Number(alpha) < 0.9) throw new Error(`the floating panel is see-through: ${panelBg}`)
   // It closes like a popover: Esc, or a click on the conversation behind it.
   await page.keyboard.press('Escape')
-  await page.waitForSelector('.panel.floating', { state: 'detached', timeout: 2000 })
-  await page.click('[data-tip="打开讨论串"]')
+  await page.waitForSelector('.panel.floating', { state: 'hidden', timeout: 2000 })
+  await page.click('[data-panel-toggle]')
   await page.waitForSelector('.panel.floating')
   await page.mouse.click(400, 300)
-  await page.waitForSelector('.panel.floating', { state: 'detached', timeout: 2000 })
-  await page.click('[data-tip="打开讨论串"]')
+  await page.waitForSelector('.panel.floating', { state: 'hidden', timeout: 2000 })
+  await page.click('[data-panel-toggle]')
   await page.waitForSelector('.panel.floating')
-  await page.setViewportSize({ width: 1400, height: 900 })
+  await setViewport({ width: 1400, height: 900 })
   await page.waitForTimeout(300)
   if (await page.locator('.panel.floating').count()) throw new Error('panel still floating in a wide window')
   near(await width('.sidebar'), 440, 'sidebar back to its chosen width')
   // Narrowing again doesn't bring the floating panel back by itself.
-  await page.setViewportSize({ width: 900, height: 900 })
+  await setViewport({ width: 900, height: 900 })
   await page.waitForTimeout(300)
   if (await page.locator('.panel:visible').count()) throw new Error('the panel floated up by itself')
-  await page.setViewportSize({ width: 1400, height: 900 })
+  await setViewport({ width: 1400, height: 900 })
   await page.waitForTimeout(300)
   await page.dblclick('.sidebar > .resize-handle')
   await page.dblclick('.panel:visible > .resize-handle')
@@ -199,7 +203,7 @@ await check('a project menu like Claude: open with, pin P, rename R, notificatio
   await page.keyboard.press('Escape')
 })
 
-await check('@ in the project chat picks a thread, the message goes straight there, and the project chat keeps one line', async () => {
+await check('@ references stay in the current chat and provide a navigable context chip without forwarding', async () => {
   await page.click('.sidebar .nav-item:has-text("端到端")')
   await send('帮我调研竞品定价')
   await page.waitForSelector('.thread-card', { timeout: 15000 })
@@ -219,25 +223,22 @@ await check('@ in the project chat picks a thread, the message goes straight the
   const typed = await page.inputValue('.center .workspace > .center .composer textarea')
   if (typed !== '再加一家 D 公司') throw new Error('typed after picking: ' + JSON.stringify(typed))
   await page.keyboard.press('Enter')
-  await page.waitForSelector('.thread-event.kind-forwarded:has-text("已转给「调研竞品定价」：再加一家 D 公司")', { timeout: 5000 })
+  await page.waitForSelector('.center .workspace > .center .msg-user:has-text("再加一家 D 公司")')
+  await page.locator('.message-references .conversation-reference').filter({hasText:'调研竞品定价'}).waitFor()
   if (await page.locator('.mention-chip').count()) throw new Error('chip stayed after sending')
-  if (await page.locator('.center .workspace > .center .msg-user:has-text("再加一家")').count()) throw new Error('the message also went to the coordinator')
-  await openForwarded('.thread-event.kind-forwarded')
-  // It reaches the thread at once: waiting while the thread's first reply is still running (slow runners), then sent.
-  await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司"), .panel .queue-row:has-text("再加一家 D 公司")', { timeout: 5000 })
-  await page.waitForSelector('.panel .msg-user:has-text("再加一家 D 公司")', { timeout: 30000 })
+  if (await page.locator('.thread-event.kind-forwarded').count()) throw new Error('reference forwarded the message')
+  await page.locator('.message-references .conversation-reference').filter({hasText:'调研竞品定价'}).click()
+  await page.locator('.panel .chat-title').filter({hasText:'调研竞品定价'}).waitFor()
+  if (await page.locator('.panel .msg-user:has-text("再加一家 D 公司"), .panel .queue-row:has-text("再加一家 D 公司")').count()) throw new Error('referenced thread received a message')
 })
 
 await check('a thread leaves another a message: a card on each side, where it went and where it came from', async () => {
+  await page.click('.sidebar .nav-item:has-text("端到端")')
   await send('帮我写发布说明')
   await page.waitForSelector('.thread-card:has-text("写发布说明")', { timeout: 15000 })
-  await page.click('.center .workspace > .center .composer textarea')
-  await page.keyboard.type('请@竞品')
-  await page.waitForSelector('.mention-menu .menu-item.active:has-text("调研竞品定价")')
-  await page.keyboard.press('Enter')
-  await page.keyboard.insertText('#留言 写发布说明 || now || || 定价结论：D 公司最便宜')
-  await page.keyboard.press('Enter')
-  await openForwarded('.thread-event.kind-forwarded >> nth=-1')
+  await page.locator('.thread-card').filter({hasText:'调研竞品定价'}).click()
+  await page.locator('.panel .composer textarea').fill('#留言 写发布说明 || now || || 定价结论：D 公司最便宜')
+  await page.locator('.panel .composer textarea').press('Enter')
   const out = page.locator('.panel .peer-card.dir-out')
   await out.waitFor({ timeout: 15000 })
   if (!(await out.innerText()).includes('留言给「写发布说明」')) throw new Error('out card: ' + (await out.innerText()))
@@ -341,7 +342,7 @@ await check('long approval cards leave the reading viewport and composer in plac
   const during=await geometry(),card=await page.locator('.perm').boundingBox(),composer=await page.locator('.composer-wrap').boundingBox()
   if(Math.abs(before.height-during.height)>1||Math.abs(before.top-during.top)>1||card.y<50||card.y+card.height>composer.y+1)throw new Error('Approval displaced the conversation: '+JSON.stringify({before,during,card,composer}))
   for(const [width,height] of [[900,650],[640,560],[1400,900]]){
-    await page.setViewportSize({width,height})
+    await setViewport({width,height})
     await page.locator('.perm').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
     const p=await page.locator('.perm').boundingBox(),c=await page.locator('.composer-wrap').boundingBox(),actions=await page.locator('.perm .actions').boundingBox()
     if(p.y<50||p.y+p.height>c.y+1||actions.y+actions.height>p.y+p.height||p.x<0||p.x+p.width>width)throw new Error('Long approval is not reachable in a narrow window: '+JSON.stringify({p,c,actions,width,height}))
@@ -390,11 +391,9 @@ await check('embedded select stays still while the mouse is held and released in
       if(window.recordPicker)requestAnimationFrame(record)
     };record()
   })
-  const target=await select.boundingBox()
-  await page.mouse.move(target.x+target.width/2,target.y+target.height/2)
-  await page.mouse.down()
+  const release = await pressInFrame(select)
   await page.waitForTimeout(300)
-  await page.mouse.up()
+  await release()
   await page.waitForTimeout(300)
   await page.locator('.menu').waitFor()
   await page.locator('.menu').evaluate(el=>el.scrollTop=120)
@@ -434,7 +433,7 @@ await check('threshold annotations reserve a lane instead of overlapping the pre
     if(m.labelTop<m.titleBottom+4||m.barTop<m.labelBottom||m.noteTop<m.barBottom)throw new Error('Threshold annotation overlaps: '+JSON.stringify(m))
   }
   const badge=await frame.locator('.badge').evaluate(el=>el.style.cssText)
-  await frame.locator('#update').click()
+  await clickInFrame(frame.locator('#update'))
   await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
   const updated=await measure()
   if(updated.labelTop<updated.titleBottom+4)throw new Error('Updated threshold overlaps the title: '+JSON.stringify(updated))
@@ -446,7 +445,7 @@ await check('threshold annotations reserve a lane instead of overlapping the pre
   await frame.locator('.marker').evaluate(el=>el.style.left='4%')
   await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
   for(const width of [900,640,1400]){
-    await page.setViewportSize({width,height:900})
+    await setViewport({width,height:900})
     await frame.locator('body').evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
     const m=await measure()
     if(m.labelTop<m.titleBottom+4||m.noteTop<m.barBottom)throw new Error('Annotation collision after window resize: '+JSON.stringify(m))
@@ -461,7 +460,7 @@ await check('legacy full HTML pages use an aligned host picker instead of the na
   const pane=page.locator('.page-panel'),frame=pane.frameLocator('iframe'),select=frame.locator('#legacy-select')
   await select.waitFor()
   const before=await select.boundingBox()
-  await select.click()
+  await clickInFrame(select)
   const menu=page.locator('.menu')
   await menu.waitFor({timeout:3000})
   await menu.evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)))
@@ -500,7 +499,7 @@ await check('charts render offline, fit narrow replies and keep data accessible'
     await canvas.waitFor()
     for(const [theme,width,height] of [['light',1400,900],['dark',860,650],['light',640,600]]){
       await page.evaluate(theme=>window.fenn.updateSettings({theme}),theme)
-      await page.setViewportSize({width,height})
+      await setViewport({width,height})
       await canvas.evaluate(el=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))
       const layout=await canvas.evaluate(el=>{
         const c=Chart.getChart(el),r=el.getBoundingClientRect()
@@ -511,9 +510,9 @@ await check('charts render offline, fit narrow replies and keep data accessible'
       await canvas.press('ArrowRight')
       if(!await canvas.evaluate(el=>Chart.getChart(el).tooltip.opacity>0))throw new Error('Chart keyboard tooltip did not open')
       await canvas.press('Escape')
-      await frame.locator('summary').click()
+      await clickInFrame(frame.locator('summary'))
       if(await frame.locator('tbody tr, table tr').count()!==7)throw new Error('Chart data table is incomplete')
-      await frame.locator('summary').click()
+      await clickInFrame(frame.locator('summary'))
       if(shots)await page.screenshot({path:join(shots,`chart-${theme}-${width}.png`)})
     }
     await send('#柱状图')
@@ -523,7 +522,7 @@ await check('charts render offline, fit narrow replies and keep data accessible'
     if(errors.length)throw new Error('Chart runtime errors: '+errors.join('; '))
   }finally{
     page.off('pageerror',onError)
-    await page.setViewportSize({width:1400,height:900})
+    await setViewport({width:1400,height:900})
   }
 })
 
@@ -539,13 +538,14 @@ await check('interactive pages work inline and expand into a clipped responsive 
   await page.waitForSelector('.turn.streaming', { state: 'detached', timeout: 20000 })
   if (await page.locator('.page-panel').count()) throw new Error('An inline result must not open the side pane')
   const small = inline.frameLocator('iframe')
-  await small.locator('#b').click()
+  await clickInFrame(small.locator('#b'))
+  await small.locator('#n').filter({ hasText: /^1$/ }).waitFor({ timeout: 3000 })
   if ((await small.locator('#n').innerText()) !== '1') throw new Error('Inline JavaScript did not run')
   await page.waitForFunction(() => document.querySelector('.interactive-preview iframe')?.getBoundingClientRect().height < 300)
   const collapsedHeight = await inline.locator('iframe').evaluate((el) => el.getBoundingClientRect().height)
-  await small.getByRole('button', { name: '展开说明' }).click()
+  await clickInFrame(small.getByRole('button', { name: '展开说明' }))
   await page.waitForFunction((before) => document.querySelector('.interactive-preview iframe').getBoundingClientRect().height > before + 50, collapsedHeight)
-  await small.getByRole('button', { name: '展开说明' }).click()
+  await clickInFrame(small.getByRole('button', { name: '展开说明' }))
   await page.waitForFunction((before) => Math.abs(document.querySelector('.interactive-preview iframe').getBoundingClientRect().height - before) < 2, collapsedHeight)
   for (const theme of ['dark', 'light']) {
     await page.evaluate((theme) => window.fenn.updateSettings({ theme }), theme)
@@ -581,7 +581,7 @@ await check('interactive pages work inline and expand into a clipped responsive 
     if (selector === '#edge-right') await select.evaluate((el) => {
       for (let i=0;i<12;i++) el.add(new Option('Another model choice '+i, String(i)))
     })
-    await select.click()
+    await clickInFrame(select)
     const menu=page.locator('.menu')
     await menu.waitFor()
     await menu.evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)))
@@ -594,7 +594,7 @@ await check('interactive pages work inline and expand into a clipped responsive 
     await menu.waitFor({state:'detached'})
   }
   await small.locator('#edge-left').evaluate((el) => el.addEventListener('change',()=>el.dataset.changed='yes'))
-  await small.locator('#edge-left').click()
+  await clickInFrame(small.locator('#edge-left'))
   await page.locator('.menu-item').filter({hasText:'Sol'}).click()
   if (await small.locator('#edge-left').inputValue() !== 'Sol') throw new Error('Select value must remain available to generated UI code')
   if (await small.locator('#edge-left').getAttribute('data-changed') !== 'yes') throw new Error('Selecting an option must notify generated UI code')
@@ -606,11 +606,12 @@ await check('interactive pages work inline and expand into a clipped responsive 
   await inline.getByRole('button', { name: '在侧栏展开' }).click()
   const pane = page.locator('.page-panel')
   await pane.waitFor()
-  await pane.frameLocator('iframe').locator('#b').click()
+  await clickInFrame(pane.frameLocator('iframe').locator('#b'))
+  await pane.frameLocator('iframe').locator('#n').filter({ hasText: /^1$/ }).waitFor({ timeout: 3000 })
   if ((await pane.frameLocator('iframe').locator('#n').innerText()) !== '1') throw new Error('Expanded JavaScript did not run')
   for (const [theme, width, height] of [['light', 1400, 900], ['dark', 860, 560]]) {
     await page.evaluate((theme) => window.fenn.updateSettings({ theme }), theme)
-    await page.setViewportSize({ width, height })
+    await setViewport({ width, height })
     await page.waitForFunction(() => {
       const pane = document.querySelector('.page-panel')
       const frame = pane?.querySelector('iframe')
@@ -629,12 +630,13 @@ await check('interactive pages work inline and expand into a clipped responsive 
   await page.locator('.page-panel.maximized').waitFor()
   await pane.getByRole('button', { name: '还原预览', exact: true }).click()
   await pane.getByRole('button', { name: '查看代码', exact: true }).click()
+  await pane.locator('.page-code').filter({ hasText: '计数器' }).waitFor()
   if (!(await pane.locator('.page-code').innerText()).includes('计数器')) throw new Error('Missing page source')
   await pane.getByRole('button', { name: '预览', exact: true }).click()
   await pane.frameLocator('iframe').locator('#b').waitFor()
   await pane.getByRole('button', { name: '关闭', exact: true }).click()
   await pane.waitFor({ state: 'detached' })
-  await page.setViewportSize({ width: 1400, height: 900 })
+  await setViewport({ width: 1400, height: 900 })
   await send('改一下可视化 侧栏')
   await pane.waitFor()
   await pane.frameLocator('iframe').getByText('计数器 v2', { exact: true }).waitFor()
@@ -648,8 +650,9 @@ await check('reopening a visualization and toggling source preserve its live doc
   const inline = page.locator('.interactive-preview').last()
   await inline.getByRole('button', { name: '在侧栏展开' }).click()
   const pane = page.locator('.page-panel'), frame = pane.frameLocator('iframe')
-  await frame.locator('#b').click()
-  await frame.locator('#b').click()
+  await clickInFrame(frame.locator('#b'))
+  await clickInFrame(frame.locator('#b'))
+  await frame.locator('#n').filter({ hasText: /^2$/ }).waitFor({ timeout: 3000 })
   const origin = await frame.locator('body').evaluate(() => performance.timeOrigin)
   const sameDocument = async (what) => {
     if (await frame.locator('#n').innerText() !== '2') throw new Error(what + ' reset interaction state')
@@ -676,13 +679,13 @@ await check('reopening a visualization and toggling source preserve its live doc
   await frame.locator('#n').filter({ hasText: '0' }).waitFor()
   if (await frame.locator('body').evaluate(() => performance.timeOrigin) === origin) throw new Error('Explicit refresh must create a fresh document')
   const refreshedOrigin = await frame.locator('body').evaluate(() => performance.timeOrigin)
-  await frame.locator('#b').click()
+  await clickInFrame(frame.locator('#b'))
   await pane.getByRole('button', { name: '关闭', exact: true }).click()
   // Old versions remain distinct; a new publish must show its new content.
   await send('改一下可视化 侧栏')
   await frame.getByText('计数器 v2', { exact: true }).waitFor()
-  await frame.locator('#b').click()
-  await frame.locator('#b').click()
+  await clickInFrame(frame.locator('#b'))
+  await clickInFrame(frame.locator('#b'))
   const secondOrigin = await frame.locator('body').evaluate(() => performance.timeOrigin)
   await page.locator('.interactive-preview').first().getByRole('button', { name: '在侧栏展开' }).click()
   if (await frame.locator('#n').innerText() !== '1' || await frame.locator('body').evaluate(() => performance.timeOrigin) !== refreshedOrigin) throw new Error('Switching versions restarted the cached first version')
@@ -718,7 +721,7 @@ await check('appearance offers only opaque light, dark and system themes', async
     })
     if (!/^rgb\(/.test(surface.background) || surface.blur !== 'none') throw new Error(JSON.stringify(surface))
   }
-  await page.click('.user-btn')
+  await page.click('.sidebar-foot button[data-tip="设置"]')
   await page.click('.settings-nav .nav-item:has-text("外观")')
   const settings = page.locator('.settings-body')
   if (/玻璃|Glass/i.test(await settings.innerText())) throw new Error('Retired appearance control still visible')
@@ -727,7 +730,7 @@ await check('appearance offers only opaque light, dark and system themes', async
 })
 
 await check('Esc closes dialogs, and Settings keeps one size on every tab', async () => {
-  await page.click('.user-btn')
+  await page.click('.sidebar-foot button[data-tip="设置"]')
   await page.waitForSelector('.modal.wide')
   // Measure once the dialog has finished rising in.
   const settled = () => page.waitForFunction(() => document.querySelector('.modal.wide')?.getAnimations({ subtree: true }).every((a) => a.playState !== 'running') ?? false, null, { timeout: 3000 })
@@ -745,7 +748,7 @@ await check('Esc closes dialogs, and Settings keeps one size on every tab', asyn
 })
 
 await check('自定义指令 in Settings saves as typed, even when Settings closes with Esc', async () => {
-  await page.click('.user-btn')
+  await page.click('.sidebar-foot button[data-tip="设置"]')
   await page.click('.settings-nav .nav-item:has-text("通用")')
   const box = page.locator('.field:has(label:text-is("自定义指令")) textarea')
   await box.fill('回答简短一些')
@@ -756,7 +759,7 @@ await check('自定义指令 in Settings saves as typed, even when Settings clos
     await page.waitForTimeout(100)
   }
   if (shots) {
-    await page.click('.user-btn')
+    await page.click('.sidebar-foot button[data-tip="设置"]')
     await page.click('.settings-nav .nav-item:has-text("通用")')
     await page.waitForTimeout(400)
     await page.screenshot({ path: join(shots, 'settings-instructions.png') })
@@ -781,7 +784,7 @@ await check('text fields never show the square browser focus ring', async () => 
 })
 
 await check('dialogs keep keyboard focus inside and give it back on close', async () => {
-  await page.focus('.user-btn')
+  await page.focus('.sidebar-foot button[data-tip="设置"]')
   await page.keyboard.press('Enter')
   await page.waitForSelector('.modal.wide')
   const inside = () => page.evaluate(() => !!document.activeElement?.closest('.overlay'))
@@ -792,12 +795,12 @@ await check('dialogs keep keyboard focus inside and give it back on close', asyn
   }
   await page.keyboard.press('Escape')
   await page.waitForSelector('.overlay', { state: 'detached', timeout: 2000 })
-  const back = await page.evaluate(() => document.activeElement?.classList.contains('user-btn'))
+  const back = await page.evaluate(() => document.activeElement?.matches('.sidebar-foot button[data-tip="设置"]'))
   if (!back) throw new Error('focus did not return to the Settings button')
 })
 
 await check('Esc in the add-connector form closes only the form', async () => {
-  await page.click('.user-btn')
+  await page.click('.sidebar-foot button[data-tip="设置"]')
   await page.click('.settings-nav .nav-item:has-text("连接器")')
   await page.click('.settings-body .btn:has-text("添加连接器")')
   await page.waitForSelector('.settings-body h2:has-text("添加连接器")')
@@ -872,7 +875,7 @@ await check('Esc closes the project memory form', async () => {
 })
 
 await check('the connector form has one 取消 and one 保存; settings close from the corner ✕ or Esc', async () => {
-  await page.click('.user-btn')
+  await page.click('.sidebar-foot button[data-tip="设置"]')
   await page.click('.settings-nav .nav-item:has-text("连接器")')
   await page.click('.settings-body .btn:has-text("添加连接器")')
   await page.waitForSelector('.settings-body h2:has-text("添加连接器")')
@@ -896,7 +899,7 @@ await check('the connector form has one 取消 and one 保存; settings close fr
   const saved = await page.evaluate(() => window.fenn.snapshot().then((s) => s.settings.userName))
   if (saved !== 'E2E 名字') throw new Error('name not saved on close: ' + saved)
   await page.evaluate(() => window.fenn.updateSettings({ userName: '' }))
-  await page.click('.user-btn')
+  await page.click('.sidebar-foot button[data-tip="设置"]')
   await page.click('.settings-close')
   await page.waitForSelector('.overlay', { state: 'detached', timeout: 2000 })
 })
@@ -983,12 +986,12 @@ await check('a chat shows its folder’s files beside it, with the files the age
   if (!(await row.locator('.tree-mark').count())) throw new Error('the changed file is not marked')
   await row.click()
   // Earlier code/preview checks persist the Markdown mode, just like a user.
-  await page.locator('.side-pane .preview-head .seg-control button:has-text("预览")').click()
+  await page.locator('.side-pane .preview-head .seg-control').getByRole('radio', { name: '预览', exact: true }).check()
   await page.locator('.side-pane .preview-md h1:has-text("计划.md")').waitFor({ timeout: 3000 })
   if (await page.locator('.preview-head .icon-btn[aria-label="返回文件列表"]').count()) await page.click('.preview-head .icon-btn[aria-label="返回文件列表"]')
-  await page.click('.side-pane .files-tools .chip')
+  await page.locator('.side-pane .files-view-tabs').getByRole('radio', { name: /^更改/ }).check()
   await page.locator('.side-pane .tree-row.change:has-text("计划.md")').waitFor({ timeout: 3000 })
-  await page.click('.side-pane .files-tools .chip')
+  await page.locator('.side-pane .files-view-tabs').getByRole('radio', { name: '文件', exact: true }).check()
 })
 
 await check('the files panel makes, autosaves, renames, shows full screen and deletes a file (取消 focused)', async () => {
@@ -1007,23 +1010,23 @@ await check('the files panel makes, autosaves, renames, shows full screen and de
   await editor.waitFor({ timeout: 3000 })
   await editor.fill('# 标题\n\n正文')
   // Saved by itself after a pause, with no 取消/保存 to press.
-  await pane.locator('.preview-head .small:has-text("已保存")').waitFor({ timeout: 3000 })
+  await pane.locator('.preview-save-state:has-text("已保存")').waitFor({ timeout: 3000 })
   if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文') throw new Error('not saved to disk')
   if (await pane.locator('.preview-head .btn:has-text("取消"), .preview-head .btn:has-text("保存")').count()) throw new Error('取消/保存 still shown')
   if (await pane.locator('.preview-head .icon-btn[aria-label="编辑"]').count()) throw new Error('an edit button is still shown')
   // Typing and switching to 预览 at once still saves; 预览 is read only.
   await editor.press('Control+End')
   await page.keyboard.type('。')
-  await pane.locator('.preview-head .seg-control button:has-text("预览")').click()
+  await pane.locator('.preview-head .seg-control').getByRole('radio', { name: '预览', exact: true }).check()
   await pane.locator('.preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
   if (await pane.locator('.preview-editor').count()) throw new Error('预览 can be typed in')
-  await page.waitForFunction(() => document.querySelector('.files-pane .preview-head .small')?.textContent?.includes('已保存'), null, { timeout: 3000 })
+  await page.waitForFunction(() => document.querySelector('.files-pane .preview-save-state')?.textContent?.includes('已保存'), null, { timeout: 3000 })
   if (readFileSync(join(root, '草稿.md'), 'utf8') !== '# 标题\n\n正文。') throw new Error('not saved on leaving the source')
   // Full screen shows the same file; Esc comes back.
   await pane.locator('.preview-head .icon-btn[aria-label="全屏"]').click()
-  await page.locator('.modal.file-full .preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
+  await page.locator('.file-full .preview-md h1:has-text("标题")').waitFor({ timeout: 3000 })
   await page.keyboard.press('Escape')
-  await page.waitForSelector('.modal.file-full', { state: 'detached', timeout: 2000 })
+  await page.waitForSelector('.file-full', { state: 'detached', timeout: 2000 })
   await back()
   // F2 renames in place.
   await pane.locator('.tree-row:has-text("草稿.md")').focus()
@@ -1053,7 +1056,8 @@ await check('autosave keeps a file’s CRLF line ends, an agent’s change is ne
   })
   writeFileSync(join(root, 'win.txt'), 'one\r\ntwo\r\n')
   writeFileSync(join(root, 'gbk.txt'), Buffer.from([0xd6, 0xd0, 0xce, 0xc4]))
-  await pane.locator('.files-head .icon-btn[aria-label="刷新"]').click()
+  await pane.locator('.files-head').getByRole('button', { name: '文件操作', exact: true }).click()
+  await page.getByRole('menuitem', { name: '刷新', exact: true }).click()
   await pane.locator('.tree-row:has-text("gbk.txt")').click()
   await pane.locator('.preview-head .small:has-text("只能查看")').waitFor({ timeout: 3000 })
   if (await pane.locator('.preview-editor').count()) throw new Error('a GBK file can be edited')
@@ -1070,7 +1074,7 @@ await check('autosave keeps a file’s CRLF line ends, an agent’s change is ne
   await editor.press('Control+End')
   await page.keyboard.type('three')
   await page.keyboard.press('Control+s')
-  await pane.locator('.preview-head .small:has-text("已保存")').waitFor({ timeout: 3000 })
+  await pane.locator('.preview-save-state:has-text("已保存")').waitFor({ timeout: 3000 })
   if (readFileSync(join(root, 'win.txt'), 'utf8') !== 'one\r\ntwo\r\nthree') throw new Error('line ends changed: ' + JSON.stringify(readFileSync(join(root, 'win.txt'), 'utf8')))
   // An agent writes the file meanwhile: the next save asks which version to keep.
   await new Promise((r) => setTimeout(r, 50))
@@ -1083,14 +1087,14 @@ await check('autosave keeps a file’s CRLF line ends, an agent’s change is ne
   await pane.locator('.preview-conflict').waitFor({ state: 'detached', timeout: 3000 })
   if (readFileSync(join(root, 'win.txt'), 'utf8') !== 'one\r\ntwo\r\nthree!') throw new Error('not kept: ' + JSON.stringify(readFileSync(join(root, 'win.txt'), 'utf8')))
   await pane.locator('.preview-head .icon-btn[aria-label="全屏"]').click()
-  const full = page.locator('.modal.file-full .preview-editor')
+  const full = page.locator('.file-full .preview-editor')
   await full.waitFor({ timeout: 2000 })
   await full.focus()
   await page.keyboard.press('Tab')
   if (!(await full.evaluate((el) => el === document.activeElement && el.value.includes('\t')))) throw new Error('Tab left the editor')
   // Esc leaves full screen, nothing asks, and the tab is saved.
   await page.keyboard.press('Escape')
-  await page.waitForFunction(() => !document.querySelector('.modal.file-full'), null, { timeout: 2000 })
+  await page.waitForFunction(() => !document.querySelector('.file-full'), null, { timeout: 2000 })
   for (let i = 0; i < 30 && !readFileSync(join(root, 'win.txt'), 'utf8').includes('\t'); i++) await new Promise((r) => setTimeout(r, 100))
   if (!readFileSync(join(root, 'win.txt'), 'utf8').includes('\t')) throw new Error('the tab was not saved')
   // Moved away while open: a bar keeps what was typed and puts it back on request.
@@ -1102,7 +1106,7 @@ await check('autosave keeps a file’s CRLF line ends, an agent’s change is ne
   await pane.locator('.preview-conflict .pill-btn:has-text("在原位置重新保存")').click()
   await pane.locator('.preview-conflict').waitFor({ state: 'detached', timeout: 3000 })
   if (!readFileSync(join(root, 'win.txt'), 'utf8').endsWith('moved')) throw new Error('not saved again where it was')
-  await page.waitForSelector('.modal.file-full', { state: 'detached', timeout: 2000 })
+  await page.waitForSelector('.file-full', { state: 'detached', timeout: 2000 })
   await back()
 })
 
@@ -1110,11 +1114,11 @@ await check('commands the agent runs through the app show under 后台 and stop 
   await page.fill('.composer textarea', '后台运行 sleep 30')
   await page.keyboard.press('Enter')
   await page.click('.side-pane .tab:has-text("后台")')
-  const row = page.locator('.side-pane .bg-command:has-text("sleep 30")')
+  const row = page.locator('.side-pane .background-task:has-text("sleep 30")')
   await row.waitFor({ timeout: 10000 })
   if (!(await page.locator('.side-pane-toggle .run-dot').count())) throw new Error('no running mark on the pane button')
-  await row.locator('.icon-btn[aria-label="停止"]').click()
-  await row.locator('.status-chip').waitFor({ timeout: 5000 })
+  await row.locator('.background-stop').press('Enter')
+  await page.waitForFunction(() => !document.querySelector('.side-pane .tab-count'), null, { timeout: 5000 })
   await page.click('.side-pane .icon-btn[aria-label="关闭"]')
 })
 
@@ -1267,11 +1271,12 @@ await check('stopping a reply leaves one quiet 已停止 under it, and the butto
   if ((await send.getAttribute('aria-label')) !== '发送') throw new Error('the idle button is named ' + (await send.getAttribute('aria-label')))
 })
 
-await check('a chat shows its plan under the title, opening to the full plan and obstacles', async () => {
+await check('a chat updates its plan at the transcript tail, aligned with replies and showing obstacles once', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
   await send('#难点 文档和接口对不上 先看看')
   const line = page.locator('.plan-line')
   await line.waitFor({ timeout: 5000 })
+  if (!await line.evaluate(el => el.parentElement?.classList.contains('transcript') && el === el.parentElement.lastElementChild)) throw new Error('Plan is not at the transcript tail')
   const summary = await line.locator('.plan-summary').innerText()
   if (!summary.includes('3/3') || !summary.includes('难点') || summary.includes('文档和接口对不上')) throw new Error('plan line reads: ' + summary)
   await line.locator('.plan-summary').click()
@@ -1279,7 +1284,7 @@ await check('a chat shows its plan under the title, opening to the full plan and
   if (!(await line.locator('.plan-current-blocker').innerText()).includes('文档和接口对不上')) throw new Error('current obstacle missing')
   if ((await line.locator('.plan-summary').innerText()).includes('难点')) throw new Error('Expanded obstacle is repeated in the summary')
   for (const [width,height] of [[1400,900],[860,560]]) {
-    await page.setViewportSize({width,height})
+    await setViewport({width,height})
     await page.waitForFunction(() => {
       const p = document.querySelector('.plan-line'), t = document.querySelector('.transcript')
       if (!p||!t) return false
@@ -1287,14 +1292,14 @@ await check('a chat shows its plan under the title, opening to the full plan and
       return Math.abs(r.left-(tr.left+parseFloat(css.paddingLeft)))<=1 && Math.abs(r.right-(tr.right-parseFloat(css.paddingRight)))<=1
     })
   }
-  await page.setViewportSize({width:1400,height:900})
+  await setViewport({width:1400,height:900})
 
   const position = () => line.locator('.plan-blocker').evaluate((el) => ({ x: el.getBoundingClientRect().x, width: el.getBoundingClientRect().width }))
   let shortPosition
   for (const text of ['#计划短', '#计划长']) {
     await send(text)
     await line.locator('.plan-body').waitFor()
-    if ((await line.locator('.plan-summary .plan-text').innerText()) !== '计划') throw new Error('Expanded plan repeats the current step')
+    if ((await line.locator('.plan-summary .plan-text').innerText()) !== '计划未完成') throw new Error('An unfinished plan must not appear to be still running after the reply ends')
     await line.locator('.plan-summary').click()
     if (text === '#计划短') shortPosition = await position()
     else if (JSON.stringify(await position()) !== JSON.stringify(shortPosition)) throw new Error('The obstacle shifts with the preceding step length')
@@ -1437,7 +1442,7 @@ await check('a project keeps a progress board of milestones and tasks, edited by
   await task.locator('.status-btn').click()
   await page.waitForSelector('.progress-row.milestone.is-done', { timeout: 2000 })
   if (!(await page.locator('.progress-head').innerText()).includes('已完成 1/1')) throw new Error('summary wrong')
-  await page.click('.panel-head .tab:has-text("讨论串")')
+  await panelView('讨论串')
   await page.waitForSelector('.progress-summary:has-text("所有里程碑都已完成")', { timeout: 2000 })
 })
 
@@ -1447,7 +1452,8 @@ await check('a project’s 库 shows its folder, and files added there land in i
   await page.waitForSelector('.panel .files-pane .files-root')
   const p = await page.evaluate(async () => (await window.fenn.snapshot()).projects.find((x) => x.name.includes('端到端')))
   await page.evaluate((id) => window.fenn.addToLibrary(id, '', [{ name: '说明.md', data: btoa(unescape(encodeURIComponent('# 说明\n'))) }]), p.id)
-  await page.click('.panel .files-head .icon-btn[aria-label="刷新"]')
+  await page.locator('.panel .files-head').getByRole('button', { name: '文件操作', exact: true }).click()
+  await page.getByRole('menuitem', { name: '刷新', exact: true }).click()
   await page.locator('.panel .tree-row:has-text("说明.md")').waitFor({ timeout: 3000 })
   await page.click('.panel-head .tab[data-tab="threads"]')
 })
@@ -1613,38 +1619,10 @@ await check('sequential approval overlays never reserve or animate transcript he
   await page.locator('.perm-slot').waitFor({state:'detached',timeout:20000})
 })
 
-await check('the new-chat page shows usage widgets that can be removed and brought back', async () => {
+await check('the new chat page has no widgets or restore menu', async () => {
   await page.click('.sidebar .nav-item:has-text("新建")')
-  // The demo agent's replies above count as usage.
-  await page.waitForSelector('.widget', { timeout: 8000 })
-  const before = await page.locator('.widget').count()
-  if (before !== 3) throw new Error(`${before} widgets`)
-  const first = page.locator('.widget').first()
-  await first.hover()
-  await first.locator('.widget-more').click()
-  await page.click('.menu .menu-item:has-text("移除小组件")')
-  await page.waitForFunction((n) => document.querySelectorAll('.widget').length === n - 1, before, { timeout: 3000 })
-  const rest = page.locator('.widget').first()
-  await rest.hover()
-  await rest.locator('.widget-more').click()
-  await page.click('.menu .menu-item:has-text("恢复默认小组件")')
-  await page.waitForFunction((n) => document.querySelectorAll('.widget').length === n, before, { timeout: 3000 })
-})
-
-await check('an agent puts a card on the home page from a chat; the card says where it came from and can be deleted', async () => {
-  await page.fill('.composer textarea', '#看板 服务器待办')
-  await page.keyboard.press('Enter')
-  await page.waitForSelector('.send-btn:not(.stop)', { timeout: 20000 })
-  await page.click('.sidebar .nav-item:has-text("新建")')
-  const card = page.locator('.widget.board-card:has-text("服务器待办")')
-  await card.waitFor({ timeout: 5000 })
-  if ((await card.locator('.board-list li').count()) !== 2) throw new Error('the list is not drawn')
-  if (!(await card.locator('.board-source').count())) throw new Error('no source line')
-  await card.hover()
-  await card.locator('.widget-more').click()
-  await page.click('.menu .menu-item:has-text("删除卡片")')
-  await page.click('.modal.confirm .btn.danger-solid')
-  await card.waitFor({ state: 'detached', timeout: 3000 })
+  await page.locator('.greeting').waitFor()
+  if (await page.locator('.widget,.widget-board,.widget-restore').count()) throw new Error('retired widgets are visible')
 })
 
 await app.close()

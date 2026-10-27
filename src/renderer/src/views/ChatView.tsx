@@ -8,8 +8,7 @@ import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
 import { api, useApp, toastError } from '../store'
 import { t } from '../i18n'
-import { PlanLine } from '../components/PlanLine'
-import { UsageButton } from '../components/Usage'
+import { BrowserButton } from '../components/BrowserPanel'
 import { useRunning } from '../components/SidePane'
 import { RenameInput, useRenaming } from '../components/InlineRename'
 
@@ -31,7 +30,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
           </button>
         )}
         <span className="spacer" />
-        <UsageButton usage={conv.usage} timing={conv.timing} backendId={conv.backendId} scope={t('本对话用量')} creditsOnly />
+        <BrowserButton conversationId={conv.id} />
         <SidePaneButton conv={conv} />
         <button
           className="icon-btn"
@@ -68,7 +67,6 @@ export function ChatView({ conversationId }: { conversationId: string }) {
         </button>
         {menu}
       </div>
-      <PlanLine conv={conv} />
       <Transcript conversation={conv} header={conv.handoff && <Handoff conv={conv} parent={parent} />} />
       <PermissionPrompts conversationId={conv.id} />
       <Composer conversation={conv} autoFocus />
@@ -79,7 +77,7 @@ export function ChatView({ conversationId }: { conversationId: string }) {
 /** Opens the files and background pane beside the chat (a dot while something runs in the background). */
 function SidePaneButton({ conv }: { conv: Conversation }) {
   // A page or file open beside the chat covers the pane: then the button brings the pane back.
-  const open = useApp((s) => (s.page || s.fileView ? null : s.sidePane))
+  const open = useApp((s) => (s.page || s.fileView || s.browserView ? null : s.sidePane))
   const running = useRunning(conv)
   return (
     <button
@@ -89,10 +87,10 @@ function SidePaneButton({ conv }: { conv: Conversation }) {
       aria-pressed={!!open}
       onClick={() => {
         const shown = useApp.getState().sidePane
-        useApp.getState().set({ sidePane: open ? null : (shown ?? (running ? 'background' : 'files')), page: null, fileView: null })
+        useApp.getState().set({ sidePane: open ? null : (shown ?? (running ? 'background' : 'files')), page: null, fileView: null, browserView: null })
       }}
     >
-      <FolderOpen size={16} />
+        <FolderOpen size={16} />
       {running > 0 && <span className="run-dot" />}
     </button>
   )

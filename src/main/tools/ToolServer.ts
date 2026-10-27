@@ -134,6 +134,16 @@ export class ToolServer {
     if (req.method === 'DELETE') return end(res, 200, null)
     if (req.method !== 'POST') return end(res, 405, null)
 
+    // Bind live tools when the request is accepted. Reading a slow body must not
+    // let an old caller acquire the task context of a later request.
+    let tools: ToolDef[]
+    try {
+      tools = binding.tools()
+    } catch {
+      return end(res, 410, { error: 'endpoint is no longer active' })
+    }
+    const accepted = { conversationId: binding.conversationId, tools: () => tools }
+
     let body: unknown
     try {
       body = JSON.parse(await readBody(req))
@@ -143,8 +153,9 @@ export class ToolServer {
     const batch = Array.isArray(body) ? body : [body]
     const out: unknown[] = []
     for (const msg of batch as { id?: string | number; method?: string; params?: any }[]) {
+      if (this.tokens.get(m![1]) !== binding) return end(res, 410, { error: 'endpoint was revoked' })
       if (msg.id === undefined || msg.id === null) continue // notification
-      out.push(await this.dispatch(msg.id, msg.method ?? '', msg.params ?? {}, binding))
+      out.push(await this.dispatch(msg.id, msg.method ?? '', msg.params ?? {}, accepted))
     }
     if (!out.length) return end(res, 202, null)
     end(res, 200, Array.isArray(body) ? out : out[0])

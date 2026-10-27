@@ -1,0 +1,189 @@
+/* Shared buttons, fields, focus and single-choice controls. Feature styles only add layout. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: var(--control-h);
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--bg-hover);
+}
+.btn.primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: transparent;
+}
+.btn.primary:hover {
+  opacity: 0.88;
+}
+.btn.accent {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+}
+.btn.danger {
+  color: var(--red);
+}
+.btn.danger-solid {
+  /* One deep red in every theme, so white text always reads. */
+  background: #c4423b;
+  border-color: transparent;
+  color: #fff;
+}
+.btn.danger-solid:hover {
+  opacity: 0.9;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: 14px;
+}
+.field label {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.field .help {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.input,
+.textarea,
+.dropdown {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--space-5) 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.dropdown:hover {
+  border-color: var(--text-4);
+}
+.dropdown:focus-visible,
+.dropdown[aria-expanded='true'] {
+  outline: none;
+  border-color: var(--focus-border);
+}
+.dropdown-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dropdown-chevron {
+  color: var(--text-3);
+  flex: none;
+}
+.select-btn .dropdown-value {
+  max-width: 220px;
+}
+.select {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  padding: var(--space-4) 11px;
+  outline: none;
+  width: 100%;
+}
+.input:focus,
+.textarea:focus,
+.select:focus {
+  border-color: var(--focus-border);
+}
+
+/*
+ * Focus, the same quiet way everywhere: text fields only darken their own
+ * border (like the composer); buttons and menu items get a soft ring, and
+ * only from the keyboard. Never the browser's square default.
+ */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+:is(input, textarea, select, [contenteditable]):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+input::placeholder, textarea::placeholder { color: var(--text-3); opacity: 1; }
+/* The composer draws keyboard focus around its shared container. */
+.composer:has(textarea:focus-visible) { border-color: var(--focus-ring); box-shadow: 0 0 0 1px var(--focus-ring); }
+.composer textarea:focus-visible { outline: none; box-shadow: none; }
+.input,
+.textarea {
+  outline: none;
+}
+.textarea {
+  display: block;
+  height: auto;
+  padding: var(--space-4) 11px;
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+}
+
+/* Shared single-choice selection; native radios own keyboard and selected state. */
+.seg-control {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  min-inline-size: 0;
+  max-width: 100%;
+  margin: 0;
+  border: 0;
+  padding: 3px;
+  gap: var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+}
+.seg-option {
+  min-height: 30px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.seg-option.on {
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.seg-option { position: relative; display: flex; flex: 1 1 auto; align-items: center; justify-content: center; min-width: max-content; white-space: nowrap; text-align: center; line-height: var(--line-ui); cursor: pointer; padding-block: var(--space-2); }
+.seg-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.seg-option:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.seg-option:not(.on):hover { color: var(--text); }
+.seg-control:disabled { opacity: 0.5; }
+.seg-control:disabled .seg-option { cursor: default; }
+
+.seg-control.sm .seg-option {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+/* Embedded provider artwork follows the active theme. */
+.backend-logo { display: inline-block; flex: none; object-fit: contain; vertical-align: middle; }
+:root[data-theme="dark"] .backend-logo.mono { filter: invert(1); }

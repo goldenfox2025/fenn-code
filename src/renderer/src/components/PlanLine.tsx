@@ -1,36 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { ChevronRight, Circle, CircleAlert, CircleCheck, CircleDot, ListChecks, LoaderCircle } from 'lucide-react'
-import { currentBlocker, planProgress, type Block, type Conversation } from '@shared/model'
-import { planEntries, type PlanEntry } from '@shared/plan'
+import { currentBlocker, planProgress, type Conversation } from '@shared/model'
+import { currentPlan, planWindow, type PlanEntry } from '@shared/plan'
 import { useApp } from '../store'
-import { duration, relTime } from '../util'
+import { relTime } from '../util'
 import { t } from '../i18n'
-
-/** When each step was first seen in progress in a turn, for its elapsed time (this window only). */
-const startedAt = new Map<string, number>()
-
-/** The ACP plan of the latest reply, if the backend sent one. */
-function useAcpPlan(conversationId: string) {
-  return useApp((s) => {
-    const list = s.messages[conversationId]
-    if (!list) return undefined
-    for (let i = list.length - 1; i >= 0; i--) {
-      const m = list[i]
-      if (m.role !== 'assistant' || m.hidden) continue
-      return m.blocks.find((b): b is Extract<Block, { type: 'plan' }> => b.type === 'plan')?.entries
-    }
-    return undefined
-  })
-}
-
-/** The turn now on screen: its user message (each turn starts with one), so times restart each turn. */
-function useTurnKey(conversationId: string): string {
-  return useApp((s) => {
-    const list = s.messages[conversationId] ?? []
-    for (let i = list.length - 1; i >= 0; i--) if (list[i].role === 'user') return list[i].id
-    return ''
-  })
-}
+import { usePanePresence } from './usePanePresence'
 
 /** Rows the app adds: what this conversation is waiting on, which ACP has no status for; `live` is work under way. */
 function useWaiting(conv: Conversation): { rows: string[]; live: Set<string> } {
@@ -54,67 +29,54 @@ function useWaiting(conv: Conversation): { rows: string[]; live: Set<string> } {
 function StepIcon({ status, live }: { status: PlanEntry['status']; live: boolean }) {
   if (status === 'done') return <CircleCheck size={15} className="step-icon done" />
   // A step left in progress when the turn ended isn't running any more: it stops spinning.
-  if (status === 'doing') return <LoaderCircle size={15} className={'step-icon doing' + (live ? ' live' : '')} />
+  if (status === 'doing') return live ? <LoaderCircle size={15} className="step-icon doing live" /> : <Circle size={15} className="step-icon pending" />
   if (status === 'waiting') return <CircleDot size={15} className="step-icon waiting" />
   return <Circle size={15} className="step-icon pending" />
 }
 
-/** Re-renders every second while something is running, for the elapsed time. */
-function useTick(on: boolean) {
-  const [, set] = useState(0)
-  useEffect(() => {
-    if (!on) return
-    const id = setInterval(() => set((n) => n + 1), 1000)
-    return () => clearInterval(id)
-  }, [on])
-}
-
 /**
- * The conversation's plan, as Claude shows it: a card at the top that stays
- * put while the conversation scrolls and updates in place. Each step has its
- * state icon (done, running with its time, waiting, not started); it folds to
- * one line. Obstacles met along the way are listed under the steps.
+ * One live plan at the end of the transcript. It shares the message column and
+ * scrolls with it; permission/review controls stay in their own composer slot.
+ * Only structured events change completion. Stopped and carried-over steps
+ * never keep spinning or acquire a checkmark merely because a reply ended.
  */
-export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(!!defaultOpen)
-  const acp = useAcpPlan(conv.id)
-  const turn = useTurnKey(conv.id)
+export function PlanLine({ conv }: { conv: Conversation }) {
+  const [open, setOpen] = useState(conv.status === 'working')
+  const [showAll, setShowAll] = useState(false)
+  const id = useId()
+  const messages = useApp(s => s.messages[conv.id])
+  const plan = currentPlan(conv, messages ?? [])
   const waiting = useWaiting(conv)
-  const entries = planEntries({ checklist: conv.checklist, acp, waiting: waiting.rows })
+  const steps = plan.entries
+  const entries: PlanEntry[] = [...steps, ...waiting.rows.map(text => ({ text, status: 'waiting' as const, app: true }))]
   const blocker = currentBlocker(conv)
   const past = (conv.blockers ?? []).filter((b) => b !== blocker).reverse()
-  const working = conv.status === 'working'
+  const working = conv.status === 'working' && !plan.stale && !conv.resolved
   const doing = entries.find((e) => e.status === 'doing')
-  useTick(working && !!doing)
   // A new turn opens the card again, as when the thread is opened mid-turn.
   useEffect(() => {
     if (working) setOpen(true)
-  }, [working, turn])
+  }, [working, plan.turn])
+  useEffect(() => setShowAll(false), [plan.turn])
   // A plan that just finished folds to its one line, as in Claude.
   const finished = !working && entries.length > 0 && entries.every((e) => e.status === 'done')
   useEffect(() => {
-    if (finished) setOpen(false)
-  }, [finished])
-  if (!entries.length && !blocker && !past.length) return null
-  const steps = entries.filter((e) => !e.app)
+    if (finished || conv.resolved) setOpen(false)
+  }, [finished, conv.resolved])
+  const presence = usePanePresence(open)
+  if (!entries.length && !blocker) return null
   const done = steps.filter((e) => e.status === 'done').length
   const allDone = steps.length > 0 && done === steps.length
-  const since = (e: PlanEntry) => {
-    const key = `${conv.id}|${turn}|${e.text}`
-    if (!startedAt.has(key)) startedAt.set(key, Date.now())
-    return startedAt.get(key)!
-  }
+  const windowed = planWindow(steps)
+  const shown = showAll ? entries : [...windowed.entries, ...entries.filter(e => e.app)]
   const current = doing ?? entries.find((e) => e.status === 'waiting')
+  const label = plan.stale && steps.length ? t('此前的计划') : conv.resolved && !allDone ? t('已结束 · 计划记录') : allDone ? t('计划已完成') : !working && doing && conv.status !== 'waiting' ? t('计划未完成') : open ? t('计划') : (current?.text ?? t('计划'))
   return (
-    <div className={'plan-line' + (open ? ' open' : '')}>
-      <button className="plan-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <section className={'plan-line' + (open ? ' open' : '')} aria-label={t('任务计划')} data-stale={plan.stale || undefined}>
+      <button className="plan-summary" aria-expanded={open} aria-controls={presence.present ? id : undefined} onClick={() => setOpen(!open)}>
         <ListChecks size={14} className="plan-icon" />
         <span className="plan-text">
-          {steps.length
-            ? allDone
-              ? t('计划已完成')
-              : open ? t('计划') : (current?.text ?? t('计划'))
-            : (open ? t('计划') : current?.text ?? t('计划'))}
+          {label}
         </span>
         {steps.length > 0 && <span className="plan-count">{done}/{steps.length}</span>}
         {blocker && (
@@ -124,19 +86,22 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
         )}
         <ChevronRight size={14} className="chev" />
       </button>
-      {open && (
-        <div className="plan-body">
+      {presence.present && (
+        <div className="steps-fold" data-exiting={presence.exiting || undefined} inert={presence.exiting} id={id}>
+        <div className="steps-clip"><div className="plan-body">
+          {plan.stale && steps.length > 0 && <p className="plan-note">{t('本轮尚未更新此计划')}</p>}
+          {!showAll && windowed.before > 0 && <p className="plan-note">{t('前面还有 {0} 步', windowed.before)}</p>}
           {entries.length > 0 && (
             <ol className="checklist plan-steps">
-              {entries.map((e, i) => (
+              {shown.map((e, i) => (
                 <li key={i} className={'plan-step ' + e.status}>
                   <StepIcon status={e.status} live={working} />
                   <span className={'plan-step-text' + (e.app && waiting.live.has(e.text) ? ' shimmer' : '')}>{e.text}</span>
-                  {e.status === 'doing' && working && Date.now() - since(e) >= 1000 && <span className="plan-step-time">{duration(Date.now() - since(e))}</span>}
                 </li>
               ))}
             </ol>
           )}
+          {steps.length > 6 && <button className="plan-more" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? t('只看当前步骤') : t('查看全部 {0} 步', steps.length)}{!showAll && windowed.after > 0 && <span>{t('后续 {0} 步', windowed.after)}</span>}</button>}
           {blocker && (
             <div className="plan-current-blocker">
               <span className="label">{t('当前难点')}</span>
@@ -155,14 +120,15 @@ export function PlanLine({ conv, defaultOpen }: { conv: Conversation; defaultOpe
               ))}
             </details>
           )}
-        </div>
+        </div></div></div>
       )}
-    </div>
+    </section>
   )
 }
 
 /** One short line for cards: the current obstacle, else the step in progress. */
 export function planHeadline(conv: Conversation): string | undefined {
+  if (conv.resolved) return undefined
   const b = currentBlocker(conv)
   if (b) return t('难点：{0}', b.text)
   return planProgress(conv.checklist)?.step

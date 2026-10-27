@@ -4,6 +4,8 @@
  * without relying on any backend session.
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { textOf } from '../src/main/core/ChatService'
 import { makeCore, until } from './helpers'
 
@@ -69,7 +71,16 @@ describe('restart mid-task', () => {
     const t = await until(() => first.store.conversations.find((c) => c.kind === 'thread' && c.status === 'working'))
     // Simulate the app dying mid-turn: state is on disk with the thread still working.
     first.store.flush()
+    const statePath = join(first.dir, 'state.json')
+    const messagePath = join(first.dir, 'messages', `${t.id}.json`)
+    const interruptedState = readFileSync(statePath)
+    const interruptedMessages = readFileSync(messagePath)
     await first.dispose()
+    // A graceful test cleanup can finish the turn; restore the actual crash snapshot afterward.
+    await until(() => !first.core.chat.isBusy(t.id))
+    first.store.flush()
+    writeFileSync(statePath, interruptedState)
+    writeFileSync(messagePath, interruptedMessages)
 
     const second = await makeCore(first.dir)
     expect(second.store.interrupted).toContain(t.id)

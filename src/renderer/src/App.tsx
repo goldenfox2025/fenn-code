@@ -1,13 +1,12 @@
 import { useEffect } from 'react'
-import { CircleAlert, Minus, PanelLeft, Square, X } from 'lucide-react'
+import { CircleAlert, PanelLeft, X } from 'lucide-react'
 import { Dialogs } from './components/Dialogs'
 import { DotField } from './components/DotField'
 import { ConfirmHost } from './components/Modal'
 import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
-import { PagePanels } from './components/PagePanel'
-import { FileViewPanel } from './components/FileViewPanel'
-import { ChatSidePane } from './components/SidePane'
+import { RightSurfaces } from './components/RightSurfaces'
+import { WindowButtons } from './components/WindowButtons'
 import { usePaneFit } from './components/ResizeHandle'
 import { Sidebar } from './components/Sidebar'
 import { api, dismissToast, toast, useApp } from './store'
@@ -23,8 +22,6 @@ export function App() {
   const theme = useApp((s) => s.settings.theme)
   const sidebarOpen = useApp((s) => s.sidebarOpen)
   usePaneFit(sidebarOpen)
-  const page = useApp((s) => s.page)
-  const fileView = useApp((s) => s.fileView)
   const platform = useApp((s) => s.platform)
   const toasts = useApp((s) => s.toasts)
   const dotGrid = useApp((s) => s.settings.dotGrid ?? 1)
@@ -47,7 +44,7 @@ export function App() {
       view = <ChatView conversationId={route.conversationId} />
       break
     case 'project':
-      view = <ProjectView projectId={route.projectId} threadId={route.threadId} overview={route.overview} />
+      view = <ProjectView key={route.projectId} projectId={route.projectId} threadId={route.threadId} overview={route.overview} />
       break
     case 'projects':
       view = <ProjectsPage />
@@ -69,6 +66,7 @@ export function App() {
           {!sidebarOpen && (
             <button
               className="icon-btn"
+              aria-label={t('打开侧栏')}
               style={platform === 'darwin' ? { marginLeft: 70 } : undefined}
               onClick={() => useApp.getState().set({ sidebarOpen: true })}
             >
@@ -80,8 +78,7 @@ export function App() {
         </div>
         <div className="workspace">
           <div className="center">{view}</div>
-          <PagePanels />
-          {!page && (fileView ? <FileViewPanel path={fileView.path} conversationId={fileView.conversationId} /> : route.view === 'chat' && <ChatSidePane conversationId={route.conversationId} />)}
+          <RightSurfaces conversationId={route.view === 'chat' ? route.conversationId : undefined} />
         </div>
       </main>
       <Dialogs />
@@ -104,19 +101,7 @@ export function App() {
 }
 
 function WindowControls() {
-  return (
-    <div className="winctl">
-      <button onClick={() => api().windowControl('minimize')}>
-        <Minus size={15} />
-      </button>
-      <button onClick={() => api().windowControl('maximize')}>
-        <Square size={12} />
-      </button>
-      <button className="close" onClick={() => api().windowControl('close')}>
-        <X size={16} />
-      </button>
-    </div>
-  )
+  return <WindowButtons onAction={action => api().windowControl(action)} />
 }
 
 /** The page follows the chosen color scheme, including OS changes in system mode. */

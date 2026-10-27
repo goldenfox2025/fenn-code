@@ -3,7 +3,7 @@
 import { _electron as electron } from 'playwright-core'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
 
@@ -50,7 +50,7 @@ writeFileSync(join(data, 'backends.json'), JSON.stringify([{
     latest: { command: process.execPath, args: ['--version'] }
   }
 }]))
-const env = { ...process.env, FENN_DEMO_AGENT: '1', FENN_DATA_DIR: data, NODE_PATH: '', MOCK_DYNAMIC_EFFORT: '1' }
+const env = { ...process.env, FENN_DEMO_AGENT: '1', FENN_DATA_DIR: data, FENN_BACKGROUND_TEST: '1', NODE_PATH: '', MOCK_DYNAMIC_EFFORT: '1' }
 delete env.ELECTRON_RUN_AS_NODE
 delete env.NODE_OPTIONS
 let app
@@ -70,6 +70,7 @@ try {
     env: { ...env, FENN_DATA_DIR: join(temp, 'production-data') }, timeout: 45_000 })
   page = await app.firstWindow({ timeout: 30_000 })
   await page.waitForSelector('.sidebar', { timeout: 30_000 })
+  assert(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible())), 'Packaged acceptance must not present test windows')
   const production = await page.evaluate(() => window.fenn.snapshot())
   assert(!production.backends.some((b) => b.id === 'mock'), 'Release must not offer a demo backend')
   assert(!('glass' in production.settings), 'Retired glass switch is absent')
@@ -86,6 +87,7 @@ try {
   await page.waitForSelector('.sidebar', { timeout: 30_000 })
   const info = await app.evaluate(({ app }) => ({ packaged: app.isPackaged, version: app.getVersion() }))
   assert(info.packaged, 'Must test the shipped app, not the development entry point')
+  assert(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window => !window.isVisible())), 'Fixture acceptance must remain hidden')
   const appearance = await page.evaluate(async () => (await window.fenn.snapshot()).settings)
   assert.equal(appearance.theme, 'dark', 'Legacy glass theme migrates to opaque dark')
   assert(!('glass' in appearance), 'Retired glass switch is removed')
@@ -156,7 +158,7 @@ try {
   await waitState(async () => (await window.fenn.snapshot()).backends.some((b) => b.id === 'hot-reloaded'))
   console.log('External backend configuration hot reload passed')
 
-  await page.locator('.user-btn').click()
+  await page.locator('.sidebar-foot button[data-tip="设置"]').click()
   await page.locator('.settings-nav').getByText('Agent 后端', { exact: true }).click()
   const card = page.locator('.settings-body .card').filter({ hasText: 'Package smoke agent' })
   await card.getByRole('button', { name: '检查更新', exact: true }).click()
@@ -235,9 +237,13 @@ try {
       })
     } else process.exit(2)
   `)
-  await page.locator('.user-btn').click()
+  await page.locator('.sidebar-foot button[data-tip="设置"]').click()
   await page.locator('.settings-nav').getByText('Agent 后端', { exact: true }).click()
   const qoderCard = page.locator('.settings-body .card').filter({ has: page.locator('.title').getByText('Qoder', { exact: true }) })
+  // A real local installation may already be signed in: reveal its path fields
+  // through the same advanced-settings disclosure the user uses.
+  const initialAdvanced = qoderCard.locator('details').filter({ has: page.locator('summary').getByText('高级设置', { exact: true }) })
+  if (await initialAdvanced.count() && await initialAdvanced.getAttribute('open') == null) await initialAdvanced.locator('summary').click()
   for (const [label, value] of [['Node 路径（用于 Qoder JS 入口）', process.execPath], ['Qoder CLI 路径', qoderEntry]]) {
     const field = qoderCard.locator('.field').filter({ has: page.locator('label').getByText(label, { exact: true }) })
     // The field has no 保存 button: Enter (or leaving it) saves, as in the app's other settings.
@@ -248,13 +254,13 @@ try {
     await field.getByRole('button', { name: '修改', exact: true }).waitFor()
     // The account line refreshes after a save; it must not nudge the field either.
     await page.waitForTimeout(800)
-    // Once the CLI is found and signed in, its raw settings fold under 高级设置, as for any working agent.
-    if (label === 'Qoder CLI 路径') break
     assert.deepEqual(await field.boundingBox(), editing, `Saving ${label} must preserve field geometry`)
   }
   const advanced = qoderCard.locator('details.backend-advanced')
   await advanced.waitFor()
-  assert.equal(await advanced.evaluate((d) => d.open), false, 'A signed-in agent keeps its raw settings folded')
+  assert.equal(await advanced.evaluate((d) => d.open), true, 'Saving paths preserves the user-opened settings and their layout')
+  await advanced.locator('summary').click()
+  assert.equal(await advanced.evaluate((d) => d.open), false, 'The user can collapse the settings explicitly')
   await advanced.locator('summary').click()
   assert.equal(await advanced.locator('.field').filter({ hasText: '已设置' }).count(), 2, 'Both saved paths show as set under 高级设置')
   assert.deepEqual(await page.evaluate(() => window.fenn.backendAccount('qoder')), {
@@ -272,19 +278,19 @@ try {
 
   await page.evaluate((id) => window.fenn.updateConversation(id, { title: 'Qoder Credits smoke' }), qoderChat)
   await page.locator('.sidebar .nav-item').filter({ hasText: 'Qoder Credits smoke' }).click()
-  await page.locator('.chat-header .usage-btn').filter({ hasText: '12.5 / 100 credits' }).waitFor()
-  assert.equal(await page.locator('.msg-usage').count(), 0, 'Qoder does not present token counts as billing')
+  await page.locator('.composer .account-quota-ring').waitFor()
+  assert.equal(await page.locator('.reply-metrics').count(), 0, 'Qoder does not present token counts as billing')
   const geometry = () => page.evaluate(() => ({
     window: [scrollX, scrollY],
-    content: [...document.querySelectorAll('.chat-header, .center > .scroll, .center > .composer')].map((el) => {
+    content: [...document.querySelectorAll('.chat-header, .center .transcript-shell > .scroll, .center > .composer')].map((el) => {
       const r = el.getBoundingClientRect()
       return [r.x, r.y, r.width, r.height, el.scrollTop]
     })
   }))
   for (const theme of ['light', 'dark']) {
     await page.evaluate((x) => window.fenn.updateSettings({ theme: x }), theme)
-    for (const selector of ['.chat-header .usage-btn', '.chat-header button[aria-label="更多对话操作"]']) {
-      await page.locator('.center > .scroll').evaluate((el) => {
+    for (const selector of ['.composer .account-quota-ring', '.chat-header button[aria-label="更多对话操作"]']) {
+      await page.locator('.center .transcript-shell > .scroll').evaluate((el) => {
         el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - 24)
         el.dispatchEvent(new Event('scroll'))
       })
@@ -296,12 +302,12 @@ try {
       await page.keyboard.press('End')
       await page.keyboard.press('Home')
       assert.deepEqual(await geometry(), before, 'Menu navigation must only scroll the menu')
-      if (selector.includes('usage-btn')) {
+      if (selector.includes('account-quota-ring')) {
         assert.match(await page.locator(surface).innerText(), /12\.5\s*\/ 100 credits/)
         assert.equal(await page.getByRole('meter', { name: '套餐', exact: true }).getAttribute('aria-valuenow'), '12.5')
         assert.match(await page.locator(surface).innerText(), /13%/)
         assert(!/999|tokens/.test(await page.locator(surface).innerText()))
-        await page.screenshot({ path: join(shots, `qoder-credits-${theme}.png`) })
+        await page.screenshot({ path: join(shots, `qoder-credits-${theme}.png`), animations: 'disabled' })
       }
       await page.keyboard.press('Escape')
     }
@@ -309,19 +315,25 @@ try {
   console.log('Qoder account Credits and stable usage/more popovers passed in three themes')
 
   await page.locator('.sidebar .nav-item').filter({ hasText: '打包测试保留' }).click()
-  // Token usage lives in the composer's ring; the header only shows account credits.
+  // Account quota and reported context use the same quiet composer slot.
   assert.equal(await page.locator('.chat-header .usage-btn').count(), 0)
   await page.locator('.composer .context-ring').click()
   // The ring's panel keeps the context and the cost as reported (its per-kind rows went in the leaner panel);
   // the reply's own line keeps its input and output.
   assert.match(await page.locator('.menu').innerText(), /上下文\n[\d,.k]+ \/ [\d,.k]+/)
-  assert.match(await page.locator('.menu').innerText(), /费用\n按标价估算\n\$[\d.]+/)
-  assert.match(await page.locator('.msg-usage').last().innerText(), /输入 [\d,.k]+ · 输出 [\d,.k]+/)
+  assert.match(await page.locator('.menu').innerText(), /费用\n后端报告\n\$[\d.]+/)
+  assert.match(await page.locator('.reply-metrics').last().innerText(), /输入 [\d,.k]+ · 输出 [\d,.k]+/)
   assert(!/未提供/.test(await page.locator('.menu').innerText()))
   await page.keyboard.press('Escape')
   console.log('Other agents retain reported tokens and costs, without an invented account quota')
 
-  const metricsChat = await page.evaluate(async () => (await window.fenn.startChat({ backendId: 'plain-metrics', text: 'stream timing' })).id)
+  const shortChat = await page.evaluate(async () => (await window.fenn.startChat({ backendId: 'plain-metrics', text: 'stream timing' })).id)
+  await waitState(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle', shortChat)
+  await page.evaluate((id) => window.fenn.updateConversation(id, { title: 'Short reply smoke' }), shortChat)
+  await page.locator('.sidebar .nav-item').filter({ hasText: 'Short reply smoke' }).click()
+  assert.equal(await page.locator('.reply-metrics').count(), 0, 'Short replies do not add a usage footer')
+
+  const metricsChat = await page.evaluate(async () => (await window.fenn.startChat({ backendId: 'plain-metrics', text: '#long-timing' })).id)
   await waitState(async (id) => (await window.fenn.snapshot()).conversations.find((c) => c.id === id)?.status === 'idle', metricsChat)
   await page.evaluate((id) => window.fenn.updateConversation(id, { title: 'Observed timing smoke' }), metricsChat)
   await page.locator('.sidebar .nav-item').filter({ hasText: 'Observed timing smoke' }).click()
@@ -333,8 +345,8 @@ try {
     const panel = page.locator('.menu')
     await panel.waitFor()
     assert(!/费用|未提供/.test(await panel.innerText()))
-    assert.match(await panel.innerText(), /输出速度\n[\d.]+ tok\/s\n每个 token\n[\d.]+ (毫秒|秒)/)
-    assert.match(await page.locator('.msg-usage').getAttribute('data-tip'), /平均每个 token/)
+    assert.match(await panel.innerText(), /最近一次回复[\s\S]*[\d.]+ tok\/s[\s\S]*(毫秒|秒) \/ token/)
+    assert.match(await page.locator('.reply-metrics').innerText(), /tok\/s.*TPOT/)
     assert.equal(await panel.getByRole('meter', { name: '上下文', exact: true }).getAttribute('aria-valuemax'), '200000')
     const layout = await panel.evaluate((el) => {
       const r = el.getBoundingClientRect(), css = getComputedStyle(el)
@@ -344,8 +356,8 @@ try {
     assert(layout.outline === 'none' && !layout.overflow, JSON.stringify(layout))
     assert(layout.top >= 0 && layout.bottom <= layout.height && layout.left >= 0 && layout.right <= layout.width, JSON.stringify(layout))
     assert.deepEqual(await geometry(), before)
-    await page.screenshot({ path: join(shots, `usage-panel-${theme}.png`) })
-    await panel.screenshot({ path: join(shots, `usage-panel-${theme}-detail.png`) })
+    await page.screenshot({ path: join(shots, `usage-panel-${theme}.png`), animations: 'disabled' })
+    await panel.screenshot({ path: join(shots, `usage-panel-${theme}-detail.png`), animations: 'disabled' })
     await page.keyboard.press('Escape')
     assert(await trigger.evaluate((el) => document.activeElement === el))
   }
@@ -503,5 +515,6 @@ try {
   if (app) await app.close()
   // Only remove the isolated directory created by this script.
   assert.equal(dirname(resolve(temp)), resolve(tmpdir()))
+  assert(dirname(resolve(temp)) === resolve(tmpdir()) && basename(temp).startsWith('fenn-code-package-smoke-'), 'Cleanup stays inside this smoke test temporary directory')
   rmSync(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

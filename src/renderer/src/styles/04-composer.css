@@ -52,19 +52,17 @@
 .composer {
   max-width: 800px;
   margin: 0 auto;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-composer);
   background: var(--bg-input);
   box-shadow: var(--shadow);
   padding: var(--space-6) var(--space-6) var(--space-4) var(--space-7);
-  transition: border-color var(--dur-2) var(--ease);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
 .composer:focus-within {
-  border-color: rgba(31, 30, 29, 0.3);
+  border-color: var(--focus-border);
 }
-:root[data-theme='dark'] .composer:focus-within {
-  border-color: rgba(250, 249, 245, 0.3);
-}
+.composer:hover:not(:focus-within) { border-color: var(--border-strong); }
 .composer textarea {
   width: 100%;
   border: 0;
@@ -77,14 +75,13 @@
   min-height: 24px;
   display: block;
 }
-.composer textarea::placeholder {
-  color: var(--text-4);
-}
 .composer-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-4);
+  min-width: 0;
+  min-height: var(--control-sm);
 }
 .send-btn {
   width: 32px;

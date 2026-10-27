@@ -74,7 +74,7 @@ export class Scheduler {
   /** `now` is the clock the run is judged by (tests pass a fake one). */
   async run(id: string, now = Date.now()): Promise<void> {
     const r = this.store.routines.find((x) => x.id === id)
-    if (!r || this.running.has(id)) return
+    if (!r || r.widgetId || this.running.has(id)) return
     this.running.add(id)
     const slot = r.nextRunAt
     const stamp = new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })

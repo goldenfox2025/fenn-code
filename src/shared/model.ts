@@ -3,6 +3,7 @@
  * Shared by main (source of truth) and renderer (view). Backend-agnostic.
  */
 import type { GenerationTiming, MessageUsage, UsageTotals } from './usage'
+import type { BrowserInfo, BrowserFrame } from './browser'
 import type { AccountStatus, BackendSummary, CreditQuota, ModelInfo, PermissionDecision, PermissionRequest, SessionOption, ToolStatus } from './contract'
 
 export interface Attachment {
@@ -52,6 +53,9 @@ export type Block =
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 
+/** A contextual reference, never a routing instruction or an automatic wake-up. */
+export interface ConversationReference { id: string; title: string }
+
 /** How long the model picker waits for an agent that is still starting (Antigravity takes 15–25 s on Windows). */
 export const MODEL_PROBE_TIMEOUT_MS = 90_000
 
@@ -86,6 +90,7 @@ export interface Message {
   conversationId: string
   role: MessageRole
   blocks: Block[]
+  references?: ConversationReference[]
   createdAt: number
   /** 'streaming' while the agent is still producing it. */
   state?: 'streaming' | 'done' | 'error' | 'cancelled'
@@ -130,11 +135,66 @@ export interface ReplyModel {
 export type ConversationKind = 'chat' | 'project' | 'thread'
 export type WorkStatus = 'idle' | 'working' | 'waiting' | 'done' | 'error'
 
+/** A project worker owns this checkout; the project's folder stays on its integration branch. */
+export interface ThreadWorkspace {
+  root: string
+  path: string
+  branch: string
+  targetBranch: string
+  base: string
+}
+
+export interface DeliveryReview {
+  id: string
+  /** Findings are evidence for a decision, never an instruction to merge experiment code. */
+  kind?: 'change' | 'finding'
+  state: 'pending' | 'returned' | 'stale' | 'merging' | 'accepted'
+  summary: string
+  /** Worker reports, never presented as independently verified results. */
+  checks: string
+  unverified: string
+  submittedAt: number
+  head?: string
+  base?: string
+  assessment?: {
+    targetHead?: string
+    files: string[]
+    changes?: ReviewChangedFile[]
+    overlaps: { threadId: string; title: string; files: string[] }[]
+    blockers: string[]
+    diff: string
+  }
+  recommendation?: { verdict: 'ready' | 'changes_requested' | 'needs_discussion'; notes: string; summary?: string; integrationPlan?: string; targetHead?: string; at: number }
+  feedback?: string
+  continuation?: 'thread' | 'main'
+  /** A recorded human decision still needs to be consumed by the coordinator. */
+  decisionPending?: boolean
+  decidedAt?: number
+  mergeCommit?: string
+}
+
+export interface ReviewChangedFile {
+  path: string
+  status: 'added' | 'modified' | 'deleted'
+  added?: number
+  removed?: number
+}
+
+export interface ReviewFileContent {
+  path: string
+  before?: string
+  after?: string
+  patch: string
+  binary?: boolean
+  tooBig?: boolean
+}
+
 /** A message waiting behind the running reply. */
 export interface QueuedMessage {
   id: string
   text: string
   attachments?: Attachment[]
+  references?: ConversationReference[]
 }
 
 export interface Conversation {
@@ -162,11 +222,18 @@ export interface Conversation {
   /** What the user chose for those options in this conversation. */
   optionValues?: Record<string, string>
   cwd?: string
+  workspace?: ThreadWorkspace
+  taskKind?: 'change' | 'finding'
+  /** Code-changing threads prepare an isolated checkout before opening an agent session. */
+  isolateWorkspace?: boolean
+  review?: DeliveryReview
   createdAt: number
   updatedAt: number
   status: WorkStatus
   /** Task plan (✓ / ✱ / ○ lines): written by the agent (update_status or its own ACP plan), or by the app for threads. */
   checklist?: string
+  /** When a structured plan last changed; distinguishes carried-over plans from this turn. */
+  checklistUpdatedAt?: number
   /** Obstacles the agent reported, oldest first; the last one without resolvedAt is the current one. */
   blockers?: Blocker[]
   /** The title was made by the app or agent (not typed by the user), so it may be improved later. */
@@ -188,6 +255,8 @@ export interface Conversation {
   /** Messages the user has not seen yet. */
   unread?: boolean
   lastPreview?: string
+  /** Selected, traceable excerpts; generated in a disposable background session. */
+  contextDigest?: { fingerprint: string; notes: ContextNote[]; updatedAt: number }
   /** The backend session this conversation last used, for resuming after a restart. */
   sessionRef?: { backendId: string; sessionId: string }
   /** The user's instructions (自定义指令 and the project's) as the agent last received them, to hand over a change once. */
@@ -216,6 +285,14 @@ export interface Conversation {
   threadsSeenAt?: number
 }
 
+export interface ContextNote {
+  id: string
+  kind: 'source' | 'output'
+  title: string
+  excerpt: string
+  messageId: string
+}
+
 export interface Project {
   id: string
   name: string
@@ -238,6 +315,22 @@ export interface Project {
   notify?: NotifyLevel
   /** Results agents handed over in this project's conversations, newest last (the project's library). */
   outputs?: ProjectOutput[]
+  /** Human decisions waiting for coordinator follow-through, independent of resubmissions. */
+  pendingReviewDecisions?: ReviewDecisionNotice[]
+}
+
+export interface ReviewDecisionNotice {
+  id: string
+  threadId: string
+  revision: string
+  title: string
+  decision: 'accepted' | 'returned' | 'discussion'
+  kind?: 'change' | 'finding'
+  feedback?: string
+  continuation?: 'thread' | 'main'
+  mergeCommit?: string
+  integrationPlan?: string
+  at: number
 }
 
 /** When a message one thread leaves for another is delivered. */
@@ -372,8 +465,6 @@ export type BoardWidgetBody =
   /** A page of its own, in a sandboxed frame: no access to the app or the computer. */
   | { kind: 'html'; html: string; height?: number }
 export type BoardTone = 'good' | 'warn' | 'bad'
-/** A card's place in the home layout (settings.homeWidgets), beside the built-in widgets' ids. */
-export const boardWidgetKey = (id: string) => `board:${id}`
 
 /** A card on the home board that an agent made (in any chat or project), or a plugin. */
 /** Why a file opens view-only: text that isn't UTF-8 (shown as GBK), or a file outside the working folders. */
@@ -486,7 +577,7 @@ export interface AppSettings {
   recentFolders?: string[]
   /** Where a chat that makes files gets its own folder; Documents/Fenn Code when unset. */
   autoFolderRoot?: string
-  /** The widgets on the new-conversation page by id, in order; unset shows the built-in set. */
+  /** Legacy home layout, retained only for saved-data compatibility. */
   homeWidgets?: string[]
 }
 
@@ -519,7 +610,6 @@ export interface AppSnapshot {
   projects: Project[]
   conversations: Conversation[]
   routines: Routine[]
-  boardWidgets?: BoardWidget[]
   settings: AppSettings
   backends: BackendSummary[]
   platform: string
@@ -538,8 +628,6 @@ export type AppEvent =
   | { type: 'message-removed'; conversationId: string; id: string }
   | { type: 'routine'; routine: Routine }
   | { type: 'routine-removed'; id: string }
-  | { type: 'board-widget'; widget: BoardWidget }
-  | { type: 'board-widget-removed'; id: string }
   /** A project's memory was written or an entry removed. */
   | { type: 'memory-changed'; projectId: string }
   | { type: 'peer-message'; message: PeerMessage }
@@ -601,15 +689,21 @@ export interface NewChatOptions {
 
 /** The API the renderer sees as window.fenn. */
 export interface FennApi {
+  browserInfo(conversationId: string): Promise<BrowserInfo | null>
+  browserFrame(conversationId: string): Promise<BrowserFrame | null>
+  stopBrowser(conversationId: string): Promise<void>
+  listMemorySkills(projectId: string): Promise<MemorySkill[]>
+  composeMemory(projectId: string, input: MemoryInput): Promise<MemoryDraft>
   snapshot(): Promise<AppSnapshot>
   messages(conversationId: string): Promise<Message[]>
+  organizeContext(conversationId: string): Promise<void>
   onEvent(listener: (e: AppEvent) => void): () => void
 
   startChat(opts: NewChatOptions): Promise<Conversation>
-  send(conversationId: string, text: string, attachments?: Attachment[]): Promise<void>
+  send(conversationId: string, text: string, attachments?: Attachment[], referenceIds?: string[]): Promise<void>
   /** The app's own / commands (/子对话 in a chat, /讨论串 in a project); returns the new conversation's id. */
   runCommand(conversationId: string, command: 'subchat' | 'thread', text: string): Promise<string>
-  /** From the project chat: hands the user's message straight to one of its threads (@ in the composer). */
+  /** Explicit legacy forwarding; composer @ uses contextual references instead. */
   sendToThread(projectConversationId: string, threadId: string, text: string, attachments?: Attachment[]): Promise<void>
   /** Drops the last reply and asks again. */
   regenerate(conversationId: string): Promise<void>
@@ -646,7 +740,11 @@ export interface FennApi {
   upgradeBackend(backendId: string): Promise<{ ok: boolean; output: string; account: AccountStatus; /** Installed, but the program still isn't on PATH. */ notFound?: boolean }>
   updateConversation(id: string, patch: Partial<Pick<Conversation, 'title' | 'pinned' | 'resolved' | 'projectId' | 'unread' | 'cwd' | 'backendId'>>): Promise<void>
   deleteConversation(id: string): Promise<void>
-  react(messageId: string, conversationId: string, emoji: string): Promise<void>
+  inspectDelivery(id: string, revision: string, analyzeAgain?: boolean): Promise<DeliveryReview>
+  deliveryFile(id: string, revision: string, path: string): Promise<ReviewFileContent>
+  acceptDelivery(id: string, revision: string): Promise<void>
+  returnDelivery(id: string, revision: string, feedback: string, continuation?: 'thread' | 'main'): Promise<void>
+  discussDelivery(id: string, revision: string, feedback: string): Promise<void>
 
   createProject(p: { name: string; description?: string; instructions?: string; cwd?: string; backendId?: string }): Promise<Project>
   updateProject(id: string, patch: Partial<Omit<Project, 'id' | 'conversationId' | 'createdAt'>>): Promise<void>
@@ -654,8 +752,6 @@ export interface FennApi {
 
   saveRoutine(r: Omit<Routine, 'id' | 'createdAt'> & { id?: string }): Promise<Routine>
   deleteRoutine(id: string): Promise<void>
-  /** Deletes a card from the home board, and the routine that refreshed it. */
-  deleteBoardWidget(id: string): Promise<void>
   /** Where a file shown in a chat lives: a chat's or project's folder (and its path there), or nowhere the app manages. */
   locateFile(path: string, near?: string): Promise<{ libraryId?: string; rel?: string }>
   /** A file outside the working folders, read only. */
@@ -686,7 +782,7 @@ export interface FennApi {
   reloadBackends(): Promise<{ backends: BackendSummary[]; error?: string }>
   backendsConfigStatus(): Promise<{ error?: string; example: string }>
   appInfo(): Promise<AppInfo>
-  /** Tokens used per day across every chat (the home page's heatmap). */
+  /** Reported tokens by local date, across conversations. */
   usageCalendar(): Promise<UsageSummary>
   /** Moves a request the project chat answered inline into a new thread. */
   convertToThread(conversationId: string, messageId: string): Promise<void>
@@ -791,3 +887,4 @@ export interface BackgroundCommand {
   output?: string
   outputFile?: string
 }
+import type { MemoryInput, MemoryDraft, MemorySkill } from './memoryInput'

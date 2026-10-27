@@ -44,8 +44,8 @@
 .nav-item.nested::before {
   content: '';
   position: absolute;
-  left: 16px;
-  top: 4px;
+  left: var(--space-7);
+  top: var(--space-2);
   width: 8px;
   height: 11px;
   border-left: 1.5px solid var(--border-strong);

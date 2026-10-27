@@ -5,7 +5,7 @@ import { t } from '../i18n'
 
 /**
  * The last line of defence: a render error anywhere shows what went wrong and a way
- * back, instead of a blank window. (Home widgets have boundaries of their own.)
+ * back, instead of a blank window.
  */
 export class AppErrorBoundary extends Component<{ children: ReactNode }, { error: unknown }> {
   state: { error: unknown } = { error: null }

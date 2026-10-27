@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Bot, Check, FolderGit2, FolderKanban, FolderOpen, Info, Palette, Plug, Plus, User, X } from 'lucide-react'
+import { BackendLogo } from './BackendLogo'
 import type { AppInfo, ConnectorView, FolderCandidate, Project, Routine, Schedule, UpdateCheck } from '@shared/model'
 import { Dropdown, useMenu } from './Menu'
 import { confirmDialog, Overlay, useLayer } from './Modal'
 import { Switch } from './Switch'
+import { SegmentedControl } from './SegmentedControl'
 import { api, errorMessage, refreshAccount, toast, useApp, useUsableBackends, toastError } from '../store'
 import { langSetting, setLanguage, t } from '../i18n'
 import { LANGS } from '@shared/i18n'
@@ -37,6 +39,7 @@ function backendOption(b: BackendSummary) {
 }
 
 function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => void }) {
+  const fieldId = useId()
   const existing = useApp((s) => s.projects.find((p) => p.id === projectId))
   const defaultBackend = useApp((s) => s.settings.defaultBackendId)
   const navigate = useApp((s) => s.navigate)
@@ -75,23 +78,24 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
     <>
       <h2>{existing ? t('项目设置') : t('新建项目')}</h2>
       <div className="field">
-        <label>{t('名称')}</label>
-        <input className="input" value={f.name ?? ''} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={t('例如：家庭装修、毕业论文')} />
+        <label htmlFor={`${fieldId}-1`}>{t('名称')}</label>
+        <input id={`${fieldId}-1`} className="input" value={f.name ?? ''} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={t('例如：家庭装修、毕业论文')} />
       </div>
       <div className="field">
-        <label>{t('描述')}</label>
-        <input className="input" value={f.description ?? ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder={t('这个项目要做什么')} />
+        <label htmlFor={`${fieldId}-2`}>{t('描述')}</label>
+        <input id={`${fieldId}-2`} className="input" value={f.description ?? ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder={t('这个项目要做什么')} />
       </div>
       <div className="field">
-        <label>{t('项目指令')}</label>
-        <textarea className="textarea" value={f.instructions ?? ''} onChange={(e) => setF({ ...f, instructions: e.target.value })} placeholder={t('项目内每个 agent 都会遵守的说明，例如风格、约定、背景知识')} />
+        <label htmlFor={`${fieldId}-3`}>{t('项目指令')}</label>
+        <textarea id={`${fieldId}-3`} className="textarea" value={f.instructions ?? ''} onChange={(e) => setF({ ...f, instructions: e.target.value })} placeholder={t('项目内每个 agent 都会遵守的说明，例如风格、约定、背景知识')} />
       </div>
       <div className="field">
-        <label>{t('工作文件夹')}</label>
+        <label htmlFor={`${fieldId}-4`}>{t('工作文件夹')}</label>
         <div className="field-row">
-          <input className="input" value={f.cwd ?? ''} onChange={(e) => setF({ ...f, cwd: e.target.value })} placeholder={t('agent 可以读写的文件夹（可选）')} />
+          <input id={`${fieldId}-4`} className="input" value={f.cwd ?? ''} onChange={(e) => setF({ ...f, cwd: e.target.value })} placeholder={t('agent 可以读写的文件夹（可选）')} />
           <button
             className="btn"
+            data-tip={t('选择文件夹')}
             onClick={async () => {
               const dir = await api().pickFolder(f.cwd)
               if (dir) setF({ ...f, cwd: dir })
@@ -112,8 +116,8 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
         )}
       </div>
       <div className="field">
-        <label>{t('后端')}</label>
-        <Dropdown value={f.backendId} onChange={(v) => setF({ ...f, backendId: v })} options={usable.length ? usable.map(backendOption) : [{ value: '', label: t('还没有可用的 Agent 后端，请在设置里安装或登录') }]} />
+        <label htmlFor={`${fieldId}-5`}>{t('后端')}</label>
+        <Dropdown id={`${fieldId}-5`} value={f.backendId} onChange={(v) => setF({ ...f, backendId: v })} options={usable.length ? usable.map(backendOption) : [{ value: '', label: t('还没有可用的 Agent 后端，请在设置里安装或登录') }]} />
       </div>
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
@@ -129,6 +133,7 @@ function ProjectForm({ projectId, onDone }: { projectId?: string; onDone: () => 
 const WEEK = [t('日'), t('一'), t('二'), t('三'), t('四'), t('五'), t('六')]
 
 function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; projectId?: string; onDone: () => void }) {
+  const fieldId = useId()
   const existing = useApp((s) => s.routines.find((r) => r.id === routineId))
   const projects = useApp((s) => s.projects)
   const [name, setName] = useState(existing?.name ?? '')
@@ -146,9 +151,11 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
   const shownBackend = backendId || (usableForRoutine.find((b) => b.id === defaultBackend) ?? usableForRoutine[0])?.id || ''
   const [schedule, setSchedule] = useState<Schedule>(existing?.schedule ?? { kind: 'daily', time: '09:00' })
   const [allowCommands, setAllowCommands] = useState(!!existing?.allowCommands)
+  const scheduleError = schedule.kind === 'once' && !Number.isFinite(schedule.at) ? t('请选择有效的时间')
+    : schedule.kind === 'daily' && schedule.weekdays?.length === 0 ? t('请至少选择一天') : ''
 
   const save = async () => {
-    if (!name.trim() || !prompt.trim() || saving) return
+    if (!name.trim() || !prompt.trim() || saving || scheduleError) return
     // The target as it was when it wasn't changed here (with every field the form doesn't show).
     const sameTarget = existing && (keepsConversation || (!convTarget && (existing.target.projectId ?? '') === target))
     setSaving(true)
@@ -176,12 +183,12 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
     <>
       <h2>{existing ? t('编辑定时任务') : t('新建定时任务')}</h2>
       <div className="field">
-        <label>{t('名称')}</label>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('例如：每日早报')} />
+        <label htmlFor={`${fieldId}-1`}>{t('名称')}</label>
+        <input id={`${fieldId}-1`} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('例如：每日早报')} />
       </div>
       <div className="field">
-        <label>{t('要做什么')}</label>
-        <textarea className="textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t('每次运行时发给 agent 的指令')} />
+        <label htmlFor={`${fieldId}-2`}>{t('要做什么')}</label>
+        <textarea id={`${fieldId}-2`} className="textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t('每次运行时发给 agent 的指令')} />
       </div>
       <div className="field">
         <label>{t('频率')}</label>
@@ -209,16 +216,17 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
           />
           {schedule.kind === 'daily' && (
             <>
-              <input className="input" type="time" style={{ width: 120 }} value={schedule.time} onChange={(e) => setSchedule({ ...schedule, time: e.target.value })} />
+              <input className="input" aria-label={t('时间')} type="time" style={{ width: 120 }} value={schedule.time} onChange={(e) => setSchedule({ ...schedule, time: e.target.value })} />
               <div style={{ display: 'flex', gap: 4 }}>
                 {WEEK.map((w, i) => {
-                  const on = !schedule.weekdays?.length || schedule.weekdays.includes(i)
+                  const on = !schedule.weekdays || schedule.weekdays.includes(i)
                   return (
                     <button
                       key={i}
                       className={'day' + (on ? ' on' : '')}
+                      aria-pressed={on}
                       onClick={() => {
-                        const cur = schedule.weekdays?.length ? schedule.weekdays : [0, 1, 2, 3, 4, 5, 6]
+                        const cur = schedule.weekdays ?? [0, 1, 2, 3, 4, 5, 6]
                         const next = on ? cur.filter((d) => d !== i) : [...cur, i].sort()
                         setSchedule({ ...schedule, weekdays: next.length === 7 ? undefined : next })
                       }}
@@ -232,7 +240,7 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
           )}
           {schedule.kind === 'interval' && (
             <>
-              <input className="input" type="number" min={1} style={{ width: 100 }} value={schedule.minutes} onChange={(e) => setSchedule({ ...schedule, minutes: Math.max(1, +e.target.value) })} />
+              <input className="input" aria-label={t('分钟')} type="number" min={1} style={{ width: 100 }} value={schedule.minutes} onChange={(e) => setSchedule({ ...schedule, minutes: Math.max(1, +e.target.value) })} />
               <span className="muted" style={{ alignSelf: 'center' }}>{t('分钟')}</span>
             </>
           )}
@@ -240,19 +248,21 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
             <input
               className="input"
               type="datetime-local"
+              aria-label={t('时间')}
+              aria-invalid={!!scheduleError}
               style={{ width: 220 }}
               value={toLocalInput(schedule.at)}
               onChange={(e) => setSchedule({ kind: 'once', at: new Date(e.target.value).getTime() })}
             />
           )}
           {schedule.kind === 'cron' && (
-            <input className="input" style={{ width: 200 }} value={schedule.expr} onChange={(e) => setSchedule({ kind: 'cron', expr: e.target.value })} placeholder={t('分 时 日 月 周')} />
+            <input className="input" aria-label={t('Cron 表达式')} style={{ width: 200 }} value={schedule.expr} onChange={(e) => setSchedule({ kind: 'cron', expr: e.target.value })} placeholder={t('分 时 日 月 周')} />
           )}
         </div>
       </div>
       <div className="field">
-        <label>{t('结果发到')}</label>
-        <Dropdown
+        <label htmlFor={`${fieldId}-3`}>{t('结果发到')}</label>
+        <Dropdown id={`${fieldId}-3`}
           value={target}
           onChange={setTarget}
           options={[
@@ -265,8 +275,8 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
       </div>
       {!target && (
         <div className="field">
-          <label>{t('后端')}</label>
-          <Dropdown value={shownBackend} onChange={setBackendId} options={usableForRoutine.map(backendOption)} />
+          <label htmlFor={`${fieldId}-4`}>{t('后端')}</label>
+          <Dropdown id={`${fieldId}-4`} value={shownBackend} onChange={setBackendId} options={usableForRoutine.map(backendOption)} />
         </div>
       )}
       <div className="field">
@@ -278,10 +288,11 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
           <Switch on={allowCommands} label={t('允许运行命令')} onChange={setAllowCommands} />
         </div>
       </div>
+      {scheduleError && <p className="help" role="alert">{scheduleError}</p>}
       <div className="modal-actions">
         <button className="btn" onClick={onDone}>
           {t('取消')}</button>
-        <button className="btn primary" disabled={!name.trim() || !prompt.trim() || saving} onClick={save}>
+        <button className="btn primary" disabled={!name.trim() || !prompt.trim() || saving || !!scheduleError} onClick={save}>
           {t('保存')}</button>
       </div>
     </>
@@ -289,13 +300,17 @@ function RoutineForm({ routineId, projectId, onDone }: { routineId?: string; pro
 }
 
 function toLocalInput(ts: number): string {
-  const d = new Date(ts - new Date().getTimezoneOffset() * 60000)
+  if (!Number.isFinite(ts)) return ''
+  const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000)
+  if (!Number.isFinite(d.getTime())) return ''
   return d.toISOString().slice(0, 16)
 }
 
 function SettingsModal({ tab: initial, onClose }: { tab: string; onClose: () => void }) {
   const [tab, setTab] = useState(['backends', 'connectors', 'about'].includes(initial) ? initial : 'general')
-  const [, setFormOpen] = useState(false)
+  const leaveGuard = useRef<(() => Promise<boolean>) | undefined>(undefined)
+  const registerLeaveGuard = useCallback((guard?: () => Promise<boolean>) => { leaveGuard.current = guard }, [])
+  const leave = async (action: () => void) => { if (!leaveGuard.current || await leaveGuard.current()) action() }
   const tabs = [
     { id: 'general', label: t('通用'), icon: <User size={15} /> },
     { id: 'appearance', label: t('外观'), icon: <Palette size={15} /> },
@@ -306,15 +321,15 @@ function SettingsModal({ tab: initial, onClose }: { tab: string; onClose: () => 
   // Like Claude: a close button in the corner (top-left on macOS), Esc closes too, and every change is already saved.
   const mac = useApp((s) => s.platform) === 'darwin'
   return (
-    <Overlay onClose={onClose}>
+    <Overlay onClose={() => void leave(onClose)} label={t('设置')}>
       <div className={'modal wide settings-modal' + (mac ? ' mac' : '')} tabIndex={-1}>
-        <button className={'icon-btn settings-close ' + (mac ? 'left' : 'right')} data-tip={t('关闭')} aria-label={t('关闭')} onClick={onClose}>
+        <button className={'icon-btn settings-close ' + (mac ? 'left' : 'right')} data-tip={t('关闭')} aria-label={t('关闭')} onClick={() => void leave(onClose)}>
           <X size={18} />
         </button>
         <nav className="settings-nav">
-          <div style={{ fontSize: 18, fontWeight: 500, padding: '0 10px 12px' }}>{t('设置')}</div>
+          <h2 className="settings-heading">{t('设置')}</h2>
           {tabs.map((t) => (
-            <button key={t.id} className={'nav-item' + (tab === t.id ? ' selected' : '')} onClick={() => setTab(t.id)}>
+            <button key={t.id} aria-current={tab === t.id ? 'page' : undefined} className={'nav-item' + (tab === t.id ? ' selected' : '')} onClick={() => { if (tab !== t.id) void leave(() => setTab(t.id)) }}>
               {t.icon}
               <span className="label">{t.label}</span>
             </button>
@@ -325,7 +340,7 @@ function SettingsModal({ tab: initial, onClose }: { tab: string; onClose: () => 
           {tab === 'general' && <GeneralSettings />}
           {tab === 'appearance' && <AppearanceSettings />}
           {tab === 'backends' && <BackendSettings />}
-          {tab === 'connectors' && <ConnectorSettings onFormChange={setFormOpen} />}
+          {tab === 'connectors' && <ConnectorSettings registerLeaveGuard={registerLeaveGuard} />}
           {tab === 'about' && <AboutSettings />}
         </div>
       </div>
@@ -362,6 +377,7 @@ function useSaveOnLeave(value: string, save: (v: string) => unknown) {
 }
 
 function GeneralSettings() {
+  const fieldId = useId()
   const [defaultFolder, setDefaultFolder] = useState<string>()
   useEffect(() => void api().appInfo().then((i) => setDefaultFolder(i.defaultFolder)), [])
   const settings = useApp((s) => s.settings)
@@ -375,20 +391,21 @@ function GeneralSettings() {
     <>
       <h2>{t('通用')}</h2>
       <div className="field">
-        <label>{t('怎么称呼您')}</label>
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => api().updateSettings({ userName: name.trim() })} placeholder={t('您的名字')} />
+        <label htmlFor={`${fieldId}-1`}>{t('怎么称呼您')}</label>
+        <input id={`${fieldId}-1`} className="input" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => api().updateSettings({ userName: name.trim() })} placeholder={t('您的名字')} />
       </div>
       <div className="field">
-        <label>{t('自定义指令')}</label>
-        <textarea className="textarea" value={rules} onChange={(e) => setRules(e.target.value)} onBlur={() => saveRules(rules)} placeholder={t('每个对话里的 agent 都会遵守，例如：回答简短一些；代码注释用英文')} />
+        <label htmlFor={`${fieldId}-2`}>{t('自定义指令')}</label>
+        <textarea id={`${fieldId}-2`} className="textarea" value={rules} onChange={(e) => setRules(e.target.value)} onBlur={() => saveRules(rules)} placeholder={t('每个对话里的 agent 都会遵守，例如：回答简短一些；代码注释用英文')} />
         <div className="help">{t('所有后端都会收到。改了以后，进行中的对话从下一轮起按新的来；项目里的对话还会收到项目指令。')}</div>
       </div>
       <div className="field">
-        <label>{t('默认文件夹')}</label>
+        <label htmlFor={`${fieldId}-3`}>{t('默认文件夹')}</label>
         <div className="field-row">
-          <input className="input" value={settings.autoFolderRoot ?? ''} readOnly placeholder={defaultFolder ?? t('文档/Fenn Code')} />
+          <input id={`${fieldId}-3`} className="input" value={settings.autoFolderRoot ?? ''} readOnly placeholder={defaultFolder ?? t('文档/Fenn Code')} />
           <button
             className="btn"
+            data-tip={t('选择文件夹')}
             onClick={async () => {
               const dir = await api().pickFolder(settings.autoFolderRoot)
               if (dir) void api().updateSettings({ autoFolderRoot: dir })
@@ -479,7 +496,6 @@ function AboutSettings() {
         <div>
           <div className="title">Fenn Code</div>
           <div className="small muted">{t('桌面上的 AI 工作台：对话、项目和定时任务，背后的 agent 可以随时更换。')}</div>
-          <div className="small muted">{t('非官方开源项目（MIT 许可），与 Anthropic 无关。')}</div>
         </div>
       </div>
       <div className="card about-rows">
@@ -566,23 +582,11 @@ function AppearanceSettings() {
       <h2>{t('外观')}</h2>
       <div className="field">
         <label>{t('颜色')}</label>
-        <div className="seg-control">
-          {(['light', 'dark', 'system'] as const).map((th) => (
-            <button key={th} className={theme === th ? 'on' : ''} onClick={() => api().updateSettings({ theme: th })}>
-              {{ system: t('跟随系统'), light: t('浅色'), dark: t('深色') }[th]}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl label={t('颜色')} value={theme} onChange={(theme) => void api().updateSettings({ theme })} options={[{ value: 'light', label: t('浅色') }, { value: 'dark', label: t('深色') }, { value: 'system', label: t('跟随系统') }]} />
       </div>
       <div className="field">
         <label>{t('点阵背景')}</label>
-        <div className="seg-control">
-          {([0, 1, 2] as const).map((n) => (
-            <button key={n} className={(dotGrid ?? 1) === n ? 'on' : ''} onClick={() => api().updateSettings({ dotGrid: n })}>
-              {[t('关'), t('轻'), t('明显')][n]}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl label={t('点阵背景')} value={dotGrid ?? 1} onChange={(dotGrid) => void api().updateSettings({ dotGrid })} options={[{ value: 0, label: t('关') }, { value: 1, label: t('轻') }, { value: 2, label: t('明显') }]} />
         <div className="help">{t('内容后面一层很淡的小点，鼠标经过时附近会微微亮起。')}</div>
       </div>
       <div className="field">
@@ -638,7 +642,7 @@ function BackendSettings() {
         <div key={b.id} className="card" style={{ marginBottom: 12 }}>
           <div className="row-between backend-card-head">
             <div className="backend-card-info">
-              <div className="title">{b.name}</div>
+              <div className="title backend-title"><BackendLogo id={b.id} />{b.name}</div>
               <div className="small muted">{b.description}</div>
               {(b.account || b.upgrade) && <AccountLine backendId={b.id} name={b.name} upgrade={b.upgrade} configKey={JSON.stringify(b.configured)} />}
             </div>
@@ -655,18 +659,7 @@ function BackendSettings() {
           </div>
           {installed && <PrestartSwitch backendId={b.id} name={b.name} />}
           {installed && b.settings.filter((s) => s.type === 'toggle').map((s) => <BackendToggle key={s.key} backendId={b.id} setting={s} on={!!b.toggles?.[s.key]} />)}
-          {b.settings.some((s) => s.type !== 'toggle') &&
-            // Signed in and working: its raw settings fold away. Otherwise they are what it takes to get there.
-            (installed && account?.signedIn === true ? (
-              <details className="advanced backend-advanced">
-                <summary>{t('高级设置')}</summary>
-                {b.settings.filter((s) => s.type !== 'toggle').map((s) => (
-                  <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />
-                ))}
-              </details>
-            ) : (
-              b.settings.filter((s) => s.type !== 'toggle').map((s) => <BackendField key={s.key} backendId={b.id} setting={s} configured={b.configured[s.key]} />)
-            ))}
+          {b.settings.some((s) => s.type !== 'toggle') && <BackendFields backendId={b.id} settings={b.settings.filter(setting => setting.type !== 'toggle')} configured={b.configured} ready={installed && account?.signedIn === true} />}
         </div>
         )
       })}
@@ -706,6 +699,16 @@ function BackendSettings() {
       </details>
     </>
   )
+}
+
+/** Keep fields mounted and preserve the user's disclosure while account checks refresh. */
+function BackendFields({ backendId, settings, configured, ready }: {backendId: string; settings: PluginSetting[]; configured: Record<string, boolean>; ready: boolean}) {
+  const [open, setOpen] = useState(!ready), touched = useRef(false), root = useRef<HTMLDetailsElement>(null)
+  useEffect(() => { if (!touched.current && !root.current?.contains(document.activeElement)) setOpen(!ready) }, [ready])
+  return <details className="advanced backend-advanced" ref={root} open={open} onFocusCapture={() => { touched.current = true }} onPointerDownCapture={() => { touched.current = true }}>
+    <summary onClick={event => { event.preventDefault(); touched.current = true; setOpen(!open) }}>{t('高级设置')}</summary>
+    {settings.map(setting => <BackendField key={setting.key} backendId={backendId} setting={setting} configured={configured[setting.key]} />)}
+  </details>
 }
 
 /** 「打开 Fenn Code 时预先启动」: the agent starts with the app, so the first message doesn't wait for it. */
@@ -1014,6 +1017,7 @@ export function TerminalLoginButton({ backendId }: { backendId: string }) {
 
 /** One backend setting. It saves when you leave the field or press Enter (Esc puts it back); no button of its own. */
 export function BackendField({ backendId, setting, configured }: { backendId: string; setting: { key: string; label: string; secret?: boolean; placeholder?: string; help?: string }; configured: boolean }) {
+  const inputId = useId()
   const [value, setValue] = useState('')
   const [editing, setEditing] = useState(!configured)
   useEffect(() => setEditing(!configured), [configured])
@@ -1040,10 +1044,12 @@ export function BackendField({ backendId, setting, configured }: { backendId: st
   useSaveOnLeave(value, (v) => v.trim() && !saving.current && void api().setBackendSetting(backendId, setting.key, v.trim()).catch(toastError))
   return (
     <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-      <label>{setting.label}</label>
+      <label htmlFor={inputId}>{setting.label}</label>
       {editing ? (
         <input
+          id={inputId}
           className="input"
+          aria-label={setting.label}
           type={setting.secret ? 'password' : 'text'}
           value={value}
           placeholder={setting.placeholder}
@@ -1090,7 +1096,7 @@ interface ConnectorDraft {
 }
 
 /** The connector form has its own 取消/保存; the list saves as you go. */
-function ConnectorSettings({ onFormChange }: { onFormChange: (open: boolean) => void }) {
+function ConnectorSettings({ registerLeaveGuard }: { registerLeaveGuard: (guard?: () => Promise<boolean>) => void }) {
   const [list, setList] = useState<ConnectorView[] | null>(null)
   const [draft, setDraft] = useState<ConnectorDraft | null>(null)
   const reload = () => api().listConnectors().then(setList, toastError)
@@ -1098,11 +1104,7 @@ function ConnectorSettings({ onFormChange }: { onFormChange: (open: boolean) => 
     void reload()
   }, [])
 
-  useEffect(() => {
-    onFormChange(!!draft)
-    return () => onFormChange(false)
-  }, [draft, onFormChange])
-  if (draft) return <ConnectorForm draft={draft} onDone={() => (setDraft(null), void reload())} />
+  if (draft) return <ConnectorForm draft={draft} registerLeaveGuard={registerLeaveGuard} onDone={() => (setDraft(null), void reload())} />
   return (
     <>
       <h2>{t('连接器')}</h2>
@@ -1158,16 +1160,17 @@ function ConnectorSettings({ onFormChange }: { onFormChange: (open: boolean) => 
   )
 }
 
-function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDone: () => void }) {
+function ConnectorForm({ draft: initial, onDone, registerLeaveGuard }: { draft: ConnectorDraft; onDone: () => void; registerLeaveGuard: (guard?: () => Promise<boolean>) => void }) {
+  const fieldId = useId()
   const [d, setD] = useState(initial)
   const [error, setError] = useState('')
-  // Esc closes this form first, not the whole Settings window; typed changes aren't dropped without asking.
-  useLayer(async () => {
-    if (JSON.stringify(d) !== JSON.stringify(initial) && !(await confirmDialog(t('放弃没保存的连接器？'), { ok: t('放弃') }))) return
-    onDone()
-  })
   const set = (p: Partial<ConnectorDraft>) => setD({ ...d, ...p })
   const [saving, setSaving] = useState(false)
+  const canLeave = useCallback(async () => !saving && (JSON.stringify(d) === JSON.stringify(initial) || await confirmDialog(t('放弃没保存的连接器？'), { ok: t('放弃') })), [d, initial, saving])
+  const cancel = async () => { if (await canLeave()) onDone() }
+  useEffect(() => { registerLeaveGuard(canLeave); return () => registerLeaveGuard(undefined) }, [canLeave, registerLeaveGuard])
+  // Settings navigation, close, backdrop, form Cancel and Escape share this guard.
+  useLayer(() => void cancel())
   const save = async () => {
     if (saving) return
     const words = splitArgs(d.commandLine)
@@ -1198,22 +1201,17 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
     <>
       <h2>{d.id ? t('编辑连接器') : t('添加连接器')}</h2>
       <div className="field">
-        <label>{t('名称')}</label>
-        <input className="input" value={d.name} placeholder="filesystem" onChange={(e) => set({ name: e.target.value })} />
+        <label htmlFor={`${fieldId}-1`}>{t('名称')}</label>
+        <input id={`${fieldId}-1`} className="input" value={d.name} placeholder="filesystem" onChange={(e) => set({ name: e.target.value })} />
       </div>
       <div className="field">
         <label>{t('类型')}</label>
-        <div className="seg-row">
-          <button className={'btn' + (d.kind === 'command' ? ' primary' : '')} onClick={() => set({ kind: 'command' })}>
-            {t('本地命令')}</button>
-          <button className={'btn' + (d.kind === 'http' ? ' primary' : '')} onClick={() => set({ kind: 'http' })}>
-            {t('远程地址')}</button>
-        </div>
+        <SegmentedControl label={t('类型')} value={d.kind} onChange={(kind) => set({ kind })} options={[{ value: 'command', label: t('本地命令') }, { value: 'http', label: t('远程地址') }]} />
       </div>
       {d.kind === 'command' ? (
         <div className="field">
-          <label>{t('命令')}</label>
-          <input
+          <label htmlFor={`${fieldId}-2`}>{t('命令')}</label>
+          <input id={`${fieldId}-2`}
             className="input"
             value={d.commandLine}
             placeholder="npx -y @modelcontextprotocol/server-filesystem ~/Documents"
@@ -1222,14 +1220,16 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
         </div>
       ) : (
         <div className="field">
-          <label>{t('地址')}</label>
-          <input className="input" value={d.url} placeholder="https://example.com/mcp" onChange={(e) => set({ url: e.target.value })} />
+          <label htmlFor={`${fieldId}-3`}>{t('地址')}</label>
+          <input id={`${fieldId}-3`} className="input" value={d.url} placeholder="https://example.com/mcp" onChange={(e) => set({ url: e.target.value })} />
         </div>
       )}
       <div className="field">
-        <label>{d.kind === 'command' ? t('环境变量') : t('请求头')}{t('（每行一个 KEY=值，加密保存）')}</label>
+        <label htmlFor={`${fieldId}-secrets`}>{d.kind === 'command' ? t('环境变量') : t('请求头')}{t('（每行一个 KEY=值，加密保存）')}</label>
         <textarea
+          id={`${fieldId}-secrets`}
           className="textarea"
+          aria-label={d.kind === 'command' ? t('环境变量') : t('请求头')}
           style={{ minHeight: 70, fontFamily: 'var(--font-mono)', fontSize: 13 }}
           value={d.secretsText}
           placeholder={d.kind === 'command' ? 'GITHUB_TOKEN=...' : 'Authorization=Bearer ...'}
@@ -1259,7 +1259,7 @@ function ConnectorForm({ draft: initial, onDone }: { draft: ConnectorDraft; onDo
           )}
         </div>
         <div className="field-row">
-          <button className="btn" onClick={onDone}>
+          <button className="btn" onClick={() => void cancel()}>
             {t('取消')}</button>
           <button className="btn primary" disabled={saving} onClick={save}>
             {t('保存')}</button>

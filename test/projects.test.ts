@@ -32,12 +32,13 @@ describe('projects and threads', () => {
     await dispose()
   }, 30000)
 
-  it('reacts to thanks without a text reply', async () => {
+  it('acknowledges thanks without reaction tooling', async () => {
     const { core, store, dispose } = await makeCore()
     const p = await core.createProject({ name: 'x', backendId: 'mock' })
     await core.chat.send(p.conversationId, '谢谢！')
     const user = store.messagesOf(p.conversationId).find((m) => m.role === 'user')!
-    expect(user.reactions).toEqual(['👍'])
+    expect(user.reactions).toBeUndefined()
+    expect(textOf(store.messagesOf(p.conversationId).findLast(m => m.role === 'assistant')!)).toContain('不客气')
     await dispose()
   })
 
@@ -45,7 +46,9 @@ describe('projects and threads', () => {
     const { core, store, dispose } = await makeCore()
     const p = await core.createProject({ name: 'x', backendId: 'mock' })
     await core.chat.send(p.conversationId, '帮我整理文档，完成后解决')
-    const t = await until(() => store.conversations.find((c) => c.kind === 'thread' && c.resolved))
+    const t = await until(() => store.conversations.find((c) => c.kind === 'thread' && c.review?.state === 'pending' && c.status !== 'working'))
+    await core.orchestrator.reviews.recommend(t.id, t.review!.id, 'ready', 'Fixture review')
+    await core.acceptDelivery(t.id, t.review!.id)
     await core.send(t.id, '再补充一点')
     expect(store.conversation(t.id)!.resolved).toBe(false)
     await dispose()

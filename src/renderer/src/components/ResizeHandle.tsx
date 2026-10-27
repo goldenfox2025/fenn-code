@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { t } from '../i18n'
 
 /** Widths the user dragged, remembered in this window (cleared by a double-click on the handle). */
@@ -63,6 +63,19 @@ const KEY_STEP = 16
  * pane the handle sits on.
  */
 export function ResizeHandle({ pane, edge, onCollapse, onResize }: { pane: Pane; edge: 'left' | 'right'; onCollapse?: () => void; onResize?: () => void }) {
+  const handleRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ now: PANE_LIMITS[pane].min, max: PANE_LIMITS[pane].max })
+  useLayoutEffect(() => {
+    const target = handleRef.current?.parentElement
+    if (!target) return
+    const measure = () => {
+      const now = Math.round(target.getBoundingClientRect().width)
+      if (now) setSize({ now, max: Math.max(now, Math.round(bounds(pane, target).max)) })
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(target); measure()
+    return () => observer.disconnect()
+  }, [pane])
   const [dragging, setDragging] = useState(false)
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
@@ -117,9 +130,13 @@ export function ResizeHandle({ pane, edge, onCollapse, onResize }: { pane: Pane;
   }
   return (
     <div
+      ref={handleRef}
       className={`resize-handle edge-${edge}` + (dragging ? ' active' : '')}
       role="separator"
       aria-orientation="vertical"
+      aria-valuemin={Math.min(size.now, PANE_LIMITS[pane].min)}
+      aria-valuemax={size.max}
+      aria-valuenow={size.now}
       aria-label={t('拖动或用方向键调整宽度，双击或按 Home 恢复默认')}
       tabIndex={0}
       onPointerDown={onPointerDown}

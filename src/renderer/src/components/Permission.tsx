@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import type { PermissionRequest } from '../../../shared/contract'
 import { api, toastError, useApp } from '../store'
 import { t } from '../i18n'
+import { SegmentedControl } from './SegmentedControl'
 
 type Tier = 'full' | 'click' | 'view' | 'none'
 const TIERS: { id: Tier; label: string }[] = [
@@ -48,7 +49,7 @@ function Prompt({ r, more }: { r: PermissionRequest; more: number }) {
     r.apps && kind.startsWith('allow') ? `${id}:${JSON.stringify(tiers)}` : id
   return (
     <div className="perm" role="group" aria-label={t('需要您的许可：')}>
-      <div className="perm-heading">
+      <div className="perm-heading" role="alert" aria-atomic="true">
         <ShieldQuestion size={16} style={{ color: 'var(--amber)' }} />
         {t('需要您的许可：')}
         <span className="perm-title" tabIndex={0}>{r.title}</span>
@@ -64,13 +65,7 @@ function Prompt({ r, more }: { r: PermissionRequest; more: number }) {
                   {a.name}
                   {!a.running && <span className="muted">{t('（未运行）')}</span>}
                 </span>
-                <div className="seg-control sm">
-                  {TIERS.map((o) => (
-                    <button key={o.id} className={tiers[a.key] === o.id ? 'on' : ''} onClick={() => setTiers({ ...tiers, [a.key]: o.id })}>
-                      {t(o.label)}
-                    </button>
-                  ))}
-                </div>
+                <SegmentedControl className="sm" label={a.name} value={tiers[a.key]} onChange={(tier) => setTiers({ ...tiers, [a.key]: tier })} options={TIERS.map((o) => ({ value: o.id, label: t(o.label) }))} />
               </div>
             ))}
             <div className="help">{t('完全控制：可以点击和输入。仅点击：不能输入文字或按键，适合终端和代码编辑器。仅查看：只能截图。')}</div>

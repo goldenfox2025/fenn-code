@@ -1,23 +1,21 @@
-/* Live plan under a conversation's title */
+/* A live, content-sized plan in the transcript's reading column. */
 .plan-line {
-  flex: none;
-  /* The transcript's column, so its edges line up with the turns below. */
-  width: calc(min(100% - var(--transcript-gutter, 0px), var(--turn-width) + 2 * var(--turn-gutter)) - 2 * var(--turn-gutter));
-  position: relative;
-  left: calc(-0.5 * var(--transcript-gutter, 0px));
-  margin: calc(-1 * var(--space-3)) auto var(--space-2);
-  font-size: 12.5px;
+  width: 100%;
+  margin-top: var(--space-7);
+  font-size: var(--font-sm);
   color: var(--text-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
+  overflow: hidden;
 }
 .plan-summary {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-3) var(--space-5);
+  min-height: var(--space-11);
+  padding: var(--space-5) var(--space-7);
   border-radius: inherit;
   color: inherit;
 }
@@ -59,9 +57,10 @@
   transform: rotate(90deg);
 }
 .plan-body {
-  padding: 0 var(--space-5) var(--space-4);
-  max-height: 40vh;
+  padding: 0 var(--space-7) var(--space-6);
+  max-height: min(320px, 45vh);
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .plan-steps {
   list-style: none;
@@ -72,9 +71,9 @@
 }
 .plan-step {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-4);
-  padding: var(--space-2) 0;
+  padding: var(--space-3) 0;
   color: var(--text);
   font-size: var(--font-sm);
 }
@@ -89,15 +88,14 @@
 .plan-step.done .plan-step-text {
   color: var(--text-3);
 }
-.plan-step-time {
-  flex: none;
-  font-size: var(--font-xs);
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
 .step-icon {
   flex: none;
 }
+.plan-step .step-icon { margin-top: calc(var(--space-3) / 2); }
+.plan-note { margin: var(--space-2) 0 var(--space-3); color: var(--text-3); font-size: var(--font-xs); }
+.plan-more { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-6); padding-block: var(--space-3); color: var(--text-2); font-size: var(--font-xs); }
+.plan-more > span { color: var(--text-3); }
+.plan-more:hover { color: var(--text); }
 .step-icon.done {
   fill: var(--text-3);
   color: var(--bg-floating);
@@ -180,11 +178,6 @@
   color: var(--accent-fg);
   border-color: var(--accent);
 }
-.thread-view .plan-line {
-  width: auto;
-  margin: var(--space-3) 14px 0;
-}
-
 /* ---- project progress board ---- */
 .ps.todo { color: var(--text-3); }
 .ps.doing { color: var(--blue); }
@@ -361,14 +354,14 @@
 }
 .settings-close {
   position: absolute;
-  top: 12px;
+  top: var(--space-6);
   z-index: 2;
 }
 .settings-close.right {
-  right: 12px;
+  right: var(--space-6);
 }
 .settings-close.left {
-  left: 12px;
+  left: var(--space-6);
 }
 /* On macOS the close button sits top-left, above the 设置 title. */
 .settings-modal.mac .settings-nav {
@@ -413,10 +406,7 @@
   font-size: 12px;
   color: var(--text-3);
 }
-.seg-control.sm button {
-  padding: 3px 9px;
-  font-size: 12px;
-}
+
 .reenter-banner {
   display: flex;
   align-items: flex-start;
@@ -566,13 +556,13 @@
 .field-row {
   display: flex;
   align-items: center;
-  min-height: 38px;
+  min-height: var(--control-h);
   gap: var(--space-4);
 }
 .field-row > .btn {
   flex: none;
   height: auto;
-  min-height: 38px;
+  min-height: var(--control-h);
 }
 /* A menu takes focus to drive its keyboard navigation; the highlighted item shows where it is, not a ring. */
 .menu:focus-visible {

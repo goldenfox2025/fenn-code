@@ -2,7 +2,7 @@
   "name": "fenn-code",
   "productName": "Fenn Code",
   "version": "0.1.3",
-  "description": "Fenn Code: an unofficial, Claude-style desktop app for ACP agents (chats, projects, threads, scheduled tasks). Not affiliated with Anthropic.",
+  "description": "A desktop workspace for ACP agents: chats, project threads, interactive replies, scheduled tasks and computer control.",
   "author": "Fenn Code contributors",
   "homepage": "https://github.com/goldenfox2025/fenn-code#readme",
   "repository": {
@@ -41,6 +41,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.8.0",
     "chart.js": "4.5.1",
+    "playwright-core": "^1.64.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -52,10 +53,10 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "lucide-react": "^1.55.0",
-    "playwright-core": "^1.64.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
+    "remark-cjk-friendly": "2.3.3",
     "remark-gfm": "^4.0.1",
     "typescript": "^7.0.2",
     "vite": "^7.3.7",

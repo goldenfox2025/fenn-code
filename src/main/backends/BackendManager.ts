@@ -502,32 +502,66 @@ export class BackendManager {
    * One-off question in a fresh session; resolves with the reply text.
    * Used for background chores (classification, titles) that the user does not see.
    */
-  async ask(backendId: string, text: string, opts: { timeoutMs?: number; cwd?: string } = {}): Promise<string> {
+  async ask(backendId: string, text: string, opts: { timeoutMs?: number; cwd?: string; modelId?: string; optionValues?: Record<string, string> } = {}): Promise<string> {
+    const native = this.opts.plugins.find((p) => p.id === backendId)?.backgroundAsk
+    if (native) return native(this.opts.settings.get(backendId), text, { cwd: opts.cwd || this.opts.defaultCwd, timeoutMs: opts.timeoutMs, model: opts.modelId || this.opts.defaultModel?.(backendId) })
     const backend = this.get(backendId)
-    const { sessionId } = await backend.newSession({ cwd: opts.cwd || this.opts.defaultCwd })
-    let out = ''
-    const off = this.onAgentEvent((b, s, e) => {
-      if (b === backendId && s === sessionId && e.kind === 'message.delta') out += e.text
-    })
-    this.backgroundSessions.add(`${backendId}:${sessionId}`)
+    let out = '', sessionId: string | undefined, expired = false, released = false
+    let off = () => {}
+    const failure = new Error('整理超时，请重试。')
+    const release = () => {
+      off()
+      if (sessionId && !released) {
+        released = true
+        this.backgroundSessions.delete(`${backendId}:${sessionId}`)
+        void backend.closeSession?.(sessionId, { discard: true }).catch(() => {})
+      }
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const turn = backend.prompt(sessionId, [{ type: 'text', text }])
       const timeout = new Promise<never>((_, rej) =>
-        setTimeout(() => rej(new Error('timeout')), opts.timeoutMs ?? 60_000)
+        timer = setTimeout(() => {
+          expired = true
+          if (sessionId) void backend.cancel?.(sessionId).catch(() => {})
+          rej(failure)
+        }, opts.timeoutMs ?? 60_000)
       )
+      // The deadline covers session startup and configuration as well as generation.
+      const turn = (async () => {
+        sessionId = (await backend.newSession({ cwd: opts.cwd || this.opts.defaultCwd })).sessionId
+        if (expired) { release(); throw failure }
+        this.backgroundSessions.add(`${backendId}:${sessionId}`)
+        off = this.onAgentEvent((b, s, e) => {
+          if (b === backendId && s === sessionId && e.kind === 'message.delta') out += e.text
+        })
+        if (opts.modelId) await backend.setModel?.(sessionId, opts.modelId)
+        for (const [key, value] of Object.entries(opts.optionValues || {})) {
+          if (expired) throw failure
+          await backend.setOption?.(sessionId, key, value)
+        }
+        if (expired) throw failure
+        return backend.prompt(sessionId, [{ type: 'text', text }])
+      })()
       const res = await Promise.race([turn, timeout])
       if (res.stopReason === 'error') throw new Error(res.error)
       return out.trim()
     } finally {
-      off()
-      this.backgroundSessions.delete(`${backendId}:${sessionId}`)
-      // Background chores leave nothing behind in the agent.
-      void backend.closeSession?.(sessionId, { discard: true }).catch(() => {})
+      clearTimeout(timer)
+      release()
     }
   }
 
   /** Background sessions never prompt the user; permission requests are declined. */
   private backgroundSessions = new Set<string>()
+
+  async setAppTitle(backendId: string, sessionId: string, title: string): Promise<void> {
+    const listing = this.opts.plugins.find((p) => p.id === backendId)?.appListing
+    if (listing?.setTitle && listing.shown(this.opts.settings.get(backendId))) await listing.setTitle(this.opts.settings.get(backendId), sessionId, title)
+  }
+
+  supportsAppTitles(backendId: string): boolean {
+    return !!this.opts.plugins.find((p) => p.id === backendId)?.appListing?.setTitle
+  }
 
   respondPermission(requestId: string, decision: PermissionDecision): void {
     this.permissionWaiters.get(requestId)?.(decision)

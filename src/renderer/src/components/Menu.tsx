@@ -325,7 +325,9 @@ export function useMenu(opts: { align?: 'left' | 'right'; placement?: 'below' | 
     (anchor: HTMLElement, items: MenuItem[]) =>
       setState((s) => (s?.anchor === anchor ? null : { anchor, rect: anchor.getBoundingClientRect(), items })),
     /** Replaces the items of the open menu (e.g. when its numbers arrive); does nothing when closed. */
-    (items: MenuItem[]) => setState((s) => s && { ...s, items })
+    (items: MenuItem[]) => setState((s) => s && { ...s, items }),
+    /** Close when a responsive toolbar replaces its anchor. */
+    () => setState(null)
   ] as const
 }
 
@@ -351,7 +353,8 @@ export function Dropdown<T extends string>({
   align,
   placement,
   title,
-  className
+  className,
+  id
 }: {
   value: T | undefined
   options: (DropdownOption<T> | { heading: string } | { separator: true })[]
@@ -363,6 +366,7 @@ export function Dropdown<T extends string>({
   placement?: 'below' | 'above'
   title?: string
   className?: string
+  id?: string
 }) {
   const [menu, open] = useMenu({ align, placement, matchWidth: variant === 'field' })
   const current = options.find((o): o is DropdownOption<T> => 'value' in o && o.value === value)
@@ -374,6 +378,7 @@ export function Dropdown<T extends string>({
   return (
     <>
       <button
+        id={id}
         type="button"
         data-tip={title}
         aria-haspopup="menu"

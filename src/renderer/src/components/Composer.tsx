@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { errorText } from '@shared/errors'
-import { ArrowLeftRight, ArrowUp, ChevronDown, CornerDownRight, CornerUpRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, SendHorizontal, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
-import { MODEL_PROBE_TIMEOUT_MS, type Attachment, type Conversation, type FolderCandidate, type QueuedMessage } from '@shared/model'
+import { ArrowLeftRight, ArrowUp, ChevronDown, CornerDownRight, FileText, Folder, FolderGit2, FolderOpen, GitBranch, MessagesSquare, Pencil, Plus, ScrollText, SendHorizontal, Settings2, Square, SquareTerminal, Trash2, X } from 'lucide-react'
+import { MODEL_PROBE_TIMEOUT_MS, type Attachment, type Conversation, type ConversationReference, type FolderCandidate, type Project, type QueuedMessage } from '@shared/model'
 import type { SessionOption } from '@shared/contract'
 import { api, refreshAccount, toast, useApp, toastError } from '../store'
 import { useMenu, type MenuItem } from './Menu'
@@ -14,12 +14,14 @@ const NEED_TEXT = tk('请在命令后面写上要做的事')
 const NO_COMMAND = tk('{0} 的命令里没有 /{1}。要照原样发出去，再按一次 Enter。')
 const NEED_NAME = tk('请在 /rename 后面写上新名字')
 const RENAME_FIRST = tk('还没有对话可以重命名：先发一条消息开始对话，再用 /rename。')
-import { choiceLabel, optionLabel } from './sessionOptionLabels'
+import { choiceLabel, effortStops, optionLabel } from './sessionOptionLabels'
 import { perChatOption, sessionOptionDefaults, visibleSessionOptions } from '@shared/sessionOptions'
 import { backendAvailable } from '@shared/backendAvailability'
 import { EffortPicker } from './EffortPicker'
 import { ContextRing } from './Usage'
+import { BackendLogo } from './BackendLogo'
 import { FoxMark } from './FoxMark'
+import { useComposerFit } from './useComposerFit'
 
 interface Props {
   conversation?: Conversation
@@ -50,6 +52,7 @@ const MAX_IMAGE = 8_000_000
 const NO_CONVERSATIONS: Conversation[] = []
 
 export function Composer({ conversation, placeholder, autoFocus, onSubmit, leading, backendId, onBackendChange, modelId, onModelChange, folder, onFolderChange }: Props) {
+  const suggestionId = useId()
   const [text, setText] = useState('')
   const [files, setFiles] = useState<Attachment[]>([])
   const [dragging, setDragging] = useState(false)
@@ -61,7 +64,9 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   useEffect(() => {
     for (const b of backends) if (b.account) void refreshAccount(b.id, 60_000)
   }, [backends])
-  const [menu, openMenu, updateMenu] = useMenu({ placement: 'auto', align: 'right', compact: true })
+  const [menu, openMenu, updateMenu, closeMenu] = useMenu({ placement: 'auto', align: 'right', compact: true })
+  const fit = useComposerFit()
+  useLayoutEffect(() => { closeMenu() }, [fit.compact])
   const hasPermission = useApp((s) => !!conversation && s.permissions.some((p) => p.conversationId === conversation.id))
   const busy = conversation?.status === 'working' || hasPermission
   const draftKey = conversation ? `draft:${conversation.id}` : 'draft:new'
@@ -127,7 +132,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       return
     }
     if (!t && !files.length) return
-    const app = conversation && !target && appCommand(t, conversation)
+    const app = conversation && !references.length && appCommand(t, conversation)
     if (app) {
       if (!app.text) return toast(tr(NEED_TEXT), 'error')
       setText('')
@@ -138,7 +143,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     // A new chat has nothing to rename yet, and the agent shouldn't get the command as its first message.
     if (!conversation && /^\/rename(\s|$)/i.test(t)) return toast(tr(RENAME_FIRST), 'error')
     // Renaming is the app's to do when the agent has no /rename of its own (or hasn't said yet).
-    if (conversation && !target && !files.length && /^\/rename(\s|$)/i.test(t) && !slashCommands(conversation).some((c) => c.name.toLowerCase() === 'rename')) {
+    if (conversation && !references.length && !files.length && /^\/rename(\s|$)/i.test(t) && !slashCommands(conversation).some((c) => c.name.toLowerCase() === 'rename')) {
       const name = t.slice(7).trim()
       if (!name) return toast(tr(NEED_NAME), 'error')
       setText('')
@@ -148,7 +153,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     }
     // A / command the agent doesn't list would reach it as an ordinary message (「/compact」 to an agent
     // without one): say so first. Enter again sends it as written (a path, or a command it accepts unlisted).
-    const unknown = conversation && !target && !files.length ? missingCommand(t, conversation) : undefined
+    const unknown = conversation && !references.length && !files.length ? missingCommand(t, conversation) : undefined
     if (unknown && warned.current !== t) {
       warned.current = t
       return toast(tr(NO_COMMAND, currentBackend?.name ?? conversation!.backendId, unknown), 'error')
@@ -174,41 +179,54 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     }
     const sentText = text
     const sentFiles = files
+    const sentReferences = references
     const key = draftKey
     setText('')
     setFiles([])
+    saveReferences([])
     sessionStorage.removeItem(key)
     // A message that didn't go comes back into the box (unless something new was typed there meanwhile).
     const putBack = (e: unknown) => {
       toastError(e)
       if (sessionStorage.getItem(key)) return
       sessionStorage.setItem(key, sentText)
+      if (sentReferences.length) sessionStorage.setItem(`${key}:references`, JSON.stringify(sentReferences))
       if (!mounted.current || draftKeyNow.current !== key) return
       setText((cur) => cur || sentText)
       setFiles((cur) => (cur.length ? cur : sentFiles))
+      saveReferences(sentReferences)
     }
-    if (target && conversation) {
-      void api().sendToThread(conversation.id, target.id, t, files).catch(putBack)
-      setTarget(null)
-    } else if (conversation) void api().send(conversation.id, t, files).catch(putBack)
+    if (conversation) void api().send(conversation.id, t, files, sentReferences.map((reference) => reference.id)).catch(putBack)
   }
 
-  // In a project chat, @ picks a thread: the message then goes straight to it.
-  const [target, setTarget] = useState<{ id: string; title: string } | null>(null)
+  // References add context to this conversation. Only an explicit agent action dispatches work.
+  const [references, setReferences] = useState<ConversationReference[]>([])
+  const saveReferences = (next: ConversationReference[]) => {
+    const unique = next.filter((reference, index) => next.findIndex((other) => other.id === reference.id) === index).slice(0, 8)
+    setReferences(unique)
+    if (unique.length) sessionStorage.setItem(`${draftKey}:references`, JSON.stringify(unique))
+    else sessionStorage.removeItem(`${draftKey}:references`)
+  }
   const [mention, setMention] = useState<{ query: string; start: number; end: number } | null>(null)
   const [mentionAt, setMentionAt] = useState(0)
-  useEffect(() => setTarget(null), [conversation?.id])
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(`${draftKey}:references`) ?? '[]')
+      setReferences(Array.isArray(saved) ? saved.filter((r) => r && typeof r.id === 'string' && typeof r.title === 'string').slice(0, 8) : [])
+    }
+    catch { setReferences([]) }
+  }, [draftKey])
   // Only while @ is being typed in a project chat: the list doesn't redraw the composer otherwise.
-  const allThreads = useApp((s) => (mention && conversation?.kind === 'project' ? s.conversations : NO_CONVERSATIONS))
+  const allThreads = useApp((s) => (mention && conversation?.projectId ? s.conversations : NO_CONVERSATIONS))
   const mentionable =
-    conversation?.kind === 'project' && mention
+    conversation?.projectId && mention
       ? allThreads
-          .filter((c) => c.kind === 'thread' && c.projectId === conversation.projectId && c.title.toLowerCase().includes(mention.query.toLowerCase()))
+          .filter((c) => c.id !== conversation.id && c.projectId === conversation.projectId && !references.some((reference) => reference.id === c.id) && c.title.toLowerCase().includes(mention.query.toLowerCase()))
           .sort((a, b) => Number(!!a.resolved) - Number(!!b.resolved) || b.updatedAt - a.updatedAt)
           .slice(0, 8)
       : []
   const findMention = (value: string, caret: number) => {
-    if (conversation?.kind !== 'project') return setMention(null)
+    if (!conversation?.projectId) return setMention(null)
     const m = /(^|[\s\p{Script=Han}\p{P}])@([^\s@]{0,24})$/u.exec(value.slice(0, caret))
     setMention(m ? { query: m[2], start: caret - m[2].length - 1, end: caret } : null)
     setMentionAt(0)
@@ -218,7 +236,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     const next = text.slice(0, mention.start) + text.slice(mention.end)
     setText(next)
     sessionStorage.setItem(draftKey, next)
-    setTarget({ id: th.id, title: th.title })
+    saveReferences([...references, { id: th.id, title: th.title }])
     setMention(null)
     // The caret goes where the @ was in the same render as the text, as for a picked command:
     // set a frame later it would jump back over whatever was typed meanwhile.
@@ -229,7 +247,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   // A picked command sits in the box as a chip; the text after it is its argument.
   const [picked, setPicked] = useState<SlashCommand | null>(null)
   useEffect(() => setPicked(null), [conversation?.id])
-  const slashQuery = conversation && !target && !picked ? /^\/(\S*)$/.exec(text)?.[1] : undefined
+  const slashQuery = conversation && !references.length && !picked ? /^\/(\S*)$/.exec(text)?.[1] : undefined
   const [slashAt, setSlashAt] = useState(0)
   const [slashClosed, setSlashClosed] = useState(false)
   useEffect(() => setSlashClosed(false), [slashQuery === undefined])
@@ -394,7 +412,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     const [top, rest] = firstFew(usable, (b) => b.id === bid)
     // Mid-reply the reply keeps going; the picked agent takes over with the next message.
     const cuts = (id: string) => (busy && conversation && id !== conversation.backendId && id !== bid ? t('下一条消息起换成这个') : undefined)
-    const items: MenuItem[] = top.map((b, i) => ({ label: b.name, sub: cuts(b.id), checked: b.id === bid, shortcut: String(i + 1), onClick: () => pick(b.id) }))
+    const items: MenuItem[] = top.map((b, i) => ({ label: b.name, icon: <BackendLogo id={b.id} size={18} />, sub: cuts(b.id), checked: b.id === bid, shortcut: String(i + 1), onClick: () => pick(b.id) }))
     if (!usable.length) items.push({ label: t('还没有可用的 Agent 后端'), info: true })
     if (rest.length) items.push({ separator: true }, { label: t('更多后端'), submenu: rest.map((b) => ({ label: b.name, sub: cuts(b.id), checked: false, onClick: () => pick(b.id) })) })
     items.push({ separator: true }, manageItem)
@@ -438,17 +456,27 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     items.push(...more)
     return items
   }
-  // An open menu shows the models as soon as they arrive.
-  useEffect(() => updateMenu(menuFor.current === 'model' ? modelItems() : backendItems()), [models.length, loadingModels, slowStart, catalog.error, catalog.needsLogin, bid])
-  const menuFor = useRef<'model' | 'backend'>('model')
-  const open = (which: 'model' | 'backend', el: HTMLElement) => {
+  // Compact and full controls share the exact same choices and mutation paths.
+  const settingsItems = (): MenuItem[] => [
+    ...(canSwitch ? [{ label: t('后端'), hint: currentBackend?.name, submenu: backendItems() }] : []),
+    ...(canPick ? [{ label: t('模型'), hint: currentModel?.name, submenu: modelItems() }] : []),
+    ...(effortOpt && canPick && !signedOut ? [{ label: optionLabel(effortOpt), hint: choiceLabel(effortOpt.choices.find((c) => c.value === valueOf(effortOpt))?.name ?? '', valueOf(effortOpt), effortOpt.category), submenu: effortStops(effortOpt.choices).map((c) => ({ label: choiceLabel(c.name, c.value, effortOpt.category), checked: c.value === valueOf(effortOpt), onClick: () => setOptionValue(effortOpt, c.value) })) }] : [])
+  ]
+  const menuFor = useRef<'model' | 'backend' | 'settings'>('model')
+  const itemsFor = (which: typeof menuFor.current) => which === 'settings' ? settingsItems() : which === 'model' ? modelItems() : backendItems()
+  const optionSignature = options.map((o) => `${o.id}:${valueOf(o)}:${o.choices.map((c) => c.value).join(',')}`).join('|')
+  const modelSignature = models.map((m) => `${m.id}:${m.name}`).join('|')
+  // An open menu shows newly arrived models and the current selection.
+  useEffect(() => updateMenu(itemsFor(menuFor.current)), [modelSignature, loadingModels, slowStart, catalog.error, catalog.needsLogin, bid, currentModel?.id, optionSignature, accounts, busy])
+  const open = (which: typeof menuFor.current, el: HTMLElement) => {
     menuFor.current = which
-    openMenu(el, which === 'model' ? modelItems() : backendItems())
+    openMenu(el, itemsFor(which))
   }
 
   const showModel = canPick && (models.length > 0 || loadingModels || !!catalog.error || signedOut)
   const modelButton = (
-    <span className="model-group">
+    <span className={'model-group' + (fit.compact ? ' compact' : '')}>
+      <span ref={fit.controls} className="model-controls" aria-hidden={fit.compact || undefined} inert={fit.compact}>
       {canSwitch && (
         <button className="footer-chip backend-chip" aria-haspopup="menu" data-tip={staged ? t('下一条消息起换成 {0}', currentBackend?.name ?? '') : t('后端')} onClick={(e) => (e.stopPropagation(), open('backend', e.currentTarget))}>
           {currentBackend?.name ?? t('选择后端')}
@@ -468,10 +496,13 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
         </button>
       )}
       {effortOpt && canPick && !signedOut && (
-        <EffortPicker option={effortOpt} value={valueOf(effortOpt)} onChange={(v) => setOptionValue(effortOpt, v)} />
+        <EffortPicker option={effortOpt} value={valueOf(effortOpt)} suspended={fit.compact} onChange={(v) => setOptionValue(effortOpt, v)} />
       )}
+      </span>
+      {fit.compact && (canSwitch || canPick) && <button className="icon-btn model-settings" aria-label={t('模型与后端设置')} aria-haspopup="menu" data-tip={[currentBackend?.name, currentModel?.name].filter(Boolean).join(' · ')} onClick={(e) => (e.stopPropagation(), open('settings', e.currentTarget))}><Settings2 size={16} /></button>}
       {conversation ? (
         <ContextRing
+          backendId={conversation.nextBackendId || conversation.backendId}
           usage={conversation.usage}
           timing={conversation.timing}
           scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')}
@@ -480,9 +511,10 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       ) : null}
     </span>
   )
-  // The working folder: a project's own for its chat and threads, else the conversation's.
+  // An isolated project worker has its own checkout; its folder picker must never change the project.
   const project = useApp((s) => s.projects.find((p) => p.id === conversation?.projectId))
-  const ownsFolder = conversation && conversation.kind !== 'chat' && project
+  const isolated = !!conversation?.isolateWorkspace
+  const ownsFolder = conversation && conversation.kind !== 'chat' && !isolated && project
   const folderNow = conversation ? (ownsFolder ? project.cwd : conversation.cwd) || '' : (folder ?? '')
   const setFolder = (f: string) => {
     if (!conversation) return onFolderChange?.(f)
@@ -490,8 +522,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
     if (ownsFolder) void api().updateProject(project.id, { cwd: f }).catch(failed)
     else void api().updateConversation(conversation.id, { cwd: f }).catch(failed)
   }
-  const canSetFolder = !!(conversation || onFolderChange)
-  const folderChip = canSetFolder && <FolderChip folder={folderNow} onChange={setFolder} hint={project?.name || conversation?.title || text} />
+  const canSetFolder = !!(conversation || onFolderChange) && !isolated
+  const folderChip = (canSetFolder || isolated) && <FolderChip folder={folderNow} onChange={setFolder} readOnly={isolated} project={project} hint={project?.name || conversation?.title || text} />
   // A folder path typed into the message is offered as the working folder; never set without asking.
   const [folderMention, setFolderMention] = useState<string | null>(null)
   useEffect(() => setFolderMention(null), [draftKey])
@@ -537,9 +569,14 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
   // Messages handed back (by 停止 or 编辑) go into the composer ahead of what's being typed.
   const restore = (back: QueuedMessage[]) => {
     if (!back.length) return
-    setText((cur) => [...back.map((q) => q.text), cur].filter((x) => x.trim()).join('\n\n'))
+    setText((cur) => {
+      const restored = [...back.map((q) => q.text), cur].filter((x) => x.trim()).join('\n\n')
+      sessionStorage.setItem(draftKey, restored)
+      return restored
+    })
     const files = back.flatMap((q) => q.attachments ?? [])
     if (files.length) setFiles((cur) => [...files, ...cur])
+    saveReferences([...back.flatMap((message) => message.references ?? []), ...references])
     ta.current?.focus()
   }
   // Stopping hands back what was still waiting, so nothing the user typed is lost.
@@ -626,7 +663,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
           </div>
         )}
         {slashOpen && (
-          <div className="slash-pop" role="listbox" aria-label={t('命令')}>
+          <div id={`${suggestionId}-slash`} className="slash-pop" role="listbox" aria-label={t('命令')}>
             {commands.map((c, i) => (
               <Fragment key={c.key}>
                 {(i === 0 || !!commands[i - 1].app !== !!c.app) && (
@@ -634,6 +671,8 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
                 )}
                 <button
                   role="option"
+                  id={`${suggestionId}-slash-${i}`}
+                  tabIndex={-1}
                   aria-selected={i === slashAt}
                   className={'slash-row' + (i === slashAt ? ' active' : '')}
                   ref={i === slashAt ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
@@ -649,13 +688,15 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             ))}
           </div>
         )}
-        {mention && conversation?.kind === 'project' && (
-          <div className="menu compact mention-menu" role="listbox" aria-label={t('转给讨论串')}>
+        {mention && conversation?.projectId && (
+          <div id={`${suggestionId}-mention`} className="menu compact mention-menu" role="listbox" aria-label={t('引用对话')}>
             {mentionable.length ? (
               mentionable.map((th, i) => (
                 <button
                   key={th.id}
                   role="option"
+                  id={`${suggestionId}-mention-${i}`}
+                  tabIndex={-1}
                   aria-selected={i === mentionAt}
                   className={'menu-item' + (i === mentionAt ? ' active' : '')}
                   onMouseDown={(e) => e.preventDefault()}
@@ -682,20 +723,27 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
               </button>
             </span>
           )}
-          {target && (
-            <span className="mention-chip">
-              <CornerUpRight size={13} />
-              {target.title}
-              <button className="icon-btn xs" aria-label={t('不转给讨论串')} onClick={() => setTarget(null)}>
+          {references.map((reference) => (
+            <span className="mention-chip" key={reference.id}>
+              <MessagesSquare size={13} />
+              <span className="reference-name">@{reference.title}</span>
+              <button className="icon-btn xs" aria-label={t('移除引用')} onClick={() => saveReferences(references.filter((other) => other.id !== reference.id))}>
                 <X size={12} />
               </button>
             </span>
-          )}
+          ))}
           <textarea
             ref={ta}
+            role="combobox"
+            aria-label={t('消息')}
+            aria-autocomplete="list"
+            aria-haspopup="listbox"
+            aria-expanded={slashOpen || !!mention}
+            aria-controls={slashOpen ? `${suggestionId}-slash` : mention ? `${suggestionId}-mention` : undefined}
+            aria-activedescendant={slashOpen ? `${suggestionId}-slash-${Math.min(slashAt, commands.length - 1)}` : mentionable.length ? `${suggestionId}-mention-${Math.min(mentionAt, mentionable.length - 1)}` : undefined}
             rows={1}
             value={text}
-            placeholder={picked ? (picked.app === 'subchat' ? t('交给子对话做什么？') : picked.app === 'thread' ? t('让讨论串做什么？') : picked.hint ?? '') : target ? t('发给「{0}」…', target.title) : (placeholder ?? (busy ? t('继续输入，消息会在当前回复结束后发送') : t('回复…')))}
+            placeholder={picked ? (picked.app === 'subchat' ? t('交给子对话做什么？') : picked.app === 'thread' ? t('让讨论串做什么？') : picked.hint ?? '') : (placeholder ?? (busy ? t('继续输入，消息会在当前回复结束后发送') : t('回复…')))}
             onChange={(e) => {
               // A whole command typed by hand ("/子对话 ") turns into the chip too.
               const typed = !picked && conversation ? /^\/(\S+)\s([\s\S]*)$/.exec(e.target.value) : null
@@ -743,10 +791,10 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
                 e.preventDefault()
                 return setPicked(null)
               }
-              // Backspace at the very start drops the thread the message was going to.
-              if (e.key === 'Backspace' && target && ta.current?.selectionStart === 0 && ta.current.selectionEnd === 0) {
+              // Backspace removes the last contextual reference, never changes the destination.
+              if (e.key === 'Backspace' && references.length && ta.current?.selectionStart === 0 && ta.current.selectionEnd === 0) {
                 e.preventDefault()
-                return setTarget(null)
+                return saveReferences(references.slice(0, -1))
               }
               if (e.key === 'Enter' && !e.shiftKey && !imeComposing(e)) {
                 e.preventDefault()
@@ -755,7 +803,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
             }}
           />
         </div>
-        <div className="composer-row">
+        <div className="composer-row" ref={fit.row}>
           {attachButton}
           {folderChip}
           {leading}
@@ -879,7 +927,7 @@ export function AttachmentChip({ a, onRemove }: { a: Attachment; onRemove?: () =
       )}
       <span className="attach-name">{a.name}</span>
       {onRemove && (
-        <button className="icon-btn sm" onClick={(e) => (e.stopPropagation(), onRemove())}>
+        <button className="icon-btn sm" aria-label={t('移除')} onClick={(e) => (e.stopPropagation(), onRemove())}>
           <X size={12} />
         </button>
       )}
@@ -914,7 +962,7 @@ const baseName = (p: string) => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ||
  * folder the agent can read and change files and run commands there; without
  * one it works in a private scratch space and asks before touching any file.
  */
-export function FolderChip({ folder, onChange, hint = '' }: { folder: string; onChange: (folder: string) => void; hint?: string }) {
+export function FolderChip({ folder, onChange, hint = '', readOnly = false, project }: { folder: string; onChange: (folder: string) => void; hint?: string; readOnly?: boolean; project?: Pick<Project, 'name' | 'cwd'> }) {
   const [menu, openMenu] = useMenu({ placement: 'auto' })
   const recent = useApp((s) => {
     const seen = new Set<string>()
@@ -931,10 +979,19 @@ export function FolderChip({ folder, onChange, hint = '' }: { folder: string; on
     <>
       <button
         className={'select-btn folder-chip' + (folder ? ' on' : '')}
-        data-tip={folder ? t('工作文件夹：{0}', folder) : t('选择工作文件夹，让 agent 能读写其中的文件、运行命令')}
+        data-tip={project ? project.name : folder ? t('工作文件夹：{0}', folder) : t('选择工作文件夹，让 agent 能读写其中的文件、运行命令')}
         onClick={async (e) => {
           e.stopPropagation()
           const el = e.currentTarget
+          if (project) return openMenu(el, [
+            { icon: <Folder size={15} />, label: project.name, sub: project.cwd, info: true },
+            ...(project.cwd ? [{ icon: <FolderOpen size={15} />, label: t('打开项目文件夹'), onClick: () => void openInFileManager(project.cwd!) }] : []),
+            ...(readOnly && folder && folder !== project.cwd ? [{ label: t('独立工作区'), submenu: [
+              { label: t('此工作区属于当前讨论串'), sub: folder, info: true },
+              { icon: <FolderOpen size={15} />, label: t('在文件管理器中打开'), onClick: () => void openInFileManager(folder) }
+            ] }] : []),
+            ...(!readOnly ? [{ separator: true }, { icon: <ArrowLeftRight size={15} />, label: t('换一个文件夹…'), onClick: () => void choose() }] : [])
+          ])
           const others = recent.split('\n').filter((f) => f && f !== folder)
           const recentItems = (list: string[]): MenuItem[] => list.length
             ? [{ heading: t('最近使用') }, ...list.map((f) => ({ icon: <Folder size={15} />, label: baseName(f), sub: f, onClick: () => onChange(f) }))]
@@ -944,10 +1001,12 @@ export function FolderChip({ folder, onChange, hint = '' }: { folder: string; on
             return openMenu(el, [
               { icon: <Folder size={15} />, label: baseName(folder), sub: folder, info: true },
               { icon: <FolderOpen size={15} />, label: t('在文件管理器中打开'), onClick: () => void openInFileManager(folder) },
+              ...(!readOnly ? [
               { icon: <ArrowLeftRight size={15} />, label: t('换一个文件夹…'), onClick: () => void choose() },
               ...(others.length ? [{ separator: true } as MenuItem, ...recentItems(others.slice(0, 3))] : []),
-              { separator: true },
+              { separator: true } as MenuItem,
               { icon: <X size={15} />, label: t('不使用文件夹'), onClick: () => onChange('') }
+              ] : [])
             ])
           // Likely project folders, found by a quick scan the app caches; the menu doesn't wait long for it.
           const found = await Promise.race([
@@ -964,7 +1023,7 @@ export function FolderChip({ folder, onChange, hint = '' }: { folder: string; on
         }}
       >
         <Folder size={15} />
-        <span className="dropdown-value">{folder ? baseName(folder) : t('文件夹')}</span>
+        <span className="dropdown-value">{project?.name || (folder ? baseName(folder) : t('文件夹'))}</span>
       </button>
       {menu}
     </>

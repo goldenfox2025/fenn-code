@@ -18,6 +18,8 @@ npm-debug.log*
 !.env.example
 
 # Test and screenshot artifacts
+.local/
+test-results-*.json
 coverage/
 .nyc_output/
 test-results/

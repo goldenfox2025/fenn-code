@@ -4,6 +4,7 @@
 // permission when the prompt mentions "写" or "write". Used for demos and tests.
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
+import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 
 /** MOCK_SESSION_LOG with MOCK_META_PROMPT=1: records the prompt each session/new or session/resume appended (_meta.antigravity). */
@@ -255,11 +256,6 @@ const handlers = {
       const m = raw.match(/#难点\s*([^\n<]*)/);
       await callTool(sessionId, s, "set_blocker", { text: (m?.[1] ?? "").trim() });
     }
-    // "#看板 标题" puts a card on the home board through the app's tool.
-    if (raw.includes("#看板") && s.mcp) {
-      const m = raw.match(/#看板\s*([^\n<]*)/);
-      await callTool(sessionId, s, "home_board", { action: "put", title: (m?.[1] ?? "").trim() || "看板", kind: "list", data: { items: [{ text: "重启 db", tone: "warn" }, { text: "换证书", done: true }] } });
-    }
     // "#进度 里程碑 / 任务" records work on the project board through the app's tool.
     if (raw.includes("#进度") && s.mcp) {
       const m = [...raw.matchAll(/#进度\s*([^\n<]*)/g)].pop();
@@ -277,6 +273,12 @@ const handlers = {
     }
     if (raw.includes("#fail-net"))
       throw { code: -32603, message: "fetch failed: getaddrinfo ENOTFOUND api.example.com" };
+    if (raw.includes('[FENN_MEMORY_DRAFT_V1]')) {
+      const input = JSON.parse(raw.match(/<quoted-input>([\s\S]*?)<\/quoted-input>/)[1]);
+      const body = [input.text, ...(input.files || []).map(file => file.text)].filter(Boolean).join('\n').slice(0, 4000);
+      await stream(sessionId, JSON.stringify({name:'ui-memory-note',description:body.replace(/\s+/g,' ').slice(0,60),type:'feedback',body}),abort);
+      return {stopReason:'end_turn'};
+    }
     const text = userText(raw);
     // Test hook: simulate the agent process crashing mid-turn.
     if (text === "/crash") {
@@ -286,7 +288,7 @@ const handlers = {
     try {
       // "你看到了什么" echoes the whole prompt, so tests can check what a session was given.
       if (process.env.MOCK_SIMPLE_STREAM === '1')
-        await stream(sessionId, "A plain streamed reply for timing checks. ".repeat(8).trim(), abort);
+        await stream(sessionId, "A plain streamed reply for timing checks. ".repeat(text.includes('#long-timing') ? 16 : 8).trim(), abort);
       else if (text === "你看到了什么")
         notify(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: raw } });
       // "#留言 目标 || 时机 || 产物,… || 内容" leaves a message for another thread; inside a delivered
@@ -306,7 +308,7 @@ const handlers = {
         await stream(sessionId, `好的，我直接在这里回答「${text.slice(0, 40)}」。` + "这是一个比较完整的回答，涵盖了背景、做法和下一步。".repeat(20), abort);
       else if (s.mcp && (await toolNames(s)).includes("start_thread"))
         await coordinatorTurn(sessionId, s, text, abort, raw);
-      else if (s.mcp && !/^(交付文件|附上)|帮我决定|选哪个/.test(text) && (await toolNames(s)).includes("set_resolved"))
+      else if (s.mcp && !/^(交付文件|附上)|帮我决定|选哪个/.test(text) && (await toolNames(s)).some((n) => n === "set_resolved" || n === "submit_review"))
         await threadTurn(sessionId, s, text, abort);
       else await turn(sessionId, s, text, abort, raw.includes("<history>"));
     } catch (e) {
@@ -535,6 +537,7 @@ function userText(raw) {
     .replace(/<fenn-context[\s\S]*?<\/fenn-context>/g, "")
     .replace(/<thread-updates>[\s\S]*?<\/thread-updates>/g, "")
     .replace(/<threads>[\s\S]*?<\/threads>/g, "")
+    .replace(/<conversation-references>[\s\S]*?<\/conversation-references>/g, "")
     .replace(/以下是此前的对话记录[\s\S]*?<\/history>/g, "");
   const i = t.lastIndexOf("新消息：");
   if (i >= 0) t = t.slice(i + 4);
@@ -542,6 +545,34 @@ function userText(raw) {
 }
 
 async function coordinatorTurn(sessionId, s, text, abort, raw = "") {
+  if (process.env.MOCK_REVIEW_FIXTURE === '1' && text.startsWith('#review-batch ')) {
+    const tasks = JSON.parse(text.slice('#review-batch '.length));
+    await Promise.all(tasks.map(task => callTool(sessionId, s, 'start_thread', { title: task.title, instructions: '#review-fixture ' + JSON.stringify(task), kind: 'change' })));
+    await stream(sessionId, '已为测试任务建立讨论串。', abort);
+    return;
+  }
+  if (text.startsWith('应用通知：用户已作出验收决定')) {
+    await stream(sessionId, '已记录本次决定和实际合入结果，后续按已选择的讨论位置继续。', abort);
+    return;
+  }
+  // Deterministic workflow fixture, not an AI quality benchmark.
+  if (text.startsWith("应用通知：有讨论串等待验收")) {
+    const threads = await callTool(sessionId, s, "list_threads", {});
+    for (const thread of threads) {
+      if (thread.review?.state !== "pending" || thread.review.recommendation) continue;
+      const review = await callTool(sessionId, s, "inspect_delivery", { thread_id: thread.thread_id, revision: thread.review.id });
+      const blocked = review.assessment?.blockers?.length || /FAIL|失败/.test(review.checks);
+      await callTool(sessionId, s, "review_delivery", {
+        thread_id: thread.thread_id, revision: review.id,
+        verdict: blocked ? "changes_requested" : "ready",
+        summary: blocked ? "需要补充验证或修改后再决定。" : "当前版本可供用户审核。",
+        integration_plan: '按当前提交合入项目分支，保留交付分支。先核对重叠文件；合入后运行项目检查，失败时保留现场并回退本次合入。此测试交付的行为变化以实际 diff 为准。',
+        notes: blocked ? "### 判断\n发现冲突或失败记录，当前不能批准。\n\n### 验证与下一步\n核对失败原因，补充证据后重新提交。" : "### 判断\n已读取当前版本的文件更改。\n\n### 结构与影响\n本测试场景的改动保留在独立工作区，批准后才会集成。\n\n### 验证\nGit 检查已完成；这是测试后端的流程样例，未独立验证真实业务正确性。"
+      });
+    }
+    await stream(sessionId, "验收队列已更新。测试后端仅用于验证流程，请核对检查记录后再决定。", abort);
+    return;
+  }
   if (raw.includes("<handoff>")) await stream(sessionId, "（已接手）", abort);
   if (text.includes("上下文快满了") && FORGETFUL) {
     await stream(sessionId, "好了", abort);
@@ -590,7 +621,7 @@ async function coordinatorTurn(sessionId, s, text, abort, raw = "") {
     return;
   }
   if (/谢谢|thanks|多谢/i.test(text)) {
-    await callTool(sessionId, s, "react", { emoji: "👍" });
+    await stream(sessionId, "不客气。", abort);
     return;
   }
   if (/现在|进展|状态|status/i.test(text)) {
@@ -629,6 +660,28 @@ async function coordinatorTurn(sessionId, s, text, abort, raw = "") {
 }
 
 async function threadTurn(sessionId, s, text, abort) {
+  if (text.replace(/^协调者交给你的任务：\s*/, '').startsWith('#request-code-workspace')) {
+    await callTool(sessionId, s, 'request_code_workspace', { reason: '验证修改前先隔离工作目录，并在同一串继续。' });
+    await stream(sessionId, '申请代码工作区，交接本回合。', abort);
+    return;
+  }
+  const fixture = process.env.MOCK_REVIEW_FIXTURE === '1' && text.match(/#review-fixture (\{[^\n]+\})/);
+  if (fixture) {
+    const task = JSON.parse(fixture[1]);
+    await nap(1200, abort);
+    if (abort.aborted) return;
+    const files = [{ path: task.file, body: task.body }, ...(task.extraFiles || [])];
+    for (const file of files) {
+      if (!/^[-\w.]+$/.test(file.path)) throw new Error('Invalid test fixture filename');
+      writeFileSync(join(s.cwd, file.path), file.body);
+    }
+    const git = (...args) => execFileSync('git', ['-C', s.cwd, ...args], { windowsHide: true, encoding: 'utf8' });
+    git('add', '--', ...files.map((file) => file.path));
+    git('commit', '-m', 'review workflow fixture');
+    await callTool(sessionId, s, 'submit_review', { summary: task.summary, kind: task.kind || 'change', checks: task.checks || '', unverified: '测试场景数据，不代表真实业务验证。' });
+    await stream(sessionId, task.summary, abort);
+    return;
+  }
   const task = text
     .replace(/^协调者(交给你的任务|转来的消息)：\s*/, "")
     .slice(0, 30);
@@ -652,8 +705,11 @@ async function threadTurn(sessionId, s, text, abort) {
     `做完了。关于「${task}」，演示 agent 的结论是：一切顺利。\n\n需要你确认的只有一件事：结果是否符合预期？`,
     abort,
   );
-  if (/完成后解决|resolve/i.test(text))
-    await callTool(sessionId, s, "set_resolved", { resolved: true });
+  if (/完成后解决|resolve/i.test(text)) {
+    if ((await toolNames(s)).includes("submit_review"))
+      await callTool(sessionId, s, "submit_review", { summary: `做完了：${task}`, checks: "测试后端的流程样例，未验证真实任务", unverified: "业务正确性" });
+    else await callTool(sessionId, s, "set_resolved", { resolved: true });
+  }
 }
 
 // Stands in for a model summarizing: keeps the previous summary and adds what
@@ -993,8 +1049,8 @@ button{margin-top:16px;padding:8px 16px;border-radius:8px;border:0;background:#d
     // MOCK_ASK_CODEX=1: as codex-acp 2.2.2 asks before an MCP tool: the call first, then a request naming only its id.
     if (process.env.MOCK_ASK_CODEX === "1") {
       const toolCallId = `call_${s.turns}`;
-      notify(sessionId, { sessionUpdate: "tool_call", toolCallId, kind: "execute", status: "pending", title: `mcp.fenn.${process.env.MOCK_ASK_TOOL || "home_board"}`,
-        rawInput: { server: "fenn", tool: process.env.MOCK_ASK_TOOL || "home_board", arguments: {} }, _meta: { is_mcp_tool_call: true } });
+      notify(sessionId, { sessionUpdate: "tool_call", toolCallId, kind: "execute", status: "pending", title: `mcp.fenn.${process.env.MOCK_ASK_TOOL || "list_routines"}`,
+        rawInput: { server: "fenn", tool: process.env.MOCK_ASK_TOOL || "list_routines", arguments: {} }, _meta: { is_mcp_tool_call: true } });
       await sleep(50);
       const res = await requestClient("session/request_permission", {
         sessionId,

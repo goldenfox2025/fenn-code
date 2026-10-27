@@ -1,20 +1,17 @@
 /* ---------- one turn of the conversation ----------
    Every block in a turn (steps line, answer text, notices, cards) shares one
    width and left edge, and the turn alone sets the space between them. Blocks
-   keep no outer margins of their own. The action row, or the working mark
-   while the turn runs, sits in the same slot under the last block. */
+   keep no outer margins of their own. The compact footer and working mark
+   stay in the flow under the last block, so they cannot cover another turn. */
 .turn {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--turn-gap);
-  margin-bottom: var(--turn-space);
+  margin-bottom: var(--turn-after);
 }
 .turn > * {
   margin-block: 0 !important;
-}
-.turn.streaming {
-  margin-bottom: var(--turn-after);
 }
 .turn > .steps {
   margin-bottom: calc(var(--space-5) - var(--turn-gap)) !important;

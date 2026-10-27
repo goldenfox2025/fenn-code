@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Block } from '../src/shared/model'
-import { segmentBlocks, visualWork } from '../src/renderer/src/turn'
+import { hasReplyContent, segmentBlocks, visualWork } from '../src/renderer/src/turn'
 
 const text = (t: string): Block => ({ type: 'text', text: t })
 const thought = (t: string, ms = 2000): Block => ({ type: 'thought', text: t, ms })
@@ -44,6 +44,17 @@ describe('a turn shows what happened, in order: thinking folded, tools on their 
 
   it('leaves out the app’s own tools, which show as cards', () => {
     expect(shape([text('我开一个讨论串给你看。'), tool('s', 'fenn/start_thread'), { type: 'thread-card', threadId: 't' }])).toEqual(['text', 'thread-card'])
+  })
+
+  it('review bookkeeping does not produce duplicate tool logs or an empty completed reply', () => {
+    const internal = [tool('submit', 'fenn/submit_review'), tool('inspect', 'fenn/inspect_delivery'), tool('opinion', 'fenn/review_delivery'), text(' ')]
+    expect(shape(internal)).toEqual([])
+    expect(hasReplyContent(internal)).toBe(false)
+    expect(hasReplyContent([...internal, text('The review is ready.')])).toBe(true)
+    expect(hasReplyContent([tool('read')])).toBe(true)
+    const failed: Block = { type: 'tool', toolId: 'failed', title: 'fenn/submit_review', status: 'failed' }
+    expect(shape([failed])).toEqual(['tools:1'])
+    expect(hasReplyContent([failed])).toBe(true)
   })
 
   it('keeps an answer the agent thinks again after', () => {

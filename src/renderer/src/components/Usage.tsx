@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Gauge, Minimize2 } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Minimize2 } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
-import { formatCost, formatTokens, headline, inputRead, MIN_STREAM_MS, reportedInput, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
+import { formatCost, formatTokens, headline, inputRead, MIN_STREAM_MS, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
 import { useMenu, type MenuItem } from './Menu'
 import { api, useApp } from '../store'
 import { t } from '../i18n'
@@ -28,61 +28,20 @@ export function usageLine(u: MessageUsage): string {
   return parts.join(' · ')
 }
 
-function detailLines(u: MessageUsage | UsageTotals): string[] {
-  const out: string[] = []
-  const input = reportedInput(u)
-  // With the cache counted in the footer's input, the details say how much of it was new.
-  if (input !== undefined) out.push(u.cachedRead || u.cachedWrite ? t('新输入 {0}', formatTokens(input)) : t('输入 {0}', formatTokens(input)))
-  if (u.output !== undefined) out.push(t('输出 {0}', formatTokens(u.output)))
-  if (u.thought) out.push(t('思考 {0}', formatTokens(u.thought)))
-  if (u.cachedRead) out.push(t('缓存读取 {0}', formatTokens(u.cachedRead)))
-  if (u.cachedWrite) out.push(t('缓存写入 {0}', formatTokens(u.cachedWrite)))
-  return out
-}
-
 const seconds = (ms: number) => (ms < 1000 ? t('{0} 毫秒', Math.round(ms)) : t('{0} 秒', (ms / 1000).toFixed(1)))
 
-const NO_SPEED: Record<NonNullable<GenerationTiming['noSpeed']>, string> = {
-  output: tk('没有速度：agent 没报告这条回复的输出 token 数'),
-  short: tk('没有速度：回复几乎是一次到齐的，看不到它逐字输出的过程，测不出速度'),
-  waited: tk('没有速度：回复中途等过确认或重试'),
-  stopped: tk('没有速度：回复没有正常结束'),
-  unstreamed: tk('没有速度：agent 报告的输出里有没逐字传来的部分（比如思考），按传来的文字算会虚高')
-}
-
-/** How fast a reply streamed, as the app saw it (not the provider's own timing), or why that isn't known. */
-function timingLines(timing: GenerationTiming): string[] {
-  const speed = tokensPerSecond(timing)
-  const chars = charsPerSecond(timing)
-  return [
-    speed !== undefined
-      ? t('输出速度 {0}，平均每个 token {1}', rate(speed), seconds(timing.tpotMs!))
-      : chars !== undefined
-        ? t('输出速度 {0}（agent 没报告 token 数，按收到的文字实测）', charRate(chars))
-        : timing.noSpeed
-          ? t(NO_SPEED[timing.noSpeed])
-          : ''
-  ].filter(Boolean)
-}
-
 /** Accounts billed in credits (Qoder) report no per-reply tokens worth showing. */
-const usesCredits = (backendId?: string) => (s: ReturnType<typeof useApp.getState>) => !!s.backends.find((b) => b.id === backendId)?.credits
+const usesCredits = (backendId?: string) => (s: ReturnType<typeof useApp.getState>) => backendId === 'qoder' && !!s.backends.find((b) => b.id === backendId)?.credits
 
-/** A reply's usage, quiet in the hover row next to its actions. */
+/** Quiet metadata for substantial completed work; no accounting submenu. */
 export function MessageUsageLabel({ m }: { m: Message }) {
   const backendId = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.backendId)
   const credits = useApp(usesCredits(backendId))
-  if (credits || !m.usage) return null
-  const speed = tokensPerSecond(m.timing)
-  const chars = charsPerSecond(m.timing)
-  const line = [usageLine(m.usage), speed !== undefined ? rate(speed) : chars !== undefined ? charRate(chars) : ''].filter(Boolean).join(' · ')
-  if (!line) return null
-  const title = [...detailLines(m.usage), m.usage.cost && m.usage.cost.amount > 0 ? t('费用 {0}', formatCost(m.usage.cost)) : '', ...(m.timing ? timingLines(m.timing) : [])]
-  return (
-    <span className="msg-usage" data-tip={title.filter(Boolean).join('\n')}>
-      {line}
-    </span>
-  )
+  const speed = tokensPerSecond(m.timing), chars = charsPerSecond(m.timing)
+  const substantial = (m.usage?.output ?? 0) >= 512 || (m.timing?.streamMs ?? 0) >= 5000 || m.blocks.some(b => b.type === 'tool' || b.type === 'artifact') || m.blocks.some(b => b.type === 'text' && b.text.length >= 400)
+  if (credits || !substantial) return null
+  const parts = [m.usage ? usageLine(m.usage) : '', speed !== undefined ? rate(speed) : chars !== undefined ? charRate(chars) : '', speed !== undefined && m.timing?.tpotMs !== undefined ? `TPOT ${seconds(m.timing.tpotMs)}` : ''].filter(Boolean)
+  return parts.length ? <span className="reply-metrics" aria-label={t('本条回复用量')}>{parts.join(' · ')}</span> : null
 }
 
 /** How full a share is, as a tone: the bar and the ring turn amber, then red, as the context fills. */
@@ -188,7 +147,7 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
       )}
       {cost && (
         <div className="usage-section">
-          <Row label={t('费用')} note={t('按标价估算')} value={formatCost(cost)} tip={t('订阅账号不实际扣费')} />
+          <Row label={t('费用')} note={t('后端报告')} value={formatCost(cost)} />
           {(u.unreported > 0 && u.turns > 0) || u.costSkipped ? (
             <div className="usage-foot">
               {[
@@ -201,16 +160,13 @@ function UsagePanel({ u, scope, timing }: { u?: UsageTotals; scope: string; timi
           ) : null}
         </div>
       )}
-      {timing && (
+      {(speed !== undefined || chars !== undefined) && timing && (
         <div className="usage-section">
           <div className="usage-head">{t('最近一次回复')}</div>
-          {speed !== undefined && <Row label={t('输出速度')} value={rate(speed)} tip={t('按 Fenn Code 看到的输出时间计算，不含工具运行的时间')} />}
-          {speed !== undefined && <Row label={t('每个 token')} value={seconds(timing.tpotMs!)} tip={t('输出时平均每个 token 的间隔（TPOT）')} />}
-          {speed === undefined && chars !== undefined && <Row label={t('输出速度')} value={charRate(chars)} tip={t('agent 没报告 token 数：按 Fenn Code 收到的文字实测，每秒多少个字符')} />}
+          <div className="usage-performance" data-tip={t('按 Fenn Code 看到的输出时间计算，不含工具运行的时间')}><span>{speed !== undefined ? rate(speed) : chars !== undefined ? charRate(chars) : ''}</span>{speed !== undefined && timing.tpotMs !== undefined && <><span className="usage-performance-separator">·</span><span>{seconds(timing.tpotMs)} / token</span></>}</div>
           {speed === undefined && chars === undefined && timing.outputTokens !== undefined && (
             <Row label={t('输出')} value={t('{0} token', formatTokens(timing.outputTokens))} tip={t('agent 报告的这条回复的输出 token 数')} />
           )}
-          {speed === undefined && chars === undefined && timing.noSpeed && <div className="usage-foot">{t(NO_SPEED[timing.noSpeed])}</div>}
         </div>
       )}
     </div>
@@ -236,10 +192,10 @@ export function creditsMenu(quota: CreditQuota | undefined, name: string, loadin
     const label = t(BUCKET[b.name] ?? b.name)
     const sub: ReactNode[] = []
     if (b.used !== undefined && b.total) sub.push(<Meter key="m" label={label} used={b.used} total={b.total} />)
-    if (b.remaining !== undefined) sub.push(<span key="r">{t('剩余 {0}', credits(b.remaining))}</span>)
+    if (b.remaining !== undefined) sub.push(<span key="r">{t('剩余 {0}', credits(b.remaining))}{b.unit === '%' ? '%' : ''}</span>)
     items.push({
       label:
-        b.used !== undefined && b.total
+        b.unit === '%' && b.used !== undefined ? `${label} · ${t('已用 {0}', percent(b.used, 100))}` : b.used !== undefined && b.total
           ? t('{0} · {1} / {2} credits（{3}）', label, credits(b.used), credits(b.total), percent(b.used, b.total))
           : t('{0} · {1} credits', label, credits(b.used ?? b.total ?? b.remaining ?? 0)),
       sub: sub.length ? <span className="menu-meter-sub">{sub}</span> : undefined,
@@ -250,102 +206,23 @@ export function creditsMenu(quota: CreditQuota | undefined, name: string, loadin
   return items
 }
 
-/** A small header button with the running total; click for the breakdown. */
-export function UsageButton({
-  usage,
-  scope,
-  backendId,
-  timing,
-  className = 'usage-btn',
-  align = 'right',
-  children,
-  creditsOnly
-}: {
-  usage: UsageTotals | undefined
-  scope: string
-  backendId?: string
-  timing?: GenerationTiming
-  className?: string
-  align?: 'left' | 'right'
-  children?: ReactNode
-  /** In a conversation header: token usage lives in the composer's ring, so only account credits show here. */
-  creditsOnly?: boolean
-}) {
-  const credits = useApp(usesCredits(backendId))
-  if (credits && backendId) return <CreditsButton backendId={backendId} className={className} activity={(usage?.turns ?? 0) + (usage?.unreported ?? 0)} />
-  if (creditsOnly) return null
-  return <TokensButton usage={usage} scope={scope} timing={timing} className={className} align={align}>{children}</TokensButton>
-}
-
-function TokensButton({ usage, scope, timing, className, align, children }: {
-  usage?: UsageTotals
-  scope: string
-  timing?: GenerationTiming
-  className: string
-  align: 'left' | 'right'
-  children?: ReactNode
-}) {
-  const [menu, openMenu] = useMenu({ align, compact: true })
-  if (!usage || usage.turns + usage.unreported === 0) return null
-  const label = usage.turns ? usageLine({ total: usage.total, cost: usage.cost }) : t('用量：agent 不提供')
-  return (
-    <>
-      <button className={className} data-tip={t('用量')} onClick={(e) => openMenu(e.currentTarget, usageMenu(usage, scope, timing))}>
-        {children ?? (
-          <>
-            <Gauge size={14} />
-            <span>{label}</span>
-          </>
-        )}
-      </button>
-      {menu}
-    </>
-  )
-}
-
-/** Credits are an account balance: read when shown, after each reply, and once a minute. */
-function CreditsButton({ backendId, className, activity }: { backendId: string; className: string; activity: number }) {
-  const name = useApp((s) => s.backends.find((b) => b.id === backendId)?.name ?? backendId)
-  const [quota, setQuota] = useState<CreditQuota | undefined>()
-  const [loading, setLoading] = useState(false)
-  const [menu, openMenu, updateMenu] = useMenu({ align: 'right', compact: true })
-  const seen = useRef({ backendId, activity })
+/** Account-wide quota occupies the same quiet footer slot for supported providers. */
+function AccountQuotaRing({ backendId, activity, onCompact }: { backendId: string; activity: number; onCompact?: () => void }) {
+  const name = useApp(s => s.backends.find(backend => backend.id === backendId)?.name || backendId)
+  const [quota, setQuota] = useState<CreditQuota>(), [loading, setLoading] = useState(true)
+  const [menu, openMenu, update] = useMenu({ align: 'right', placement: 'auto', compact: true })
   useEffect(() => {
     let live = true
-    const afterReply = seen.current.backendId === backendId && seen.current.activity !== activity
-    if (seen.current.backendId !== backendId) setQuota(undefined)
-    seen.current = { backendId, activity }
-    const read = (fresh = false) => {
-      setLoading(true)
-      api()
-        .backendCredits(backendId, fresh)
-        .then((q) => live && setQuota(q), () => live && setQuota(undefined))
-        .finally(() => live && setLoading(false))
-    }
-    read(afterReply)
-    const timer = setInterval(read, 60_000)
-    return () => {
-      live = false
-      clearInterval(timer)
-    }
+    const read = () => { setLoading(true); void api().backendCredits(backendId).then(value => { if (live) setQuota(value) }, () => { if (live) setQuota(undefined) }).finally(() => { if (live) setLoading(false) }) }
+    setQuota(undefined); read(); const timer = setInterval(read, 60000)
+    return () => { live = false; clearInterval(timer) }
   }, [backendId, activity])
-  // An open menu shows the latest numbers when they arrive.
-  useEffect(() => updateMenu(creditsMenu(quota, name, loading)), [quota, loading])
-  const first = quota?.buckets[0]
-  const label = first?.used !== undefined && first.total ? t('{0} / {1} credits', credits(first.used), credits(first.total)) : 'Credits'
-  return (
-    <>
-      <button
-        className={className}
-        data-tip={t('{0} 账户额度', name)}
-        onClick={(e) => openMenu(e.currentTarget, creditsMenu(quota, name, loading))}
-      >
-        <Gauge size={14} />
-        <span>{label}</span>
-      </button>
-      {menu}
-    </>
-  )
+  const items = () => [...creditsMenu(quota, name, loading), ...(onCompact ? [{ separator: true }, { label: t('压缩上下文'), icon: <Minimize2 size={15} />, onClick: onCompact }] : [])]
+  useEffect(() => update(items()), [quota, loading, name])
+  const first = quota?.buckets.find(bucket => bucket.used !== undefined && !!bucket.total)
+  const share = first ? Math.max(0, Math.min(1, first.used! / first.total!)) : 0, radius = 6.4, length = 2 * Math.PI * radius
+  if (!quota?.buckets.length) return null
+  return <><button className={`context-ring account-quota-ring ${tone(share)}`} aria-label={t('{0} 账户额度', name)} data-tip={first ? `${name} · ${percent(first.used!, first.total!)}` : t('{0} 账户额度', name)} onClick={event => { event.stopPropagation(); openMenu(event.currentTarget, items()) }}><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r={radius} className="ring-track" />{first && <circle cx="9" cy="9" r={radius} className="ring-arc" strokeDasharray={length} strokeDashoffset={length * (1 - share)} transform="rotate(-90 9 9)" />}</svg></button>{menu}</>
 }
 
 /**
@@ -354,10 +231,13 @@ function CreditsButton({ backendId, className, activity }: { backendId: string; 
  * reported (over ACP or in its own log); otherwise a plain grey ring. Click for
  * the usage details.
  */
-export function ContextRing({ usage, scope, timing, onCompact }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming; onCompact?: () => void }) {
+export function ContextRing({ usage, scope, timing, onCompact, backendId }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming; onCompact?: () => void; backendId?: string }) {
   const [menu, openMenu] = useMenu({ align: 'right', placement: 'auto', compact: true })
+  const accountQuota = useApp(s => !!s.backends.find(backend => backend.id === backendId)?.credits)
+  if (accountQuota && backendId) return <AccountQuotaRing backendId={backendId} activity={(usage?.turns || 0) + (usage?.unreported || 0)} onCompact={onCompact} />
   const size = usage?.contextSize
   const used = usage?.contextUsed
+  if (used === undefined && usage?.contextShare === undefined && !usage?.cost) return null
   // Tokens against the window, or the share an agent reports alone (Qoder).
   const reported = used !== undefined ? (size ? used / size : undefined) : usage?.contextShare
   const share = reported !== undefined ? Math.max(0, Math.min(1, reported)) : 0

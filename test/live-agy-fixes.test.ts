@@ -33,11 +33,11 @@ async function ask(env: Record<string, string>) {
 
 describe('Antigravity asking before the app\'s own tools', () => {
   it('allows the app\'s own tools at once, with no card (the app asks itself where the user must decide)', async () => {
-    const r = await ask({ MOCK_ASK_TITLE: 'fenn_home_board', MOCK_ASK_EN: '1' })
-    expect(r.ownTools).toContain('home_board')
+    const r = await ask({ MOCK_ASK_TITLE: 'fenn_list_routines', MOCK_ASK_EN: '1' })
+    expect(r.ownTools).toContain('list_routines')
     expect(r.shown).toEqual([])
     expect(r.allowed).toBe(true)
-    const prefixed = await ask({ MOCK_ASK_TITLE: 'mcp__fenn__home_board', MOCK_ASK_EN: '1' })
+    const prefixed = await ask({ MOCK_ASK_TITLE: 'mcp__fenn__list_routines', MOCK_ASK_EN: '1' })
     expect(prefixed.shown).toEqual([])
   }, 40000)
 
@@ -271,7 +271,7 @@ describe('cards for the app\'s own tools across agents (QA real-adapter matrix)'
     const r = await ask({ MOCK_ASK_CODEX: '1' })
     expect(r.shown).toEqual([])
     expect(r.allowed).toBe(true)
-    for (const title of ['mcp.fenn.home_board', 'fenn__home_board', 'mcp__fenn__home_board']) expect((await ask({ MOCK_ASK_TITLE: title, MOCK_ASK_EN: '1' })).shown).toEqual([])
+    for (const title of ['mcp.fenn.list_routines', 'fenn__list_routines', 'mcp__fenn__list_routines']) expect((await ask({ MOCK_ASK_TITLE: title, MOCK_ASK_EN: '1' })).shown).toEqual([])
   }, 60000)
 
   it('never shows two buttons that read the same', () => {

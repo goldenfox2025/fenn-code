@@ -1,0 +1,14 @@
+.transcript-shell { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.transcript-shell > .scroll, .history-wrap > .conversation-history { scrollbar-width: none; scrollbar-gutter: auto; }
+.transcript-shell > .scroll::-webkit-scrollbar, .history-wrap > .conversation-history::-webkit-scrollbar { display: none; }
+.conversation-nodes { --node-rest: color-mix(in srgb, var(--text) 18%, var(--bg)); position: absolute; top: var(--space-5); bottom: var(--space-5); left: var(--node-edge); width: var(--node-rail-width); z-index: 4; }
+.conversation-node { position: absolute; left: 0; width: var(--node-rail-width); height: 10px; border: 0; padding: 0; background: transparent; display: flex; align-items: center; justify-content: flex-start; }
+.conversation-node > span { height: 2px; width: 6px; border-radius: var(--radius-pill); background: var(--node-rest); transition: width var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+.conversation-node.in-view > span, .conversation-node.saved > span { background: color-mix(in srgb, var(--text) 30%, var(--bg)); }
+.conversation-nodes:has(.node-preview) .conversation-node > span { background: color-mix(in srgb, var(--text) calc(var(--node-tone, 0) * 100%), var(--node-rest)); }
+.node-preview { position: absolute; left: calc(var(--space-9) + var(--space-4)); width: min(320px, calc(var(--node-preview-room, 100vw) - 52px)); max-height: 100%; overflow: auto; padding: var(--space-6); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-elevated); box-shadow: var(--shadow-pop); color: var(--text); overflow-wrap: anywhere; }
+.node-preview > div { display: flex; align-items: flex-start; gap: var(--space-4); }
+.node-prompt { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); text-align: left; font-weight: 500; font-size: var(--font-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.node-bookmark { display: grid; place-items: center; padding: var(--space-1); border: 0; background: transparent; color: var(--text-3); flex: none; }
+.node-bookmark[aria-pressed=true] { color: var(--text); }
+.node-reply { margin: 7px 0 0; color: var(--text-3); font-size: var(--font-sm); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

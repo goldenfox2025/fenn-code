@@ -328,6 +328,8 @@ export interface AppListing {
   shown(config: Record<string, string>): boolean
   /** Shows or hides a session the app is not running there; nothing happens when it already is so. */
   setShown(config: Record<string, string>, sessionId: string, shown: boolean): Promise<void>
+  /** Syncs the conversation's chosen title without invoking the model. */
+  setTitle?(config: Record<string, string>, sessionId: string, title: string): Promise<void>
 }
 
 /** One drop-in file under src/main/backends/plugins/ exports one of these. */
@@ -337,6 +339,8 @@ export interface BackendPlugin {
   description?: string
   settings?: PluginSetting[]
   appListing?: AppListing
+  /** A backend's native no-history path for internal text-only work. Never a visible conversation. */
+  backgroundAsk?(config: Record<string, string>, text: string, opts: { cwd: string; timeoutMs?: number; model?: string }): Promise<string>
   /** The agent can sign in from the app (ACP authenticate), so settings show a 「登录」 button. */
   signIn?: boolean
   /** A command that signs in from a terminal (e.g. `qodercli login`); settings show a 「登录」 button that opens it. */

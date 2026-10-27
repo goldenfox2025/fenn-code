@@ -28,29 +28,48 @@ a,
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(6px) scale(0.98); }
 }
+/* Reading surfaces stay opaque throughout entry: their text never cross-fades with the page. */
+@keyframes sheet-in {
+  from { transform: translateY(6px); }
+}
+@keyframes backdrop-in {
+  from { background-color: transparent; }
+}
 @keyframes fade-out {
   to { opacity: 0; }
 }
-@keyframes slide-in {
-  from { opacity: 0; transform: translateX(12px); }
-}
 
 .overlay {
-  animation: fade-in var(--dur-2) var(--ease);
+  animation: backdrop-in var(--dur-2) var(--ease);
 }
 .overlay > * {
-  animation: rise-in var(--dur-3) var(--ease);
+  animation: sheet-in var(--dur-2) var(--ease);
 }
 .toast {
   animation: rise-in var(--dur-2) var(--ease);
 }
 .panel,
+.page-panel,
 .side-pane {
-  animation: slide-in var(--dur-3) var(--ease);
+  transform: translateX(0);
+  clip-path: inset(0 0 0 0);
+  transition: width var(--dur-3) var(--ease), margin-right var(--dur-3) var(--ease), border-width var(--dur-3) var(--ease), transform var(--dur-3) var(--ease), clip-path var(--dur-3) var(--ease);
 }
+@starting-style {
+  .panel, .page-panel, .side-pane { transform: translateX(16px); clip-path: inset(0 0 0 100%); }
+}
+/* Review and file inspection share one location, including when the hidden thread returns. */
+.panel:has(.thread-view), .review-files-panel { transition: width var(--dur-3) var(--ease), margin-right var(--dur-3) var(--ease), border-width var(--dur-3) var(--ease); }
+.panel[data-exiting], .page-panel[data-exiting] { pointer-events: none; transform: translateX(16px); clip-path: inset(0 0 0 100%); transition: transform var(--dur-2) var(--ease), clip-path var(--dur-2) var(--ease); }
+.pane-viewport { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; width: 100%; overflow: hidden; }
+:is(.panel,.page-panel):not(.floating):not(.maximized)[data-exiting] {
+  width: 0; min-width: 0; margin-right: 0; border-left-width: 0; border-right-width: 0;
+  transition: width var(--dur-2) var(--ease), margin-right var(--dur-2) var(--ease), border-width var(--dur-2) var(--ease), transform var(--dur-2) var(--ease), clip-path var(--dur-2) var(--ease);
+}
+:is(.panel,.page-panel)[data-exiting] > .pane-viewport { flex: 1 0 auto; width: var(--pane-content-width, 100%); }
+.workspace:has(> [data-exiting]) > .center .panel { display: none; }
 /* A fold opening (thinking, a tool's input and output, an error's details) fades its content in;
    a note that ends a turn (已停止, 已中断) takes the working mark's place the same way. */
-.steps-body,
 .tool-detail,
 .msg-error-detail[open] > :not(summary),
 .turn-note {
@@ -80,6 +99,11 @@ body.resizing * {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .panel, .page-panel, .side-pane, .panel[data-exiting], .page-panel[data-exiting] {
+    transition: none !important;
+    transform: none;
+    clip-path: none;
+  }
   *,
   *::before,
   *::after {

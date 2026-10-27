@@ -5,6 +5,7 @@ import { t } from '../i18n'
 import { Dropdown } from './Menu'
 import { ArtifactFrame } from './ArtifactFrame'
 import { PreviewPane } from './PreviewPane'
+import { PanelState } from './PanelState'
 
 /**
  * A page an agent published, beside the conversation. It runs in a sandboxed
@@ -14,8 +15,7 @@ type Page = { id: string; version?: number }
 const pageKey = (page: Page) => `${page.id}:${page.version ?? 'latest'}`
 
 /** Keep only the three most recently opened previews alive in this window. */
-export function PagePanels() {
-  const page = useApp((s) => s.page)
+export function PagePanels({ selected: page, exiting = false }: { selected: Page | null; exiting?: boolean }) {
   const [recent, setRecent] = useState<Page[]>([])
   const key = page && pageKey(page)
   const newest = recent.at(-1)
@@ -25,11 +25,11 @@ export function PagePanels() {
   // Updating recency must not move mounted iframe nodes: DOM reparenting can
   // navigate a frame even when React kept its key. Hidden panes keep fixed order.
   return [...recent].sort((a, b) => pageKey(a).localeCompare(pageKey(b))).map((p) => (
-    <PagePanel key={pageKey(p)} {...p} active={pageKey(p) === key} />
+    <PagePanel key={pageKey(p)} {...p} active={pageKey(p) === key} exiting={exiting} />
   ))
 }
 
-function PagePanel({ id, version, active }: Page & { active: boolean }) {
+function PagePanel({ id, version, active, exiting }: Page & { active: boolean; exiting: boolean }) {
   const [info, setInfo] = useState<{ title: string; versions: { version: number; createdAt: number }[] } | null>(null)
   const [code, setCode] = useState<string | null>(null)
   const [showCode, setShowCode] = useState(false)
@@ -77,7 +77,7 @@ function PagePanel({ id, version, active }: Page & { active: boolean }) {
   }
 
   return (
-    <PreviewPane expanded={expanded} hidden={!active}>
+    <PreviewPane expanded={expanded} hidden={!active} exiting={exiting && active}>
       <div className="panel-head">
         <span className="page-title" data-tip={info?.title}>{info?.title ?? t('页面')}</span>
         {info && info.versions.length > 1 && (
@@ -119,7 +119,7 @@ function PagePanel({ id, version, active }: Page & { active: boolean }) {
         </button>
       </div>
       {showCode && <pre className="page-code">{code ?? t('正在加载预览…')}</pre>}
-      {error ? <div className="empty" role="status">{t('无法加载预览')}</div> : current ? (
+      {error ? <PanelState title={t('无法加载预览')} /> : current ? (
         <ArtifactFrame
           key={`${id}-${current}-${reload}`}
           id={id}
@@ -128,7 +128,7 @@ function PagePanel({ id, version, active }: Page & { active: boolean }) {
           active={active && !showCode}
           reload={reload}
         />
-      ) : !showCode && <div className="empty" role="status">{t('正在加载预览…')}</div>}
+      ) : !showCode && <PanelState title={t('正在加载预览…')} />}
     </PreviewPane>
   )
 }

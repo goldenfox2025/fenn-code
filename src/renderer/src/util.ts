@@ -1,5 +1,12 @@
 import type { Block, Conversation, Message, WorkStatus } from '@shared/model'
 import { locale, t } from './i18n'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+
+/** Rows with independent nested actions activate only from their own keyboard focus. */
+export function activateOnKey(event: ReactKeyboardEvent<HTMLElement>, activate: () => void): void {
+  if (event.target !== event.currentTarget || imeComposing(event)) return
+  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate() }
+}
 
 export function textOf(m: Message): string {
   return m.blocks

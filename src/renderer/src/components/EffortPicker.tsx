@@ -20,8 +20,9 @@ export function recommendedEffort(o: SessionOption): number {
  * Like Claude's effort control: a small chip with the current level beside the
  * model name, opening a popover with a 速度更快 … 更智能 slider.
  */
-export function EffortPicker({ option, value, disabled, onChange }: { option: SessionOption; value?: string; disabled?: boolean; onChange: (value: string) => void }) {
+export function EffortPicker({ option, value, disabled, suspended, onChange }: { option: SessionOption; value?: string; disabled?: boolean; suspended?: boolean; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false)
+  useEffect(() => { if (suspended) setOpen(false) }, [suspended])
   const chip = useRef<HTMLButtonElement>(null)
   // Positions are in order from fastest to smartest, not the agent's listing order.
   const index = Math.max(0, effortStops(option.choices).findIndex((c) => c.value === value))
@@ -43,7 +44,7 @@ export function EffortPicker({ option, value, disabled, onChange }: { option: Se
         {label}
         <ChevronDown size={12} className="chip-caret" />
       </button>
-      {open && chip.current && (
+      {open && !suspended && chip.current && (
         <EffortPopover anchor={chip.current} option={option} index={index} disabled={disabled} onChange={onChange} onClose={() => setOpen(false)} />
       )}
     </>

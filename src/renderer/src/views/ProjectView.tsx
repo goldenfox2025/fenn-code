@@ -2,21 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { deleteProject } from '../actions'
 import { StatusChip } from '../components/StatusChip'
 import { ResizeHandle, paneStyle, usePaneWidth, usePanelSqueezed } from '../components/ResizeHandle'
-import { useShallow } from 'zustand/react/shallow'
 import {
   ArrowLeft,
   CheckCircle2,
   Download,
-  FileText,
   Clock,
-  ListChecks,
+  ListTree,
   Maximize2,
   MessagesSquare,
   Minimize2,
   MoreHorizontal,
   NotebookText,
-  Paperclip,
-  Plus,
   Search,
   FolderKanban,
   Settings,
@@ -26,52 +22,64 @@ import {
   Archive,
   ArchiveRestore,
   Milestone,
-  Gauge,
-  PackageOpen,
   CircleDot
 } from 'lucide-react'
-import type { Conversation, MemoryEntry, Project } from '@shared/model'
+import type { Conversation, Project } from '@shared/model'
 import { Composer } from '../components/Composer'
-import { humanSize, OutputsPanel } from '../components/Outputs'
-import { Dropdown, useMenu } from '../components/Menu'
+import { useMenu } from '../components/Menu'
 import { PermissionPrompts } from '../components/Permission'
 import { Transcript } from '../components/Transcript'
-import { PlanLine, planHeadline } from '../components/PlanLine'
+import { planHeadline } from '../components/PlanLine'
 import { api, useApp, toastError } from '../store'
-import { errorText } from '@shared/errors'
-import { duration, imeComposing, minuteTime, relTime, threadState } from '../util'
+import { duration, imeComposing, relTime, threadState } from '../util'
 import { EditableTitle } from './ChatView'
 import { RenameInput, useRenaming } from '../components/InlineRename'
 import { t } from '../i18n'
 import { tk } from '@shared/i18n'
-import { FilesPane } from '../components/FilesPane'
-import { confirmDialog, EscLayer } from '../components/Modal'
-import { UsageButton, usageLine } from '../components/Usage'
-import { sumTotals } from '@shared/usage'
+import { FilesPane, flushFileEdits } from '../components/FilesPane'
+import { ProjectSchedules } from '../components/projects/ProjectSchedules'
+import { MemoryPanel } from '../components/projects/ProjectMemory'
+import { ProjectEmpty } from '../components/projects/ProjectSection'
+import { confirmDialog } from '../components/Modal'
+import { BrowserButton } from '../components/BrowserPanel'
 import { boardCount, nextMilestone, ProgressPanel } from '../components/ProgressPanel'
+import { ThreadReview } from '../components/reviews/ThreadReview'
+import { reviewQueueStatus } from '../components/reviews/reviewState'
+import { PanelState } from '../components/PanelState'
+import { usePanePresence } from '../components/usePanePresence'
+import { usePaneViewport } from '../components/usePaneViewport'
+import { panelTabKeys } from '../components/OverflowTabs'
+import { useFileExpansionActive } from '../components/files/FileExpansion'
 
 export function ProjectView({ projectId, threadId }: { projectId: string; threadId?: string; overview?: boolean }) {
   const project = useApp((s) => s.projects.find((p) => p.id === projectId))
   const conv = useApp((s) => s.conversations.find((c) => c.id === project?.conversationId))
   const set = useApp((s) => s.set)
   const navigate = useApp((s) => s.navigate)
-  const userName = useApp((s) => s.settings.userName)
+  const anotherPanel = useApp((s) => !!(s.fileView || s.page || s.browserView))
+  const navigationVersion = useApp((s) => s.navigationVersion)
   const [panelOpen, setPanelOpen] = useState(true)
   const [wide, setWide] = useState(false)
+  const fileExpanded = useFileExpansionActive()
+  const [panelTab, setPanelTab] = useState<PanelTab>('threads')
   const panelWidth = usePaneWidth('panel')
   // In a narrow window the panel opens over the conversation, only when asked for.
   const squeezed = usePanelSqueezed()
   const [overlay, setOverlay] = useState(false)
   useEffect(() => {
-    if (threadId) setOverlay(true)
-  }, [threadId])
+    if (threadId) { setPanelOpen(true); setOverlay(squeezed) }
+  }, [threadId, navigationVersion])
   // Back beside the conversation, the floating state is over: narrowing again doesn't bring it back by itself.
   useEffect(() => {
     if (!squeezed) setOverlay(false)
-  }, [squeezed])
-  const showPanel = panelOpen && (!squeezed || overlay)
-  const floating = squeezed && showPanel
+    else if (wide || fileExpanded) setOverlay(true)
+  }, [squeezed, wide, fileExpanded])
+  const showPanel = !anotherPanel && panelOpen && (fileExpanded || wide || !squeezed || overlay)
+  const floating = squeezed && showPanel && !wide
+  // File inspection temporarily hides the project surface; it must retain its tab and drafts.
+  const panelPresence = usePanePresence(panelOpen && (fileExpanded || anotherPanel || wide || !squeezed || overlay))
   const panelRef = useRef<HTMLElement>(null)
+  usePaneViewport(panelRef, panelPresence.present)
   // The floating panel closes like a popover: Esc, or a click on the conversation behind it.
   // Esc leaves full screen (a menu or dialog open on top keeps it).
   useEffect(() => {
@@ -105,13 +113,24 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
   if (!project || !conv) return <div className="empty">{t('项目不存在或已被删除')}</div>
 
   const go = (patch: { threadId?: string; overview?: boolean }) => {
+    set({ fileView: null, page: null, browserView: null })
+    if (threadId && !patch.threadId) setPanelTab('threads')
     setPanelOpen(true)
+    setOverlay(squeezed)
     navigate({ view: 'project', projectId, ...patch })
+  }
+  const openMain = () => {
+    set({ fileView: null, page: null, browserView: null })
+    setWide(false)
+    setOverlay(false)
+    setPanelOpen(!squeezed)
+    navigate({ view: 'project', projectId })
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.workspace > .center .composer textarea')?.focus({ preventScroll: true }))
   }
 
   return (
     <div className="workspace">
-      <div className="center">
+      <div className="center" inert={wide && showPanel} aria-hidden={wide && showPanel || undefined}>
         <div className="chat-header">
           <span className="proj-icon">
             <FolderKanban size={15} />
@@ -130,14 +149,18 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
             </span>
           )}
           <span className="spacer" />
-          <button className={'pill-btn' + (panelOpen && !threadId ? ' active' : '')} onClick={() => go({})}>
-            <ListChecks size={15} />
-            {t('概览')}</button>
+          <BrowserButton conversationId={conv.id} />
+          <button className={'icon-btn' + (panelOpen && !threadId ? ' on' : '')} data-tip={!showPanel && threadId ? t('打开讨论串') : t('概览')} aria-label={!showPanel && threadId ? t('打开讨论串') : t('概览')} data-panel-toggle onClick={() => void flushFileEdits().then(ok => {
+            if (!ok) return
+            if (!showPanel && threadId) { set({fileView:null,page:null,browserView:null}); setPanelOpen(true); setOverlay(squeezed) }
+            else go({})
+          })}><ListTree size={17} /></button>
           <button className="icon-btn" data-tip={t('项目设置')} onClick={() => set({ settingsOpen: `project:${project.id}` })}>
             <Settings size={16} />
           </button>
           <button
             className="icon-btn"
+            data-tip={t('更多')}
             onClick={(e) =>
               openMenu(e.currentTarget, [
                 {
@@ -181,28 +204,27 @@ export function ProjectView({ projectId, threadId }: { projectId: string; thread
         <Composer conversation={conv} placeholder={t('提问或开始一项任务…')} autoFocus={!threadId} />
       </div>
 
-      {showPanel && (
-        <aside ref={panelRef} className={'panel' + (wide ? ' maximized' : '') + (panelWidth && !wide ? ' sized' : '') + (squeezed ? ' floating' : '')} style={wide ? undefined : paneStyle('panel', panelWidth)}>
+      {panelPresence.present && (
+        <aside ref={panelRef} hidden={anotherPanel} inert={anotherPanel || panelPresence.exiting} aria-hidden={panelPresence.exiting || undefined} data-exiting={panelPresence.exiting || undefined} className={'panel' + (wide ? ' maximized' : '') + (panelWidth && !wide ? ' sized' : '') + (floating ? ' floating' : '')} style={{ ...(wide ? undefined : paneStyle('panel', panelWidth)), ...(anotherPanel ? { display: 'none' } : {}) }}>
           <ResizeHandle pane="panel" edge="left" onResize={() => setWide(false)} />
+          <div className="pane-viewport">
           {threadId ? (
-            <ThreadView threadId={threadId} onBack={() => go({})} wide={wide} setWide={setWide} />
+            <ThreadView key={threadId} threadId={threadId} onBack={() => go({})} onClose={() => { setWide(false); setPanelOpen(false); setOverlay(false); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.workspace > .center .composer textarea')?.focus({ preventScroll: true })) }} onOpenMain={openMain} onOpenThread={(id) => go({ threadId: id })} wide={wide} setWide={setWide} />
           ) : (
             <ThreadList
               project={project}
-              userName={userName}
+              onStart={openMain}
               onOpen={(id) => go({ threadId: id })}
-              onClose={() => (setPanelOpen(false), setOverlay(false))}
+              onClose={() => (setWide(false), setPanelOpen(false), setOverlay(false))}
               wide={wide}
               setWide={setWide}
+              tab={panelTab}
+              setTab={setPanelTab}
             />
-          )}
+          )}</div>
         </aside>
       )}
-      {!showPanel && (
-        <button className="icon-btn" style={{ position: 'absolute', right: 12, top: 52 }} data-panel-toggle data-tip={t('打开讨论串')} onClick={() => (setPanelOpen(true), setOverlay(true))}>
-          <MessagesSquare size={17} />
-        </button>
-      )}
+
     </div>
   )
 }
@@ -212,7 +234,7 @@ function ProjectIntro({ project, conv }: { project: Project; conv: Conversation 
   if (!messages || messages.filter((m) => !m.hidden).length === 0) {
     return (
       <div className="scroll">
-        <div className="transcript" style={{ paddingTop: 40 }}>
+        <div className="transcript project-intro-brief">
           <div className="md">
             <p>{t('欢迎来到')}{' '}<strong>{project.name}</strong>{t('。')}</p>
             <p>
@@ -245,19 +267,21 @@ function useThreads(projectId: string) {
   )
 }
 
-function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
+function ThreadList({ project, onStart, onOpen, onClose, wide, setWide, tab, setTab }: {
   project: Project
-  userName: string
+  onStart: () => void
   onOpen: (id: string) => void
   onClose: () => void
   wide: boolean
   setWide: (w: boolean) => void
+  tab: PanelTab
+  setTab: (tab: PanelTab) => void
 }) {
   const threads = useThreads(project.id)
-  const routines = useApp(useShallow((s) => s.routines.filter((r) => r.target.projectId === project.id)))
-  const [tab, setTab] = useState<PanelTab>('threads')
+  const userName = useApp(s => s.settings.userName)
   const [moreMenu, openMore] = useMenu({ align: 'left', compact: true })
-  const extra = MORE.find((m) => m.id === tab)
+  const extra = MORE.find(item => item.id === tab)
+  const chooseTab = (next: PanelTab) => void flushFileEdits().then(ok => ok && setTab(next))
   const [q, setQ] = useState<string | null>(null)
   const shown = threads.filter((t) => !q || t.title.toLowerCase().includes(q.toLowerCase()))
   // The welcome line speaks for all threads, whatever the search shows.
@@ -267,36 +291,18 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
   const board = boardCount(project.progress)
   const next = nextMilestone(project.progress)
   const suggestions = (project.progress ?? []).filter((m) => m.suggested).length
-  const usage = useApp(useShallow((s) => s.conversations.filter((c) => c.projectId === project.id && !s.backends.find((b) => b.id === c.backendId)?.credits).map((c) => c.usage)))
-  const totals = sumTotals(usage)
 
   return (
     <>
       <div className="panel-head">
-        <div className="tabs" role="tablist">
-          <button role="tab" data-tab="threads" aria-selected={tab === 'threads'} className={'tab' + (tab === 'threads' ? ' active' : '')} onClick={() => setTab('threads')}>
-            {t('讨论串')}
-          </button>
-          <button role="tab" data-tab="library" aria-selected={tab === 'library'} className={'tab' + (tab === 'library' ? ' active' : '')} onClick={() => setTab('library')}>
-            {t('库')}
-          </button>
-          {extra && (
-            <button role="tab" data-tab={tab} aria-selected className="tab active">
-              {t(extra.label)}
-            </button>
-          )}
-          <button
-            className="icon-btn"
-            data-more
-            data-tip={t('更多')}
-            aria-label={t('更多')}
-            onClick={(e) => openMore(e.currentTarget, MORE.filter((m) => m.id !== 'progress' || !!project.progress?.length).map((m) => ({ icon: m.icon, label: t(m.label), checked: tab === m.id, onClick: () => setTab(m.id) })))}
-          >
-            <MoreHorizontal size={16} />
-          </button>
+        <div className="tabs" role="tablist" aria-label={t('项目导航')} onKeyDown={panelTabKeys}>
+          <button role="tab" data-tab="threads" aria-selected={tab === 'threads'} className={'tab' + (tab === 'threads' ? ' active' : '')} onClick={() => chooseTab('threads')}>{t('讨论串')}</button>
+          <button role="tab" data-tab="library" aria-selected={tab === 'library'} className={'tab' + (tab === 'library' ? ' active' : '')} onClick={() => chooseTab('library')}>{t('库')}</button>
+          {extra && <button role="tab" data-tab={tab} aria-selected className="tab active">{t(extra.label)}</button>}
+          <button className="icon-btn" data-more data-tip={t('更多')} aria-label={t('更多')} onClick={event => openMore(event.currentTarget, MORE.filter(item => item.id !== 'progress' || !!project.progress?.length).map(item => ({icon:item.icon,label:t(item.label),checked:tab === item.id,onClick:() => chooseTab(item.id)})))}><MoreHorizontal size={16}/></button>
           {moreMenu}
         </div>
-        <span className="spacer" />
+        <span className="spacer"/>
         {tab === 'threads' &&
           (q != null ? (
             <input className="input panel-search" autoFocus placeholder={t('搜索讨论串')} value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => !q && setQ(null)} />
@@ -308,7 +314,7 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
         <button className="icon-btn" data-tip={wide ? t('退出全屏') : t('全屏')} aria-label={wide ? t('退出全屏') : t('全屏')} onClick={() => setWide(!wide)}>
           {wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
         </button>
-        <button className="icon-btn" data-tip={t('关闭')} aria-label={t('关闭')} onClick={onClose}>
+        <button className="icon-btn" data-tip={t('关闭')} aria-label={t('关闭')} onClick={() => void flushFileEdits().then(ok => ok && onClose())}>
           <X size={16} />
         </button>
       </div>
@@ -317,15 +323,9 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
           <>
             <div className="panel-welcome">
               <h2>{userName ? t('欢迎回来，{0}。', userName) : t('欢迎回来。')}</h2>
-              <div className="muted small">
-                {working.length
-                  ? t('正在处理中！我会通知您。')
-                  : waiting.length
-                    ? t('有 {0} 个讨论串在等您处理。', waiting.length)
-                    : threads.length
-                      ? t('{0} 个讨论串都已解决。', threads.length)
-                      : t('讨论串开始后，会在这里跟踪进展：哪些正在进行、哪些在等待您处理、哪些已完成。')}
-              </div>
+              <div className="muted small">{working.length ? t('正在处理中！我会通知您。') : waiting.length ? t('有 {0} 个讨论串在等您处理。', waiting.length) : threads.length ? t('{0} 个讨论串都已解决。', threads.length) : t('讨论串开始后，会在这里跟踪进展：哪些正在进行、哪些在等待您处理、哪些已完成。')}</div>
+            </div>
+            {(board.total > 0 || suggestions > 0) && <div className="project-overview-meta">
               {board.total > 0 && (
                 <button className="progress-summary" onClick={() => setTab('progress')}>
                   <Milestone size={14} />
@@ -339,293 +339,43 @@ function ThreadList({ project, userName, onOpen, onClose, wide, setWide }: {
                   <span className="grow">{t('有 {0} 条进度建议待确认', suggestions)}</span>
                 </button>
               )}
-              {totals.turns + totals.unreported > 0 && (
-                <UsageButton usage={totals} scope={t('项目用量（所有对话和讨论串）')} className="progress-summary usage-summary" align="left">
-                  <Gauge size={14} />
-                  <span className="grow">{t('项目用量')}</span>
-                  <span className="muted">{totals.turns ? usageLine({ total: totals.total || !totals.cost ? totals.total : undefined, cost: totals.cost }) : t('用量')}</span>
-                </UsageButton>
-              )}
-            </div>
+            </div>}
             <div className="thread-list">
-              <ThreadGroup title={t('等待您处理')} empty={t('决策、审阅和权限请求。')} items={waiting} onOpen={onOpen} />
-              <ThreadGroup title={t('进行中')} empty={t('正在推进的讨论串。')} items={working} onOpen={onOpen} />
-              <ThreadGroup title={t('已解决')} empty={t('已完成的讨论串。')} items={done} onOpen={onOpen} collapsed={done.length > 8} />
+              {!threads.length && <ProjectEmpty icon={<MessagesSquare size={26} />} title={t('从主对话开始')}
+                description={t('描述要做的事。独立任务会在讨论串中推进，完成后交回主对话审核。')}
+                action={<button className="btn primary" onClick={onStart}>{t('描述任务')}</button>} />}
+              <ThreadGroup title={t('等待您处理')} items={waiting.filter((x) => shown.includes(x))} onOpen={onOpen} />
+              <ThreadGroup title={t('进行中')} items={working.filter((x) => shown.includes(x))} onOpen={onOpen} />
+              <ThreadGroup title={t('已解决')} items={done} onOpen={onOpen} collapsed={done.length > 8} />
+              {!!q && !shown.length && <PanelState title={t('没有匹配的讨论串')} />}
             </div>
           </>
         )}
         {tab === 'progress' && <ProgressPanel project={project} />}
         {tab === 'library' && <FilesPane id={project.id} />}
-        {tab === 'outputs' && <OutputsPanel project={project} />}
         {tab === 'memory' && <MemoryPanel projectId={project.id} />}
-        {tab === 'files' && <FilesPanel projectId={project.id} />}
-        {tab === 'routines' && (
-          <div className="thread-list">
-            <div className="list-head">
-              <span className="muted small">{t('按时间自动在这个项目里运行的任务。')}</span>
-              <span className="spacer" />
-              <button className="btn sm" onClick={() => useApp.getState().set({ settingsOpen: `routine:new:${project.id}` })}>
-                <Plus size={14} />
-                {t('新建定时任务')}
-              </button>
-            </div>
-            {routines.length === 0 && <div className="empty">{t('此项目还没有定时任务。')}</div>}
-            {routines.map((r) => (
-              <div key={r.id} className="thread-item">
-                <div className="row1">
-                  <Clock size={14} />
-                  <span className="title">{r.name}</span>
-                  <span className={'status-chip ' + (r.enabled ? 'done' : '')}>{r.enabled ? t('启用') : r.pausedByArchive ? t('随项目暂停') : t('暂停')}</span>
-                </div>
-                {r.nextRunAt && <div className="preview">{t('下次运行：')}{minuteTime(r.nextRunAt)}</div>}
-              </div>
-            ))}
-          </div>
-        )}
+        {tab === 'routines' && <ProjectSchedules projectId={project.id} />}
       </div>
     </>
   )
 }
 
-type PanelTab = 'threads' | 'library' | 'progress' | 'outputs' | 'memory' | 'files' | 'routines'
+type PanelTab = 'threads' | 'library' | 'progress' | 'memory' | 'routines'
 
-/** The project panel's other views, under 更多: the two tabs are 讨论串 and 库, as in Claude. */
+/** Navigation order is stable; only destinations that do not fit move into overflow. */
 const MORE: { id: PanelTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'outputs', label: tk('成果'), icon: <PackageOpen size={15} /> },
-  { id: 'files', label: tk('项目资料'), icon: <Paperclip size={15} /> },
   { id: 'memory', label: tk('项目记忆'), icon: <NotebookText size={15} /> },
   { id: 'routines', label: tk('定时任务'), icon: <Clock size={15} /> },
   { id: 'progress', label: tk('里程碑'), icon: <Milestone size={15} /> }
 ]
 
-function FilesPanel({ projectId }: { projectId: string }) {
-  const [items, setItems] = useState<{ name: string; size: number; updatedAt: number }[] | null>(null)
-  const [dragging, setDragging] = useState(false)
-  const picker = useRef<HTMLInputElement>(null)
-  const reload = () => api().listProjectFiles(projectId).then(setItems)
-  useEffect(() => {
-    void reload()
-  }, [projectId])
-  const add = async (list: FileList) => {
-    try {
-      const files = await Promise.all(
-        Array.from(list).map(async (f) => {
-          const buf = new Uint8Array(await f.arrayBuffer())
-          let bin = ''
-          for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
-          return { name: f.name, data: btoa(bin) }
-        })
-      )
-      await api().addProjectFiles(projectId, files)
-    } catch (e) {
-      toastError(e)
-    }
-    void reload()
-  }
-  return (
-    <div
-      className={'thread-list' + (dragging ? ' dropping' : '')}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
-          e.preventDefault()
-          setDragging(true)
-        }
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragging(false)
-        void add(e.dataTransfer.files)
-      }}
-    >
-      <div className="panel-welcome" style={{ padding: '12px 8px 4px' }}>
-        <div className="muted small">{t('放进项目的资料，项目里的每个 agent 都能读到。可以把文件拖到这里。')}</div>
-      </div>
-      {items?.length === 0 && <div className="empty">{t('还没有文件。')}</div>}
-      {items?.map((f) => (
-        <div key={f.name} className="thread-item file-item">
-          <div className="row1">
-            <FileText size={15} className="muted" />
-            <span className="title">{f.name}</span>
-            <span className="small muted">{humanSize(f.size)}</span>
-            <button
-              className="icon-btn sm"
-              data-tip={t('移除')}
-              onClick={async () => {
-                if (!(await confirmDialog(t('从项目中移除「{0}」？', f.name), { ok: t('移除') }))) return
-                await api().deleteProjectFile(projectId, f.name).catch(toastError)
-                void reload()
-              }}
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        </div>
-      ))}
-      <div style={{ padding: 8 }}>
-        <button className="btn" onClick={() => picker.current?.click()}>
-          <Plus size={14} />
-          {t('添加文件')}</button>
-        <input
-          ref={picker}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => {
-            if (e.target.files) void add(e.target.files)
-            e.target.value = ''
-          }}
-        />
-      </div>
-    </div>
-  )
-}
 
-
-/** The core's limit on one memory entry, and how it names the entry's file (see ProjectMemory). */
-const MEMORY_MAX = 4000
-const memorySlug = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
-
-function MemoryPanel({ projectId }: { projectId: string }) {
-  const [items, setItems] = useState<MemoryEntry[] | null>(null)
-  const [open, setOpen] = useState<string | null>(null)
-  const [editing, setEditingRaw] = useState<Partial<MemoryEntry> | null>(null)
-  // The entry being edited, as it was: a new name replaces it instead of leaving the old one behind.
-  const [editingFrom, setEditingFrom] = useState<string | undefined>()
-  const [saving, setSaving] = useState(false)
-  const [formError, setFormError] = useState('')
-  const setEditing = (e: Partial<MemoryEntry> | null, from?: string) => {
-    if (!editing || !e) setEditingFrom(from)
-    setFormError('')
-    setEditingRaw(e)
-  }
-  const reload = () => api().listMemory(projectId).then(setItems).catch(toastError)
-  // Reloads when an agent or the user changes the memory, instead of polling.
-  const version = useApp((s) => s.memoryVersion[projectId] ?? 0)
-  useEffect(() => {
-    void reload()
-  }, [projectId, version])
-  if (editing)
-    return (
-      <div style={{ padding: 16 }}>
-        <EscLayer onClose={() => setEditing(null)} />
-        <div className="field">
-          <label>{t('名称')}</label>
-          <input className="input" value={editing.name ?? ''} onChange={(e) => setEditing({ ...editing, name: e.target.value })} placeholder="release-date" />
-        </div>
-        <div className="field">
-          <label>{t('一句话描述')}</label>
-          <input className="input" value={editing.description ?? ''} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
-        </div>
-        <div className="field">
-          <label>{t('类型')}</label>
-          <Dropdown
-            value={editing.type ?? 'project'}
-            onChange={(v) => setEditing({ ...editing, type: v })}
-            options={[
-              { value: 'user', label: t('关于用户') },
-              { value: 'feedback', label: t('工作方式要求') },
-              { value: 'project', label: t('项目事实与决定') },
-              { value: 'reference', label: t('外部资源') }
-            ]}
-          />
-        </div>
-        <div className="field">
-          <label>{t('内容')}</label>
-          <textarea className="textarea" style={{ minHeight: 160 }} value={editing.body ?? ''} onChange={(e) => setEditing({ ...editing, body: e.target.value })} />
-        </div>
-        {formError && <div className="msg-error" role="alert" style={{ marginBottom: 12 }}>{formError}</div>}
-        <div className="modal-actions">
-          <button className="btn" onClick={() => setEditing(null)}>
-            {t('取消')}</button>
-          <button
-            className="btn primary"
-            disabled={saving || !editing.name?.trim() || !editing.body?.trim()}
-            onClick={async () => {
-              const key = memorySlug(editing.name!)
-              const body = editing.body!.trim()
-              if (!key) return setFormError(t('名称需要包含文字或数字'))
-              if (body.length > MEMORY_MAX) return setFormError(t('单条记忆不能超过 {0} 字，现在是 {1} 字。请拆分或精简。', MEMORY_MAX, body.length))
-              const from = editingFrom ? memorySlug(editingFrom) : undefined
-              if (key !== from && items?.some((m) => memorySlug(m.name) === key)) return setFormError(t('已有一条叫「{0}」的记忆，请换个名称。', editing.name!.trim()))
-              setSaving(true)
-              try {
-                await api().saveMemory(projectId, {
-                  name: editing.name!,
-                  description: editing.description || editing.name!,
-                  type: editing.type,
-                  body
-                })
-                if (from && from !== key) await api().deleteMemory(projectId, editingFrom!)
-                setEditing(null)
-                void reload()
-              } catch (e) {
-                setFormError(errorText(e))
-              } finally {
-                setSaving(false)
-              }
-            }}
-          >
-            {t('保存')}</button>
-        </div>
-      </div>
-    )
-  return (
-    <div className="thread-list">
-      <div className="panel-welcome" style={{ padding: '12px 8px 4px' }}>
-        <div className="muted small">{t('项目里的每个 agent 都能读写这些记忆，它们跨会话、跨重启保留。您也可以直接修改。')}</div>
-      </div>
-      {items?.length === 0 && <div className="empty">{t('还没有记忆。agent 会在工作中记下您的偏好、决定和项目事实。')}</div>}
-      {items?.map((m) => (
-        <div key={m.name} className="thread-item" style={{ cursor: 'pointer' }} onClick={() => setOpen(open === m.name ? null : m.name)}>
-          <div className="row1">
-            <span className="title">{m.name}</span>
-            <span className="status-chip">{{ user: t('用户'), feedback: t('要求'), project: t('项目'), reference: t('资源') }[m.type] ?? m.type}</span>
-          </div>
-          <div className="preview">{m.description}</div>
-          {open === m.name && (
-            <>
-              <div className="tool-detail" style={{ marginLeft: 0, fontFamily: 'var(--font)', fontSize: 13 }}>{m.body}</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button className="btn" onClick={(e) => (e.stopPropagation(), setEditing(m, m.name))}>
-                  {t('编辑')}</button>
-                <button
-                  className="btn danger"
-                  onClick={async (e) => {
-                    e.stopPropagation()
-                    if (!(await confirmDialog(t('删除记忆「{0}」？', m.name)))) return
-                    await api().deleteMemory(projectId, m.name).catch(toastError)
-                    void reload()
-                  }}
-                >
-                  {t('删除')}</button>
-              </div>
-            </>
-          )}
-        </div>
-      ))}
-      <div style={{ padding: 8 }}>
-        <button className="btn" onClick={() => setEditing({ type: 'project' })}>
-          <Plus size={14} />
-          {t('添加记忆')}</button>
-      </div>
-    </div>
-  )
-}
-
-function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onBack: () => void; wide: boolean; setWide: (w: boolean) => void }) {
+function ThreadView({ threadId, onBack, onClose, onOpenMain, onOpenThread, wide, setWide }: { threadId: string; onBack: () => void; onClose: () => void; onOpenMain: () => void; onOpenThread: (id: string) => void; wide: boolean; setWide: (w: boolean) => void }) {
   const th = useApp((s) => s.conversations.find((c) => c.id === threadId))
   const [menu, openMenu] = useMenu({ align: 'right' })
-  if (!th) return <div className="empty">{t('讨论串已删除')}</div>
-  const st = threadState(th)
+  if (!th) return <PanelState title={t('讨论串已删除')} />
   return (
-    <div className="thread-view" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="thread-view">
       <div className="panel-head">
         <button className="icon-btn" onClick={onBack} data-tip={t('返回讨论串列表')}>
           <ArrowLeft size={16} />
@@ -633,8 +383,8 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
         <EditableTitle conv={th} />
         <StatusChip conv={th} />
         <span className="spacer" />
-        <UsageButton usage={th.usage} timing={th.timing} backendId={th.backendId} scope={t('本讨论串用量')} creditsOnly />
-        {wide && (
+        <BrowserButton conversationId={th.id} />
+        {wide && !th.isolateWorkspace && (
           <button className="icon-btn" data-tip={th.resolved ? t('重新打开') : t('标记为已解决')} onClick={() => void api().updateConversation(th.id, { resolved: !th.resolved })}>
             <CheckCircle2 size={15} />
           </button>
@@ -644,12 +394,14 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
         </button>
         <button
           className="icon-btn"
+          data-tip={t('更多')}
           onClick={(e) =>
             openMenu(e.currentTarget, [
               {
                 icon: <CheckCircle2 size={15} />,
-                label: th.resolved ? t('重新打开') : t('标记为已解决'),
-                onClick: () => api().updateConversation(th.id, { resolved: !th.resolved })
+                label: th.isolateWorkspace && !th.resolved ? t('主对话建议') : th.resolved ? t('重新打开') : t('标记为已解决'),
+                disabled: th.isolateWorkspace && !th.resolved && !th.review,
+                onClick: () => th.isolateWorkspace && !th.resolved ? document.querySelector('.thread-review')?.scrollIntoView({ block: 'start' }) : void api().updateConversation(th.id, { resolved: !th.resolved }).catch(toastError)
               },
               {
                 icon: <Download size={15} />,
@@ -671,19 +423,25 @@ function ThreadView({ threadId, onBack, wide, setWide }: { threadId: string; onB
         >
           <MoreHorizontal size={16} />
         </button>
-        {wide && (
-          <button className="icon-btn" data-tip={t('关闭讨论串')} onClick={() => (setWide(false), onBack())}>
+          <button className="icon-btn" data-tip={t('关闭讨论串')} aria-label={t('关闭讨论串')} onClick={onClose}>
             <X size={16} />
           </button>
-        )}
         {menu}
       </div>
-      <PlanLine conv={th} defaultOpen={st === 'working'} />
-      <Transcript conversation={th} compact header={<ThreadRoot thread={th} />} />
+      <div className="thread-reading-area"><Transcript conversation={th} compact header={<><ThreadRoot thread={th} /><ThreadEmpty thread={th} /></>} /></div>
+      {th.review && <div className="thread-review-dock"><ThreadReview key={th.review.id} thread={th} wide={wide} onOpenThread={onOpenThread} onOpenMain={onOpenMain} /></div>}
       <PermissionPrompts conversationId={th.id} />
       <Composer conversation={th} placeholder={t('在讨论串中回复…')} />
     </div>
   )
+}
+
+function ThreadEmpty({ thread }: { thread: Conversation }) {
+  const messages = useApp((s) => s.messages[thread.id])
+  if (thread.review || !messages || messages.some((m) => !m.hidden && m.role !== 'system')) return null
+  return <div className="thread-empty-content">
+    <PanelState title={t('讨论串已创建')}>{t('任务结果和后续讨论会显示在这里。')}</PanelState>
+  </div>
 }
 
 /** The request in the project chat that this thread grew out of, shown at its top like Claude's thread root. */
@@ -692,7 +450,7 @@ function ThreadRoot({ thread }: { thread: Conversation }) {
     const p = s.projects.find((x) => x.id === thread.projectId)
     const list = (p && s.messages[p.conversationId]) || []
     const i = list.findIndex((m) => m.id === thread.anchorMessageId)
-    for (let j = i - 1; j >= 0; j--) if (list[j].role === 'user' && !list[j].hidden) return list[j]
+    for (let j = i; j >= 0; j--) if (list[j].role === 'user' && !list[j].hidden) return list[j]
     return undefined
   })
   const text = root?.blocks.map((b) => (b.type === 'text' ? b.text : '')).join('')
@@ -713,14 +471,12 @@ function progressOf(checklist?: string): { done: number; total: number } | undef
 
 function ThreadGroup({
   title,
-  empty,
   items,
   onOpen,
   collapsed,
   children
 }: {
   title: string
-  empty?: string
   items: Conversation[]
   onOpen: (id: string) => void
   collapsed?: boolean
@@ -728,17 +484,17 @@ function ThreadGroup({
 }) {
   const [open, setOpen] = useState(!collapsed)
   const count = children ? undefined : items.length
+  if (!items.length && !children) return null
   return (
     <div className="thread-group">
-      <button className="thread-group-head" onClick={() => setOpen(!open)}>
+      <button className="thread-group-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChevronDown size={14} className={'chev' + (open ? '' : ' closed')} />
         <span>{title}</span>
         {count !== undefined && <span className="count">{count}</span>}
       </button>
       {open && (
         <div className="thread-group-body">
-          {children ??
-            (items.length ? items.map((th) => <ThreadRow key={th.id} th={th} onOpen={onOpen} />) : empty && <div className="thread-group-empty">{empty}</div>)}
+          {children ?? items.map((th) => <ThreadRow key={th.id} th={th} onOpen={onOpen} />)}
         </div>
       )}
     </div>
@@ -748,7 +504,7 @@ function ThreadGroup({
 function ThreadRow({ th, onOpen }: { th: Conversation; onOpen: (id: string) => void }) {
   const st = threadState(th)
   const step = planHeadline(th)
-  const progress = progressOf(th.checklist)
+  const progress = th.resolved ? undefined : progressOf(th.checklist)
   // A message from another thread waiting to be handed over says so on the board.
   const waiting = useApp((s) => s.peerMessages.find((m) => m.toId === th.id && m.state === 'pending'))
   const from = useApp((s) => (waiting ? s.conversations.find((c) => c.id === waiting.fromId)?.title : undefined))
@@ -783,7 +539,7 @@ function ThreadRow({ th, onOpen }: { th: Conversation; onOpen: (id: string) => v
             </span>
           )}
         </span>
-        <span className="sub">{st === 'working' && step ? step : st === 'error' ? t('出错') : th.lastPreview ?? ''}</span>
+        <span className="sub">{th.review?.state === 'pending' ? `${reviewQueueStatus(th)} · ${th.review.recommendation?.summary || th.review.summary}` : st === 'working' && step ? step : st === 'error' ? t('出错') : th.lastPreview ?? ''}</span>
         {waiting && (
           <span className="sub peer-waiting">
             <CircleDot size={11} />

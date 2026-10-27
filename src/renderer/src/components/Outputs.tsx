@@ -4,6 +4,7 @@ import { plainError } from '@shared/errors'
 import type { Project, ProjectOutput } from '@shared/model'
 import { api, errorMessage, openFileInApp, toast, useApp } from '../store'
 import { t } from '../i18n'
+import { PanelState } from './PanelState'
 
 export function humanSize(n: number): string {
   if (n < 1024) return `${n} B`
@@ -53,7 +54,7 @@ export function OutputsPanel({ project }: { project: Project }) {
   const navigate = useApp((s) => s.navigate)
   const list = [...(project.outputs ?? [])].reverse()
   if (!list.length)
-    return <div className="empty">{t('agent 交付的文件和链接会出现在这里。')}</div>
+    return <PanelState title={t('agent 交付的文件和链接会出现在这里。')} />
   return (
     <div className="outputs-panel">
       {list.map((o) => {

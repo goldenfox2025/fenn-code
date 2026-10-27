@@ -209,7 +209,7 @@
 .steps-chevron {
   transition: transform var(--dur-2) var(--ease);
 }
-.steps.open .steps-chevron {
+.steps-toggle[aria-expanded='true'] .steps-chevron {
   transform: rotate(90deg);
 }
 .steps-toggle span {
@@ -228,7 +228,12 @@
 .steps-body {
   max-height: 520px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
+.steps-fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--dur-2) var(--ease); }
+.steps-fold[data-exiting] { grid-template-rows: 0fr; pointer-events: none; }
+.steps-clip { min-height: 0; overflow: hidden; }
+@starting-style { .steps-fold { grid-template-rows: 0fr; } }
 .step-thought {
   font-size: var(--font-sm);
   color: var(--text-3);
@@ -349,9 +354,17 @@
   bottom: calc(-1 * var(--turn-space));
   z-index: 1;
 }
-.msg:hover .msg-actions {
+.msg:hover .msg-actions, .msg:focus-within .msg-actions {
   opacity: 1;
 }
+.turn > .assistant-actions {
+  position: static;
+  opacity: 1;
+  z-index: auto;
+  align-self: flex-start;
+  margin-top: calc(var(--space-2) - var(--turn-gap)) !important;
+}
+.turn > .assistant-actions:empty { display: none; }
 /* Beside the bubble, at its foot: never over the message below, whatever follows it. */
 .bubble-row {
   display: flex;
@@ -368,34 +381,6 @@
   left: auto;
   right: 0;
 }
-.reactions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-.reactions.on-user {
-  justify-content: flex-end;
-  margin-top: calc(-1 * var(--space-3));
-  position: relative;
-  z-index: 1;
-}
-.reaction {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: var(--space-0) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--bg-hover);
-  font-size: 14px;
-  line-height: 1;
-  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
-}
-button.reaction:hover {
-  background: var(--accent-soft);
-  border-color: transparent;
-}
-
 /* thread card in project chat */
 .thread-card {
   display: flex;

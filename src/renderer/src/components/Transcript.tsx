@@ -1,10 +1,16 @@
+import { CopyButton } from './transcript/CopyButton'
+import { TurnDisclosure } from './transcript/TurnDisclosure'
+import { TurnFooter } from './transcript/TurnFooter'
+import { ConversationNodes } from './ConversationNodes'
+import { conversationIndexEntries } from '@shared/conversationIndex'
+import { remarkCjkEmphasis } from '@shared/remarkCjkEmphasis'
+import { isAtBottom } from '@shared/scrollPosition'
+import { ToolRunView } from './transcript/TurnTools'
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { settledTitle } from '../toolTitle'
 import { openInFileManager, routeFor } from '../actions'
 import { StatusChip } from './StatusChip'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { MessageUsageLabel } from './Usage'
 import { OutputCard } from './Outputs'
 import { InteractivePreview } from './InteractivePreview'
 import { PeerCard } from './PeerCard'
@@ -14,19 +20,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  CircleAlert,
-  Copy,
-  FileText,
-  Globe,
-  Loader,
   MessagesSquare,
-  MousePointerClick,
   Pencil,
-  RotateCcw,
-  Search,
-  SmilePlus,
-  SquareTerminal,
-  Wrench,
   CornerUpLeft,
   Split,
   PackageOpen,
@@ -35,20 +30,19 @@ import {
   CornerUpRight
 } from 'lucide-react'
 import { currentBlocker, type Block, type Conversation, type Message } from '@shared/model'
-import { planHeadline } from './PlanLine'
+import { PlanLine, planHeadline } from './PlanLine'
 import { api, openFileInApp, refreshAccount, useApp } from '../store'
 import { dayLabel, imeComposing, textOf } from '../util'
 import { markdownParts } from '../markdownParts'
-import { useMenu } from './Menu'
 import { AttachmentChip } from './Composer'
 import { t } from '../i18n'
 import { LoginButton, TerminalLoginButton } from './Dialogs'
 import { classifyError, errorLead, type ErrorKind } from '@shared/errors'
 
-import { segmentBlocks, visualWork, type ToolBlock } from '../turn'
+import { hasReplyContent, segmentBlocks, visualWork } from '../turn'
 import { limitSentence, turnNote, type TurnNoteView } from '../turnNote'
 
-export function Transcript({ conversation, compact, header }: { conversation: Conversation; compact?: boolean; header?: React.ReactNode }) {
+export function Transcript({ conversation, compact, header, footer }: { conversation: Conversation; compact?: boolean; header?: React.ReactNode; footer?: React.ReactNode }) {
   const messages = useApp((s) => s.messages[conversation.id])
   const loadMessages = useApp((s) => s.loadMessages)
   const scroller = useRef<HTMLDivElement>(null)
@@ -69,7 +63,7 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
       // parent has already scrolled. In that order no later scroll event will
       // resume following, so also reconcile the confirmed intent here.
       const el = scroller.current
-      if (el && el.scrollHeight - el.scrollTop - el.clientHeight <= 4) stick.current = true
+      if (el && isAtBottom(el, 4)) stick.current = true
     }
   }
 
@@ -101,16 +95,12 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     const el = scroller.current
     if (!el) return
     const ro = new ResizeObserver(() => {
-      // The plan above shares the transcript's reading column, including the
-      // room a non-overlay scrollbar takes away from it.
-      el.parentElement?.style.setProperty('--transcript-gutter', `${el.offsetWidth - el.clientWidth}px`)
       if (stick.current) el.scrollTop = el.scrollHeight
     })
     ro.observe(el)
     if (el.firstElementChild) ro.observe(el.firstElementChild)
     return () => {
       ro.disconnect()
-      el.parentElement?.style.removeProperty('--transcript-gutter')
     }
   }, [])
 
@@ -126,7 +116,7 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
     return () => window.removeEventListener('message', intent)
   }, [])
 
-  const visible = (messages ?? []).filter((m) => !m.hidden)
+  const visible = (messages ?? []).filter((m) => !m.hidden && !(m.role === 'assistant' && m.state === 'done' && !m.action && !hasReplyContent(m.blocks)))
   let lastDay = ''
 
   // Arriving from a search hit: scroll to that message and flash it.
@@ -145,6 +135,7 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
   })
 
   return (
+    <div className="transcript-shell">
     <div
       className="scroll"
       ref={scroller}
@@ -163,7 +154,7 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
       }}
       onScroll={(e) => {
         const el = e.currentTarget
-        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 4
+        const atBottom = isAtBottom(el, 4)
         // Layout clamping and iframe resizing are not a request to resume.
         if (atBottom && direction.current >= 0 && performance.now() - touched.current < 500) stick.current = true
       }}
@@ -181,11 +172,16 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
                 message={m}
                 last={idx === visible.length - 1}
                 busy={conversation.status === 'working'}
+                showFooter={visible[idx + 1]?.role !== 'assistant' || !!m.action || !!visible[idx + 1]?.action}
               />
             </div>
           )
         })}
+        {footer}
+        <PlanLine key={conversation.id} conv={conversation} />
       </div>
+    </div>
+    <ConversationNodes key={conversation.id} scope={`code:${conversation.id}`} scroller={scroller} onNavigate={() => userScroll(-1)} entries={conversationIndexEntries(visible.map(message => ({id:message.id,role:message.role,text:textOf(message)})))} />
     </div>
   )
 }
@@ -193,11 +189,13 @@ export function Transcript({ conversation, compact, header }: { conversation: Co
 export const MessageView = memo(function MessageView({
   message: m,
   last,
-  busy
+  busy,
+  showFooter = true
 }: {
   message: Message
   last?: boolean
   busy?: boolean
+  showFooter?: boolean
 }) {
   if (m.role === 'system') {
     const ev = m.blocks.find((b): b is Extract<Block, { type: 'thread-event' }> => b.type === 'thread-event')
@@ -219,15 +217,15 @@ export const MessageView = memo(function MessageView({
     return (
       <>
         {line}
-        <AssistantMessage m={m} last={last} busy={busy} />
+        <AssistantMessage m={m} last={last} busy={busy} showFooter={showFooter} />
       </>
     )
   }
   if (m.role === 'user') return <UserMessage m={m} busy={busy} />
-  return <AssistantMessage m={m} last={last} busy={busy} />
+  return <AssistantMessage m={m} last={last} busy={busy} showFooter={showFooter} />
 })
 
-/** In the project chat: a thread waits for the user's decision, or the user sent it a message with @; opens that thread. */
+/** Historical explicit forwards and pending decisions open their original thread. */
 function ThreadEventLine({ ev }: { ev: Extract<Block, { type: 'thread-event' }> }) {
   const thread = useApp((s) => s.conversations.find((c) => c.id === ev.threadId))
   const navigate = useApp((s) => s.navigate)
@@ -333,6 +331,7 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
         </div>
       )}
       {m.forwardedTo && <ForwardedNote m={m} />}
+      {!!m.references?.length && <ConversationReferences message={m} />}
       {/* What a / command started from this message (a sub-chat, a thread). */}
       {m.blocks.some((b) => b.type === 'thread-card') && (
         <div className="user-cards">
@@ -340,18 +339,21 @@ function UserMessage({ m, busy }: { m: Message; busy?: boolean }) {
         </div>
       )}
       {/* The agent's emoji answer to this message (e.g. 👍 for thanks). */}
-      {!!m.reactions?.length && (
-        <div className="reactions on-user">
-          {m.reactions.map((r) => (
-            <span key={r} className="reaction" data-tip={t('Agent 的回应')}>
-              {r}
-            </span>
-          ))}
-        </div>
-      )}
       {!text && actions}
     </div>
   )
+}
+
+/** References are inspectable context; clicking one only navigates. */
+function ConversationReferences({ message }: { message: Message }) {
+  const conversations = useApp((s) => s.conversations)
+  const navigate = useApp((s) => s.navigate)
+  return <div className="message-references" aria-label={t('引用对话')}>
+    {message.references!.map((reference) => {
+      const conversation = conversations.find((c) => c.id === reference.id)
+      return <button className="conversation-reference" key={reference.id} disabled={!conversation} onClick={() => { if (conversation) navigate(routeFor(conversation)) }}><MessagesSquare size={13} /><span>@{conversation?.title ?? reference.title}</span></button>
+    })}
+  </div>
 }
 
 /** ‹ 2 / 3 ›: the versions of an edited or regenerated turn, as in Claude. */
@@ -373,14 +375,16 @@ function VersionSwitch({ m, busy }: { m: Message; busy?: boolean }) {
   )
 }
 
-function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?: boolean }) {
+function AssistantMessage({ m, last, busy, showFooter = true }: { m: Message; last?: boolean; busy?: boolean; showFooter?: boolean }) {
   const streaming = m.state === 'streaming'
   const connecting = m.blocks.find((b): b is Extract<Block, { type: 'notice' }> => b.type === 'notice' && b.key === 'starting')
   const groups = segmentBlocks(m.blocks)
   const making = visualWork(m.blocks)
-  const [menu, openMenu] = useMenu({ row: true, placement: 'auto' })
   const inProjectChat = useApp((s) => s.conversations.find((c) => c.id === m.conversationId)?.kind === 'project')
-  if (!streaming && m.state === 'done' && groups.length === 0 && !m.reactions?.length) return null
+  if (!streaming && m.state === 'done' && groups.length === 0) return null
+  const canThread = inProjectChat && !busy && !m.blocks.some((b) => b.type === 'thread-card') && !(m.state === 'done' && suggestsThread(m, inProjectChat, last, busy))
+  const canRegenerate = last && !busy && !m.blocks.some((b) => b.type === 'thread-card') && m.state !== 'error' && !(m.interrupted && !m.switchedTo)
+
 
   return (
     <div className={'msg msg-assistant turn' + (streaming ? ' streaming' : '')}>
@@ -431,58 +435,12 @@ function AssistantMessage({ m, last, busy }: { m: Message; last?: boolean; busy?
       )}
       {(m.state === 'error' || m.state === 'cancelled') && <TurnEnd m={m} last={last} busy={busy} />}
       {!streaming && m.state === 'done' && <ThreadSuggestion m={m} last={last} busy={busy} />}
-      {!!m.reactions?.length && (
-        <div className="reactions">
-          {m.reactions.map((r) => (
-            <button key={r} className="reaction" onClick={() => api().react(m.id, m.conversationId, r)}>
-              {r}
-            </button>
-          ))}
-        </div>
-      )}
-      {!streaming && (
-        <div className="msg-actions">
-          {!!textOf(m) && <CopyButton text={textOf(m)} />}
-{/* A failed reply has nothing to answer to. */}
-          {m.state !== 'error' && (
-          <button
-            className="icon-btn sm"
-            data-tip={t('添加回应')}
-            onClick={(e) =>
-              openMenu(
-                e.currentTarget,
-                REACTIONS.map((emo) => ({
-                  label: emo,
-                  onClick: () => api().react(m.id, m.conversationId, emo)
-                }))
-              )
-            }
-          >
-            <SmilePlus size={14} />
-          </button>
-          )}
-          {/* The banner below a long answer already offers it. */}
-          {inProjectChat && !busy && !m.blocks.some((b) => b.type === 'thread-card') && !(m.state === 'done' && suggestsThread(m, inProjectChat, last, busy)) && (
-            <button className="icon-btn sm" data-tip={t('转为讨论串')} onClick={() => void api().convertToThread(m.conversationId, m.id)}>
-              <Split size={14} />
-            </button>
-          )}
-          {/* A failed or interrupted reply has its own 重试 button. */}
-          {last && !busy && !m.blocks.some((b) => b.type === 'thread-card') && m.state !== 'error' && !(m.interrupted && !m.switchedTo) && (
-            <button className="icon-btn sm" data-tip={t('重新生成')} onClick={() => api().regenerate(m.conversationId)}>
-              <RotateCcw size={14} />
-            </button>
-          )}
-          <MessageUsageLabel m={m} />
-          {menu}
-        </div>
+      {!streaming && showFooter && !(last && busy) && (
+        <TurnFooter message={m} canThread={canThread} canRegenerate={canRegenerate} />
       )}
     </div>
   )
 }
-
-/** The emoji a reply can be answered with, in one row. */
-const REACTIONS = ['👍', '❤️', '🎉', '👀', '🙏', '😄']
 
 /** The path a link points to when it is a file on this computer (file://, C:\\…, /…), else undefined. */
 function localFile(href?: string): string | undefined {
@@ -532,7 +490,7 @@ const MD_COMPONENTS = {
 /** One piece of a reply; unchanged pieces are not parsed again while the reply streams. */
 const MarkdownPart = memo(function MarkdownPart({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS} urlTransform={keepFileLinks}>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkCjkEmphasis]} components={MD_COMPONENTS} urlTransform={keepFileLinks}>
       {text}
     </ReactMarkdown>
   )
@@ -560,40 +518,6 @@ function commandToken(text: string): React.ReactNode {
   )
 }
 
-function toolIcon(kind?: string) {
-  switch (kind) {
-    case 'read':
-      return <FileText size={14} />
-    case 'edit':
-    case 'delete':
-    case 'move':
-      return <Pencil size={14} />
-    case 'search':
-      return <Search size={14} />
-    case 'execute':
-      return <SquareTerminal size={14} />
-    case 'fetch':
-      return <Globe size={14} />
-    default:
-      return <Wrench size={14} />
-  }
-}
-
-function StatusIcon({ status }: { status: ToolBlock['status'] }) {
-  return (
-    <span className={'status-ic ' + status}>
-      {status === 'completed' ? (
-        <Check size={14} />
-      ) : status === 'failed' ? (
-        <CircleAlert size={14} />
-      ) : (
-        <Loader size={14} className="spark" />
-      )}
-    </span>
-  )
-}
-
-/** A published page; opens beside the conversation. */
 function PageCard({ id, title, version }: { id: string; title: string; version: number }) {
   const open = useApp((s) => s.page?.id === id && (s.page.version ?? version) === version)
   return (
@@ -639,208 +563,15 @@ function DecisionCard({ m, index, d }: { m: Message; index: number; d: Extract<B
 
 /** Readable labels for the app's computer-control tools. */
 /** A title naming a file by its whole path (「Read `C:\\Users\\…\\plan.md`」) names it by its file name. */
-function shortPaths(title: string): string {
-  return title.replace(/`?(?:[A-Za-z]:)?(?:[\\/][^\\/\s`]+){2,}[\\/]([^\\/\s`]+)`?/g, '$1')
-}
-
-/** A search or page fetch, said as one (Codex names its search tool `mcp.codex_apps.search_service.web_run`). */
-const WEB_TOOL = /(^|[.\/:_\s])(web_run|web_search|search_query|websearch|google_search|web_fetch|fetch_url|open_url)$/i
-const isWeb = (title: string) => WEB_TOOL.test(title.trim())
-
-function webTitle(title: string, a: Record<string, unknown>): string | undefined {
-  const name = /[\w-]+$/.exec(title.trim())?.[0] ?? ''
-  if (!isWeb(title)) return undefined
-  const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)
-  const q = first(a.search_query) ?? first(a.queries)
-  const query = (typeof q === 'object' && q ? (q as { q?: unknown }).q : q) ?? a.query ?? a.q
-  const open = first(a.open) ?? a.url
-  const url = (typeof open === 'object' && open ? (open as { ref_id?: unknown; url?: unknown }).url ?? (open as { ref_id?: unknown }).ref_id : open)
-  if (typeof query === 'string' && query) return t('搜索网页：{0}', query)
-  if (typeof url === 'string' && url) return t('打开网页：{0}', url.replace(/^https?:\/\//, ''))
-  return /fetch|open/i.test(name) ? t('打开网页') : t('搜索网页')
-}
-
-function toolTitle(tool: ToolBlock, ended = false): string {
-  return describeTool({ ...tool, title: settledTitle(tool.title, ended || tool.status === 'completed' || tool.status === 'failed') })
-}
-
-function describeTool(tool: ToolBlock): string {
-  let a: Record<string, unknown> = {}
-  try {
-    a = JSON.parse(tool.input ?? '{}')
-  } catch {
-    /* keep defaults */
-  }
-  if (/project_files_list$/.test(tool.title)) return t('查看项目文件')
-  const web = webTitle(tool.title, a)
-  if (web) return web
-  if (/project_file_read$/.test(tool.title)) return t('读取项目文件 {0}', a.name ?? '')
-  const m = /computer_(\w+)$/.exec(tool.title)
-  if (!m) return shortPaths(tool.title)
-  const c = Array.isArray(a.coordinate) ? a.coordinate : a.x !== undefined ? [a.x, a.y] : undefined
-  const at = c ? t('（{0}, {1}）', c[0], c[1]) : ''
-  switch (m[1]) {
-    case 'request_access':
-      return t('申请操控 {0}', Array.isArray(a.apps) ? a.apps.join(t('、')) : '')
-    case 'list_granted_applications':
-      return t('查看允许的程序')
-    case 'screenshot':
-      return t('查看屏幕')
-    case 'zoom':
-      return t('放大查看')
-    case 'click':
-    case 'left_click':
-      return t('点击') + at
-    case 'double_click':
-      return t('双击') + at
-    case 'triple_click':
-      return t('三击') + at
-    case 'right_click':
-      return t('右键点击') + at
-    case 'middle_click':
-      return t('中键点击') + at
-    case 'move':
-    case 'mouse_move':
-      return t('移动鼠标') + at
-    case 'drag':
-    case 'left_click_drag':
-      return t('拖动')
-    case 'scroll':
-      return t('滚动') + at
-    case 'type':
-      return t('输入「{0}」', String(a.text ?? '').slice(0, 30))
-    case 'key':
-      return t('按键 {0}', a.text ?? a.keys ?? '')
-    case 'hold_key':
-      return t('按住 {0}', a.text ?? '')
-    case 'wait':
-      return t('等待')
-    case 'cursor_position':
-      return t('查看鼠标位置')
-    case 'open_application':
-      return t('打开 {0}', a.app ?? '')
-    case 'read_clipboard':
-      return t('读取剪贴板')
-    case 'write_clipboard':
-      return t('写入剪贴板')
-    case 'switch_display':
-      return t('切换显示器')
-    case 'batch':
-      return t('连续操作 {0} 步', Array.isArray(a.actions) ? a.actions.length : '')
-    default:
-      return tool.title
-  }
-}
-
-/** What a run of tool calls did, in a few words (「运行了 2 个命令，读取了 3 个文件」). */
-function toolsSummary(tools: ToolBlock[]): string {
-  const parts: string[] = []
-  // Web tools often come as kind 'other'; their names say what they are.
-  const web = tools.filter((x) => isWeb(x.title))
-  const opened = web.filter((x) => /fetch|open/i.test(x.title)).length
-  const rest = tools.filter((x) => !isWeb(x.title))
-  const dirs = rest.filter(isListing).length
-  const count = (kinds: (string | undefined)[]) => rest.filter((x) => kinds.includes(x.toolKind) && !isListing(x)).length
-  const kinds: [number, (n: number) => string][] = [
-    [count(['execute']), (n) => t('运行了 {0} 个命令', n)],
-    [dirs, (n) => t('查看了 {0} 个文件夹', n)],
-    [count(['read']), (n) => t('读取了 {0} 个文件', n)],
-    [count(['edit', 'delete', 'move']), (n) => t('修改了 {0} 个文件', n)],
-    [count(['search']), (n) => t('搜索了 {0} 次', n)],
-    [web.length - opened, (n) => t('搜索了 {0} 次网页', n)],
-    [count(['fetch']) + opened, (n) => t('访问了 {0} 个网页', n)]
-  ]
-  let known = 0
-  for (const [n, label] of kinds) {
-    known += n
-    if (n) parts.push(label(n))
-  }
-  if (tools.length - known) parts.push(t('用了 {0} 个工具', tools.length - known))
-  const failed = tools.filter((x) => x.status === 'failed').length
-  if (failed) parts.push(t('{0} 个失败', failed))
-  return parts.join(t('，'))
-}
-
-/** Listing a folder is a read too, but it reads as looking at a folder. */
-function isListing(tool: ToolBlock): boolean {
-  return /^(列出|查看目录|list|ls\b|dir\b)|list_dir|read_dir|list_files|directory/i.test(tool.title) // i18n-ignore
-}
-
-/** A muted one-line toggle, folded by default, that opens along a thin rail (Claude's thinking line). */
-function Fold({ label, live, children }: { label: string; live?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className={'steps' + (open ? ' open' : '')}>
-      <button className={'steps-toggle' + (live ? ' live' : '')} aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{label}</span>
-        <ChevronRight size={14} className="steps-chevron" />
-      </button>
-      {open && <div className="steps-body">{children}</div>}
-    </div>
-  )
-}
-
 /** One bout of thinking: 「思考了 6 秒」, folded; it opens to what the agent thought. */
 function ThoughtFold({ block, live }: { block: Extract<Block, { type: 'thought' }>; live: boolean }) {
   const label = live ? t('思考中…') : block.ms == null ? t('思考过程') : block.ms >= 1000 ? t('思考了 {0} 秒', Math.round(block.ms / 1000)) : t('思考了片刻')
   return (
-    <Fold label={label} live={live}>
+    <TurnDisclosure label={label} live={live}>
       <div className="step-thought">
         <Markdown text={block.text.trim()} />
       </div>
-    </Fold>
-  )
-}
-
-/** A few tool calls stand on their own lines; a long run folds into one line that says what it did. */
-const RUN_SHOWN = 4
-
-function ToolRunView({ tools, live, ended }: { tools: ToolBlock[]; live: boolean; ended: boolean }) {
-  const rows = (
-    <div className="tool-run">
-      {tools.map((s) => (
-        <ToolRow key={s.toolId} tool={s} ended={ended} />
-      ))}
-    </div>
-  )
-  if (tools.length <= RUN_SHOWN) return rows
-  return (
-    <Fold label={live ? toolTitle(tools[tools.length - 1]) : toolsSummary(tools)} live={live}>
-      {rows}
-    </Fold>
-  )
-}
-
-/**
- * One tool call; it opens to its input and output. In a reply that has ended (finished,
- * stopped, or cut off by a restart) a call never reported done no longer spins.
- */
-function ToolRow({ tool: s, ended }: { tool: ToolBlock; ended: boolean }) {
-  const [open, setOpen] = useState(false)
-  const unfinished = ended && s.status !== 'completed' && s.status !== 'failed'
-  return (
-    <div className="step-tool">
-      <button className="tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {/computer_/.test(s.title) ? (
-          <MousePointerClick size={14} />
-        ) : isWeb(s.title) ? (
-          <Globe size={14} />
-        ) : /project_file/.test(s.title) ? (
-          <FileText size={14} />
-        ) : (
-          toolIcon(s.toolKind)
-        )}
-        <span className="t" data-tip={toolTitle(s, ended) !== s.title ? s.title : undefined}>{toolTitle(s, ended)}</span>
-        {/* Like Claude: a finished step needs no mark; running and failed ones do. */}
-        {s.status !== 'completed' && !unfinished && <StatusIcon status={s.status} />}
-      </button>
-      {open && (
-        <div className="tool-detail">
-          {s.input && `${t('输入')}\n${s.input}\n\n`}
-          {s.output ? `${t('输出')}\n${s.output}` : unfinished ? t('没有运行完') : s.status === 'running' ? t('运行中…') : ''}
-        </div>
-      )}
-    </div>
+    </TurnDisclosure>
   )
 }
 
@@ -848,9 +579,9 @@ function ToolRow({ tool: s, ended }: { tool: ToolBlock; ended: boolean }) {
 function PlanFold({ entries }: { entries: Extract<Block, { type: 'plan' }>['entries'] }) {
   const done = entries.filter((e) => e.status === 'completed').length
   return (
-    <Fold label={done === entries.length ? t('计划已完成 {0}/{1}', done, entries.length) : t('计划 {0}/{1}', done, entries.length)}>
+    <TurnDisclosure label={done === entries.length ? t('计划已完成 {0}/{1}', done, entries.length) : t('计划 {0}/{1}', done, entries.length)}>
       <Plan entries={entries} />
-    </Fold>
+    </TurnDisclosure>
   )
 }
 
@@ -909,23 +640,6 @@ function CodeBlock({ children }: { children?: React.ReactNode }) {
       </div>
       <pre ref={ref}>{children}</pre>
     </div>
-  )
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false)
-  return (
-    <button
-      className="icon-btn sm"
-      data-tip={t('复制')}
-      onClick={() => {
-        void navigator.clipboard.writeText(text)
-        setDone(true)
-        setTimeout(() => setDone(false), 1200)
-      }}
-    >
-      {done ? <Check size={14} /> : <Copy size={14} />}
-    </button>
   )
 }
 

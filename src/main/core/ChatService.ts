@@ -10,16 +10,18 @@ import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import type { AgentEvent, Cost, HostToolServer, ModelInfo, PermissionRequest, SessionContext, SessionInfo, SessionOption, StopReason, TurnResult } from '../../shared/contract'
 import { contextLimit } from '../../shared/modelLimits'
 import type { PromptPart } from '../../shared/contract'
-import type { AppEvent, Attachment, Block, Conversation, Message, QueuedMessage, ReplyModel } from '../../shared/model'
+import type { AppEvent, Attachment, Block, Conversation, ConversationReference, Message, QueuedMessage, ReplyModel } from '../../shared/model'
+import { referenceContext } from './ConversationReferences'
 import { addTurn, emptyTotals, noContext, type MessageUsage, type UsageTotals } from '../../shared/usage'
 import type { BackendManager } from '../backends/BackendManager'
 import type { Store } from '../store/Store'
 import { t, tk } from '../../shared/i18n'
-import { classifyError } from '../../shared/errors'
+import { classifyError, errorText } from '../../shared/errors'
 import { TurnMeter } from './TurnMeter'
 import { perChatOption, sessionOptionDefaults } from '../../shared/sessionOptions'
 
 export interface SendOptions {
+  references?: ConversationReference[]
   attachments?: Attachment[]
   /** The agent's reply to this turn is housekeeping and stays out of the transcript. */
   hiddenReply?: boolean
@@ -45,6 +47,8 @@ export interface SendOptions {
 }
 
 export interface TurnHooks {
+  /** Prepare a worker's isolated folder before opening or prompting its backend. */
+  prepare?(conv: Conversation): Promise<void>
   /** Text placed before the first prompt of a fresh session (instructions, history). */
   preamble?(conv: Conversation, isResume: boolean): string
   /** The user's instructions inside the preamble, to notice when they change during a session. */
@@ -213,6 +217,11 @@ export class ChatService {
     private readonly backends: BackendManager,
     private readonly publish: (e: AppEvent) => void
   ) {
+    this.removedListeners.add((id) => {
+      clearTimeout(this.appTitleTimers.get(id))
+      this.appTitleTimers.delete(id)
+      this.appTitles.delete(id)
+    })
     backends.onAgentEvent((backendId, sessionId, event) => this.onAgentEvent(backendId, sessionId, event))
     backends.onSessionsLost((backendId, lost) => {
       // Only the sessions of the process that went: a chat already on the agent's new process keeps its reply.
@@ -235,16 +244,45 @@ export class ChatService {
   }
 
   saveConversation(conv: Conversation): void {
+    const previous = this.store.conversation(conv.id)
     this.store.putConversation(conv)
     this.publish({ type: 'conversation', conversation: conv })
     for (const fn of this.changeListeners) fn(conv)
+    if (conv.sessionRef && (previous?.title !== conv.title || previous?.sessionRef?.sessionId !== conv.sessionRef.sessionId)) this.queueAppTitle(conv.id)
+  }
+
+  private appTitleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private appTitleJobs = new Map<string, Promise<void>>()
+  private appTitles = new Map<string, string>()
+
+  /** Coalesced metadata updates; independent of the model turn and serialized for each conversation. */
+  private queueAppTitle(id: string): void {
+    const ref = this.store.conversation(id)?.sessionRef
+    if (!ref || !this.backends.supportsAppTitles(ref.backendId) || !this.backends.shownInApp(ref.backendId)) return
+    clearTimeout(this.appTitleTimers.get(id))
+    const timer = setTimeout(() => {
+      this.appTitleTimers.delete(id)
+      const prior = this.appTitleJobs.get(id) ?? Promise.resolve()
+      const job = prior.catch(() => undefined).then(async () => {
+        const conv = this.store.conversation(id), ref = conv?.sessionRef
+        if (!conv || !ref) return
+        const key = `${ref.backendId}:${ref.sessionId}:${conv.title}`
+        if (this.appTitles.get(id) === key) return
+        await this.backends.setAppTitle(ref.backendId, ref.sessionId, conv.title)
+        this.appTitles.set(id, key)
+      }).catch((error) => console.warn('Could not sync conversation title:', errorText(error)))
+      this.appTitleJobs.set(id, job)
+      void job.finally(() => { if (this.appTitleJobs.get(id) === job) this.appTitleJobs.delete(id) })
+    }, 300)
+    timer.unref?.()
+    this.appTitleTimers.set(id, timer)
   }
 
   patchConversation(id: string, patch: Partial<Conversation>): Conversation | undefined {
     const conv = this.store.conversation(id)
     if (!conv) return undefined
     if ('sessionRef' in patch && conv.sessionRef && conv.sessionRef.sessionId !== patch.sessionRef?.sessionId) this.leftBehind(conv.sessionRef)
-    const next = { ...conv, ...patch }
+    const next = { ...conv, ...patch, ...('checklist' in patch ? { checklistUpdatedAt: Date.now() } : {}) }
     this.saveConversation(next)
     return next
   }
@@ -305,7 +343,7 @@ export class ChatService {
   }
 
   private visibleOf(x: QueuedTurn): QueuedMessage {
-    return { id: x.id, text: x.text, ...(x.opts.attachments?.length ? { attachments: x.opts.attachments } : {}) }
+    return { id: x.id, text: x.text, ...(x.opts.attachments?.length ? { attachments: x.opts.attachments } : {}), ...(x.opts.references?.length ? { references: x.opts.references } : {}) }
   }
 
   /** The conversation shows the messages waiting behind the running reply. */
@@ -363,6 +401,9 @@ export class ChatService {
       this.commandTurns.delete(conversationId)
       this.tags.delete(conversationId)
       for (const fn of this.turnEndListeners) fn(conversationId)
+      // A session without a first turn has no persisted rollout to name yet.
+      this.appTitles.delete(conversationId)
+      this.queueAppTitle(conversationId)
       this.closeIdle(this.live.get(conversationId)?.backendId)
       next.resolve()
       void this.pump(conversationId)
@@ -378,7 +419,7 @@ export class ChatService {
       conversationId,
       opts.role ?? 'user',
       [...attachments.map((a): Block => ({ type: 'attachment', attachment: a })), ...(text ? [{ type: 'text' as const, text }] : [])],
-      { hidden: opts.hidden, housekeeping: opts.housekeeping || undefined, variant: opts.variant, action: opts.action }
+      { hidden: opts.hidden, housekeeping: opts.housekeeping || undefined, variant: opts.variant, action: opts.action, references: opts.references }
     )
 
     const reply: Message = {
@@ -436,6 +477,7 @@ export class ChatService {
           }
         })
         live = session.live
+        conv = this.store.conversation(conversationId) ?? conv
         live.unprompted = undefined
         // The agent's own / command goes to it as typed, with nothing of the app's in front, or it isn't one.
         if (!opts.raw && !attachments.length && (await this.isAgentCommand(conversationId, text))) opts = { ...opts, raw: true }
@@ -473,6 +515,8 @@ export class ChatService {
           promptText = [rules, changed, updates, note, text].filter(Boolean).join('\n\n')
         }
         this.withdrawn.delete(conversationId)
+        const referenced = referenceContext(this.store, conversationId, opts.references)
+        if (referenced && !opts.raw) promptText = `${referenced}\n\n${promptText}`
         const parts: PromptPart[] = [{ type: 'text', text: promptText }, ...attachments.map(toPart)]
         live.turns++
         live.usedAt = Date.now()
@@ -733,6 +777,8 @@ export class ChatService {
   }
 
   private async ensureSession(conv: Conversation): Promise<{ live: Live; fresh: boolean }> {
+    await this.hooks.prepare?.(conv)
+    conv = this.store.conversation(conv.id) ?? conv
     const existing = this.live.get(conv.id)
     if (existing && existing.backendId === conv.backendId) return { live: existing, fresh: existing.unprompted?.fresh ?? false }
     const pending = this.connecting.get(conv.id)
@@ -1149,6 +1195,7 @@ export class ChatService {
       if (!ref || (backendId && ref.backendId !== backendId) || !this.backends.hasAppListing(ref.backendId)) continue
       if (this.live.has(conv.id) || this.connecting.has(conv.id)) continue
       await this.backends.setShownInApp(ref.backendId, ref.sessionId, this.backends.shownInApp(ref.backendId))
+      if (this.backends.shownInApp(ref.backendId)) this.queueAppTitle(conv.id)
     }
   }
 
@@ -1350,6 +1397,10 @@ export class ChatService {
       // A manual name, a project heading or a routine's name stays authoritative.
       if (title && conv?.kind === 'chat' && !conv.routineId && conv.titleAuto !== false && conv.title !== title)
         this.patchConversation(conversationId, { title, titleAuto: true })
+      else if (conv && title !== conv.title) {
+        this.appTitles.delete(conversationId)
+        this.queueAppTitle(conversationId)
+      }
       return
     }
     if (event.kind === 'options') {
@@ -1426,7 +1477,7 @@ export class ChatService {
     if (this.stopped.has(conversationId) && (event.kind === 'message.delta' || event.kind === 'thought.delta')) return
     this.meters.get(conversationId)?.observe(event)
     // The agent's own task plan (ACP `plan`) is the conversation's live plan too; an empty one withdraws it.
-    if (event.kind === 'plan') {
+    if (event.kind === 'plan' && !reply.hidden && !reply.housekeeping && !reply.action) {
       const conv = this.store.conversation(conversationId)
       if (conv) this.patchConversation(conversationId, { checklist: event.entries.length ? planChecklist(conv.title, event.entries) : undefined, checklistAuto: false })
     }
@@ -1615,7 +1666,7 @@ const WITHDRAWN =
 
 /** A reply that was stopped says so, so the next agent knows where it left off. */
 function cutNote(m: Message): string {
-  const text = textOf(m)
+  const text = [m.references?.length ? `引用对话：${m.references.map((reference) => `@${reference.title} (${reference.id})`).join('、')}` : '', textOf(m)].filter(Boolean).join('\n')
   if (m.role !== 'assistant' || m.state !== 'cancelled') return text
   return text ? `${text}（这条回复没说完就被中断了）` : '（这条回复刚开始就被中断了）'
 }

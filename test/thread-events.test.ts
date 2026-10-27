@@ -11,14 +11,15 @@ describe('thread events reach the coordinator as one fresh list, not a pile of n
   it('shows a finished thread with its result once, then nothing while the list is unchanged', async () => {
     const { core, store, dispose } = await makeCore()
     try {
+      core.orchestrator.reviews.onSubmitted = undefined
       const p = await core.createProject({ name: 'p', backendId: 'mock' })
       const research = core.orchestrator.startThread(p, '竞品调研', '查三家竞品 完成后解决')
-      await until(() => done(store, research.id, 1) && store.conversation(research.id)?.resolved)
+      await until(() => done(store, research.id, 1) && store.conversation(research.id)?.review?.state === 'pending')
       await core.send(p.conversationId, '你看到了什么')
       await until(() => done(store, p.conversationId, 1))
       const first = textOf(store.messagesOf(p.conversationId).filter((m) => m.role === 'assistant').pop()!)
       expect(first).toContain('<threads>')
-      expect(first).toMatch(/「竞品调研」 id:\w+ 已解决\n {2}最新结果：做完了/)
+      expect(first).toMatch(/「竞品调研」 id:\w+ 待验收 revision:.*\n {2}最新结果：做完了/)
       expect(first).not.toContain('thread-updates')
       await core.send(p.conversationId, '你看到了什么')
       await until(() => done(store, p.conversationId, 2))
@@ -43,12 +44,15 @@ describe('thread events reach the coordinator as one fresh list, not a pile of n
     } finally { await dispose() }
   }, 40000)
 
-  it('@ in the project chat hands the message straight to a thread and leaves one line the coordinator never sees', async () => {
+  it('an explicit legacy forward hands the message to a thread and leaves a historical line', async () => {
     const { core, store, dispose } = await makeCore()
     try {
       const p = await core.createProject({ name: 'p', backendId: 'mock' })
       const th = core.orchestrator.startThread(p, '调研', '查三家竞品 完成后解决')
-      await until(() => done(store, th.id, 1) && store.conversation(th.id)?.resolved)
+      await until(() => done(store, th.id, 1) && store.conversation(th.id)?.review?.state === 'pending')
+      const revision = store.requireConversation(th.id).review!.id
+      await core.orchestrator.reviews.recommend(th.id, revision, 'ready', 'Fixture review')
+      await core.acceptDelivery(th.id, revision)
       await core.sendToThread(p.conversationId, th.id, '再加一家：D 公司')
       await until(() => done(store, th.id, 2))
       expect(store.conversation(th.id)?.resolved).toBe(false) // reopened for the new work
@@ -56,7 +60,10 @@ describe('thread events reach the coordinator as one fresh list, not a pile of n
       expect(mine.map(textOf)).toEqual(['再加一家：D 公司'])
       const line = store.messagesOf(p.conversationId).find((m) => m.blocks.some((b) => b.type === 'thread-event'))!
       expect(line).toMatchObject({ role: 'system', blocks: [{ type: 'thread-event', kind: 'forwarded', threadId: th.id, text: '再加一家：D 公司' }] })
-      expect(linesOf(store.messagesOf(p.conversationId))).toEqual([])
+      await until(() => store.conversation(p.conversationId)?.status === 'idle' && !store.requireConversation(th.id).review?.decisionPending)
+      const coordinatorLines = linesOf(store.messagesOf(p.conversationId))
+      expect(JSON.stringify(coordinatorLines)).not.toContain('再加一家：D 公司')
+      expect(JSON.stringify(coordinatorLines)).toContain('用户已作出验收决定')
       expect(store.conversation(p.conversationId)?.status).toBe('idle')
       await expect(core.sendToThread(p.conversationId, p.conversationId, 'x')).rejects.toThrow()
     } finally { await dispose() }

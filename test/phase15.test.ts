@@ -54,17 +54,20 @@ describe('restarting a backend mid-reply', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'oc-restart-')), 'backends.json')
     const decl = (extra: Record<string, unknown> = {}) => [{ id: 'q', name: 'Q', command: process.execPath, args: [agent], ...extra }]
     writeFileSync(file, JSON.stringify(decl()))
+    let permissionReceived!: () => void
+    const permission = new Promise<void>(resolve => { permissionReceived = resolve })
     const mgr = new BackendManager({
       plugins: loadPlugins(file),
       settings: { get: () => ({}), set: () => {} },
       resourcesDir: join(__dirname, '../resources'),
       nodeCommand: { command: process.execPath, env: {} },
       defaultCwd: process.cwd(),
-      emit: () => {}
+      emit: event => { if (event.type === 'permission') permissionReceived() }
     })
     const s = await mgr.newSession('q')
     const turn = mgr.prompt('q', s.sessionId, [{ type: 'text', text: '帮我写个笔记' }])
-    await new Promise((res) => setTimeout(res, 100))
+    // Restart at the inbound/outbound overlap which used to strand the prompt.
+    await permission
     writeFileSync(file, JSON.stringify(decl({ env: { X: '1' } })))
     await mgr.setPlugins(loadPlugins(file))
     const r = await turn

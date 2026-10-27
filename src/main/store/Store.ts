@@ -70,6 +70,13 @@ export class Store {
     for (const c of this.state.conversations) this.conversationIndex.set(c.id, c)
     // Data from before the first-run guide existed: the user is already set up, so don't guide them again.
     const s = this.state
+    // Home widgets were retired. Keep saved cards for data compatibility, but
+    // never keep spending model requests to refresh an invisible widget.
+    for (const routine of s.routines) if (routine.widgetId && routine.enabled) {
+      routine.enabled = false
+      routine.nextRunAt = undefined
+      this.dirtyState = true
+    }
     if (loaded && loaded.settings?.onboarded === undefined && (s.conversations.length || s.projects.length || s.settings.userName)) {
       s.settings.onboarded = true
       this.dirtyState = true
@@ -295,14 +302,6 @@ export class Store {
   // ---- home board ---------------------------------------------------------
   get boardWidgets(): BoardWidget[] {
     return (this.state.boardWidgets ??= [])
-  }
-  putBoardWidget(w: BoardWidget): void {
-    upsert(this.boardWidgets, w)
-    this.touch()
-  }
-  removeBoardWidget(id: string): void {
-    this.state.boardWidgets = this.boardWidgets.filter((w) => w.id !== id)
-    this.touch()
   }
 
   // ---- settings -----------------------------------------------------------

@@ -1,0 +1,52 @@
+.memory-manager { min-width: 0; }
+.memory-list-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); margin-bottom: var(--space-7); font-size: var(--font-xs); color: var(--text-3); }
+.memory-list-tools > .btn { flex: none; }
+.memory-list { border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-input); }
+.memory-fact + .memory-fact { border-top: 1px solid var(--border); }
+.memory-fact-toggle { display: flex; align-items: flex-start; gap: var(--space-5); width: 100%; padding: calc(var(--space-6) + var(--space-1)) var(--space-7); border: 0; background: none; text-align: left; color: var(--text); }
+.memory-fact-toggle:hover { background: var(--bg-hover); }
+.memory-fact-toggle > svg { flex: none; color: var(--text-3); margin-top: calc(var(--space-3) / 2); }
+.memory-fact-toggle > span { flex: 1; min-width: 0; }
+.memory-fact-toggle strong { display: block; font-size: var(--font-sm); font-weight: 500; overflow-wrap: anywhere; }
+.memory-fact-toggle small { display: block; margin-top: var(--space-2); font-size: var(--font-xs); color: var(--text-3); overflow-wrap: anywhere; }
+.memory-fact-body { padding: 0 var(--space-7) calc(var(--space-6) + var(--space-1)) calc(var(--space-11) + var(--space-1)); }
+.memory-fact-body > p { margin: 0 0 calc(var(--space-6) + var(--space-1)); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-sm); line-height: 1.7; }
+.memory-fact-actions, .memory-form-actions, .memory-delete { display: flex; align-items: center; gap: var(--space-4); }
+.memory-delete { flex-wrap: wrap; }
+.memory-delete > span { flex-basis: 100%; font-size: var(--font-xs); color: var(--text-2); }
+.memory-form { display: flex; flex-direction: column; gap: var(--space-7); }
+.memory-form .field { margin: 0; }
+.memory-form .textarea { min-height: 160px; }
+.memory-form-actions { justify-content: flex-end; }
+.memory-back { display: inline-flex; align-self: flex-start; align-items: center; gap: var(--space-3); border: 0; background: none; padding: var(--space-2) 0; font-size: var(--font-xs); color: var(--text-2); }
+.memory-note { color: var(--text-3); font-size: var(--font-sm); }
+.memory-error { font-size: var(--font-sm); color: var(--red); overflow-wrap: anywhere; }
+.memory-error > button { margin-left: var(--space-5); }
+.project-empty { padding: var(--space-7) var(--space-8); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-input); text-align: center; }
+.project-empty-icon { display: grid; place-items: center; width: 36px; height: 36px; margin: 0 auto var(--space-5); border-radius: var(--radius-lg); background: var(--bg-hover); color: var(--text-2); }
+.project-empty h3 { margin: 0; font-size: var(--font-md); font-weight: 600; }
+.project-empty > p { max-width: 34ch; margin: var(--space-5) auto var(--space-8); color: var(--text-3); font-size: var(--font-sm); line-height: 1.7; text-wrap: pretty; }
+.project-section-note > p { margin: 0 0 calc(var(--space-6) + var(--space-1)); color: var(--text-3); font-size: var(--font-sm); line-height: var(--line-body); }
+.memory-input-form { display: flex; flex-direction: column; gap: var(--space-6); }
+.memory-intention-label { font-size: var(--font-md); font-weight: 500; }
+.memory-draft-note { margin: calc(-1 * var(--space-3)) 0 0; color: var(--text-3); font-size: var(--font-xs); }
+.memory-intention { min-width: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg-input); overflow: hidden; }
+.memory-intention:focus-within { border-color: var(--focus-ring); }
+.memory-intention .textarea { display: block; width: 100%; min-height: 160px; max-height: 360px; border: 0; outline: 0; box-shadow: none; resize: vertical; background: transparent; }
+.memory-input-tools { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+.memory-input-tools small { margin-left: auto; color: var(--text-3); font-size: var(--font-xs); }
+.memory-skill-list { max-height: 180px; overflow: auto; border-top: 1px solid var(--border); }
+.memory-skill-list button { display: flex; align-items: flex-start; gap: var(--space-4); width: 100%; border: 0; padding: var(--space-4) var(--space-6); text-align: left; background: transparent; }
+.memory-skill-list button[aria-selected="true"] { background: var(--bg-hover); }
+.memory-skill-list button > span { min-width: 0; }
+.memory-skill-list strong { display: block; font-size: var(--font-sm); font-weight: 500; }
+.memory-skill-list small { display: block; color: var(--text-3); font-size: var(--font-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-reference-chips { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.memory-reference-chips > span { display: inline-flex; align-items: center; gap: var(--space-3); max-width: 100%; padding: var(--space-2) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); font-size: var(--font-xs); overflow-wrap: anywhere; }
+.memory-reference-chips button { display: inline-flex; flex: none; padding: 0; border: 0; background: transparent; }
+
+@container (max-width: 300px) { .project-empty { padding-inline: var(--space-5); } }
+
+.memory-empty { padding: 0; border: 0; background: transparent; text-align: left; }
+.memory-empty > p { color: var(--text-3); font-size: var(--font-sm); line-height: 1.7; margin: 0 0 14px; }
+.memory-empty > .btn { height: 30px; font-size: var(--font-xs); }

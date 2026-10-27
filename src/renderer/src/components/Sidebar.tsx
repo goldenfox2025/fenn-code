@@ -3,10 +3,8 @@ import { deleteChat, deleteProject, openInFileManager, routeFor } from '../actio
 import {
   ArrowLeft,
   ArrowRight,
-  ChevronsUpDown,
   Clock,
   FolderKanban,
-  Menu as MenuIcon,
   MessagesSquare,
   MoreHorizontal,
   PanelLeft,
@@ -16,18 +14,18 @@ import {
   Search,
   Settings,
   Trash2,
-  Pencil,
-  User
+  Pencil
 } from 'lucide-react'
 import { searchable, type Conversation, type NotifyLevel, type Project } from '@shared/model'
 import { useShallow } from 'zustand/react/shallow'
 import { api, toastError, useApp } from '../store'
-import { initials } from '../util'
+import { activateOnKey, initials } from '../util'
 import { useMenu } from './Menu'
 import { t } from '../i18n'
 import { RenameInput, useRenaming } from './InlineRename'
 import { groupByFolder, isNested } from '../folderGroups'
 import { ResizeHandle, paneStyle, usePaneWidth } from './ResizeHandle'
+import { FoxAvatar } from './FoxAvatar'
 
 /** A project's notification levels, as Claude words them. */
 const NOTIFY_LEVELS = (): { id: NotifyLevel; label: string; sub?: string; short: string }[] => [
@@ -176,7 +174,10 @@ export function Sidebar() {
       <div
         key={c.id}
         className={'nav-item' + (selected ? ' selected' : '') + (nested ? ' nested' : '')}
+        aria-current={selected ? 'page' : undefined}
         role="button"
+        tabIndex={0}
+        onKeyDown={(e) => activateOnKey(e, () => s.navigate({ view: 'chat', conversationId: c.id }))}
         onClick={() => s.navigate({ view: 'chat', conversationId: c.id })}
         data-tip={rn.editing === 'chat:' + c.id ? undefined : c.title}
       >
@@ -184,7 +185,7 @@ export function Sidebar() {
         {rowTitle('chat:' + c.id, c.title, (title) => renameChat(c, title))}
         {rn.editing !== 'chat:' + c.id && (
           <span className="trail">
-            <button className="icon-btn sm" data-focus-key={'chat-menu:' + c.id} onClick={(e) => (e.stopPropagation(), chatMenu(e.currentTarget, c))}>
+            <button className="icon-btn sm" data-tip={t('更多')} data-focus-key={'chat-menu:' + c.id} onClick={(e) => (e.stopPropagation(), chatMenu(e.currentTarget, c))}>
               <MoreHorizontal size={15} />
             </button>
           </span>
@@ -200,7 +201,10 @@ export function Sidebar() {
       <div
         key={p.id}
         className={'nav-item' + (selected ? ' selected' : '')}
+        aria-current={selected ? 'page' : undefined}
         role="button"
+        tabIndex={0}
+        onKeyDown={(e) => activateOnKey(e, () => s.navigate({ view: 'project', projectId: p.id }))}
         onClick={() => s.navigate({ view: 'project', projectId: p.id })}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -212,7 +216,7 @@ export function Sidebar() {
         {act && <span className={'dot ' + act} />}
         {rn.editing !== 'project:' + p.id && (
           <span className="trail">
-            <button className="icon-btn sm" data-focus-key={'project-menu:' + p.id} onClick={(e) => (e.stopPropagation(), projectMenu(e.currentTarget, p))}>
+            <button className="icon-btn sm" data-tip={t('更多')} data-focus-key={'project-menu:' + p.id} onClick={(e) => (e.stopPropagation(), projectMenu(e.currentTarget, p))}>
               <MoreHorizontal size={15} />
             </button>
           </span>
@@ -225,11 +229,6 @@ export function Sidebar() {
     <aside className={'sidebar' + (s.sidebarOpen ? '' : ' closed') + (width ? ' sized' : '')} style={paneStyle('sidebar', width)}>
       <ResizeHandle pane="sidebar" edge="right" onCollapse={() => s.set({ sidebarOpen: false })} />
       <div className="sidebar-top drag">
-        {s.platform !== 'darwin' && (
-          <button className="icon-btn" data-tip={t('菜单')} onClick={() => s.set({ settingsOpen: 'general' })}>
-            <MenuIcon size={17} />
-          </button>
-        )}
         <button className="icon-btn" data-tip={t('收起侧栏 ({0})', s.platform === 'darwin' ? '⌘B' : 'Ctrl+B')} onClick={() => s.set({ sidebarOpen: false })}>
           <PanelLeft size={17} />
         </button>
@@ -250,6 +249,7 @@ export function Sidebar() {
         <nav className="nav">
           <button
             className={'nav-item' + (route.view === 'home' ? ' selected' : '')}
+            aria-current={route.view === 'home' ? 'page' : undefined}
             onClick={() => s.navigate({ view: 'home' })}
           >
             <Plus size={17} />
@@ -257,6 +257,7 @@ export function Sidebar() {
           </button>
           <button
             className={'nav-item' + (route.view === 'projects' ? ' selected' : '')}
+            aria-current={route.view === 'projects' ? 'page' : undefined}
             onClick={() => s.navigate({ view: 'projects' })}
           >
             <FolderKanban size={17} />
@@ -264,6 +265,7 @@ export function Sidebar() {
           </button>
           <button
             className={'nav-item' + (route.view === 'chats' ? ' selected' : '')}
+            aria-current={route.view === 'chats' ? 'page' : undefined}
             onClick={() => s.navigate({ view: 'chats' })}
           >
             <MessagesSquare size={17} />
@@ -271,6 +273,7 @@ export function Sidebar() {
           </button>
           <button
             className={'nav-item' + (route.view === 'routines' ? ' selected' : '')}
+            aria-current={route.view === 'routines' ? 'page' : undefined}
             onClick={() => s.navigate({ view: 'routines' })}
           >
             <Clock size={17} />
@@ -301,9 +304,9 @@ export function Sidebar() {
         {!q && recentProjects.length > 0 && (
           <>
             <div className="section-head">
-              <span className="grow link" role="button" onClick={() => s.navigate({ view: 'projects' })}>
+              <button className="grow link" onClick={() => s.navigate({ view: 'projects' })}>
                 {t('项目')}
-              </span>
+              </button>
             </div>
             <nav className="nav recent-projects">
               {recentProjects.map((p) => projectRow(p))}
@@ -357,7 +360,10 @@ export function Sidebar() {
                 <div
                   key={c.id}
                   className={'nav-item' + (route.view === 'project' && route.threadId === c.id ? ' selected' : '')}
+                  aria-current={route.view === 'project' && route.threadId === c.id ? 'page' : undefined}
                   role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => activateOnKey(e, () => s.navigate(routeFor(c)))}
                   onClick={() => s.navigate(routeFor(c))}
                   data-tip={`${project} · ${c.title}`}
                 >
@@ -379,9 +385,9 @@ export function Sidebar() {
       </div>
 
       <div className="sidebar-foot">
-        <button className="user-btn" onClick={() => s.set({ settingsOpen: 'general' })}>
+        <div className="user-btn sidebar-identity">
           {/* No name given: a plain avatar and 「本地」, never 「您」 as if it were a name. */}
-          <span className="avatar">{userName ? initials(userName) : <User size={14} />}</span>
+          <span className="avatar">{userName ? initials(userName) : <FoxAvatar size={20} />}</span>
           <span className="label" style={{ flex: 1, textAlign: 'left' }}>
             {userName ? (
               <>
@@ -391,9 +397,8 @@ export function Sidebar() {
               t('本地')
             )}
           </span>
-          <ChevronsUpDown size={14} className="muted" />
-        </button>
-        <button className="icon-btn" data-tip={t('设置')} onClick={() => s.set({ settingsOpen: 'general' })}>
+        </div>
+        <button className="icon-btn" data-tip={t('设置')} aria-label={t('设置')} onClick={() => s.set({ settingsOpen: 'general' })}>
           <Settings size={16} />
         </button>
       </div>
