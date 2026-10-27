@@ -14,7 +14,6 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  FolderSearch,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -528,27 +527,21 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
     }
   }
 
+  const folderPrompt = (
+    <PanelState title={t('还没有文件')} action={
+      <div className="files-empty-actions">
+        <button className="btn sm" onClick={() => void choose()}><FolderOpen size={14} />{t('选择文件夹…')}</button>
+        <button className="link-btn" data-tip={t('在默认文件夹里新建')} onClick={() => void api().makeDefaultFolder(id).then(reload).catch(fail)}>{t('新建文件夹')}</button>
+      </div>
+    }>
+      {project ? t('选择文件夹，或在默认位置新建。') : t('生成文件时，会自动创建对话文件夹。')}
+    </PanelState>
+  )
   if (loadError) return <div className="files-pane" ref={box}><PanelState title={t('无法读取文件')} action={<button className="btn" onClick={reload}>{t('重试')}</button>}>{loadError}</PanelState></div>
   if (root === undefined) return <div className="files-pane" ref={box}><PanelState title={t('正在读取文件…')} /></div>
   if (root === null && !project)
     return (
-      <div className="files-pane" ref={box}>
-        <div className="empty">
-          <FolderSearch size={22} />
-          <div>{t('还没有文件夹')}</div>
-          <div className="small">{project ? t('给这个项目一个文件夹，这里就会列出它的文件。') : t('不选也行：agent 一做出文件，就会自动放进默认文件夹里以对话命名的文件夹。')}</div>
-          <div className="empty-actions">
-            <button className="btn sm" onClick={() => void api().makeDefaultFolder(id).then(reload).catch(fail)}>
-              <FolderPlus size={14} />
-              {t('在默认文件夹里新建')}
-            </button>
-            <button className="btn sm" onClick={() => void choose()}>
-              <FolderOpen size={14} />
-              {t('选择文件夹…')}
-            </button>
-          </div>
-        </div>
-      </div>
+      <div className="files-pane" ref={box}>{folderPrompt}</div>
     )
 
   const q = filter.trim().toLowerCase()
@@ -656,19 +649,10 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
         ) : <>
         {workspaceRows.length ? workspaceRows : q ? (
           !rows.length && <div className="files-note">{t('没有匹配的文件')}</div>
-        ) : root === null ? (
-          <div className="files-empty">
-            <strong>{t('还没有文件夹')}</strong>
-            <p>{t('给这个项目一个文件夹，这里就会列出它的文件。')}</p>
-            <div><button className="btn sm" onClick={() => void choose()}><FolderOpen size={14} />{t('选择文件夹…')}</button><button className="btn sm" onClick={() => void api().makeDefaultFolder(id).then(reload).catch(fail)}>{t('在默认文件夹里新建')}</button></div>
-          </div>
-        ) : (
-          <div className="files-empty">
-            <FolderOpen size={22} />
-            <strong>{t('文件夹是空的。')}</strong>
-            <p>{t('新建文件，或添加已有文件。')}</p>
-            <div><button className="btn sm" onClick={() => startNew('', false)}><FilePlus size={14} />{t('新建文件')}</button><button className="btn sm" onClick={() => pickFiles()}><Upload size={14} />{t('添加文件…')}</button></div>
-          </div>
+        ) : root === null ? folderPrompt : (
+          <PanelState title={t('文件夹是空的。')} action={
+            <div className="files-empty-actions"><button className="btn sm" onClick={() => startNew('', false)}><FilePlus size={14} />{t('新建文件')}</button><button className="link-btn" onClick={() => pickFiles()}>{t('添加文件…')}</button></div>
+          }>{t('新建文件，或添加已有文件。')}</PanelState>
         )}
         {materialsVisible && (!q || !!rows.length) && <div className="files-materials">
           <div className="tree-item">
