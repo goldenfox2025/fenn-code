@@ -18,6 +18,7 @@
   width: var(--panel-w);
   max-width: var(--panel-cap, none);
 }
+.side-pane.maximized { background: var(--bg-floating); }
 .side-pane-toggle {
   position: relative;
 }

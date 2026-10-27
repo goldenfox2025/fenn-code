@@ -2,12 +2,12 @@ import { BackgroundPanel } from './background/BackgroundPanel'
 import { useRunning } from './background/useBackgroundTasks'
 export { useRunning } from './background/useBackgroundTasks'
 import { X } from 'lucide-react'
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Conversation } from '@shared/model'
 import { useApp } from '../store'
 import { t } from '../i18n'
 import { FilesPane, flushFileEdits } from './FilesPane'
-import { PreviewPane } from './PreviewPane'
+import { PaneSizeButton, PreviewPane } from './PreviewPane'
 import { usePanePresence } from './usePanePresence'
 import { panelTabKeys } from './OverflowTabs'
 
@@ -21,11 +21,13 @@ export function ChatSidePane({ conversationId, hidden = false }: { conversationI
   const last = useRef<'files' | 'background'>('background')
   if (requested) last.current = requested === 'files' ? 'files' : 'background'
   const tab = last.current, presence = usePanePresence(!!requested)
+  const [expanded, setExpanded] = useState(false)
+  useEffect(() => { if (!presence.present || tab !== 'files') setExpanded(false) }, [presence.present, tab])
   const conv = useApp((s) => s.conversations.find((c) => c.id === conversationId))
   if (!presence.present || !conv) return null
   const set = (sidePane: 'files' | 'background' | null) => void flushFileEdits().then(ok => ok && useApp.getState().set({ sidePane }))
   return (
-    <PreviewPane className={'side-pane' + (tab === 'background' ? ' background-side-pane' : '')} hidden={hidden} exiting={presence.exiting} label={t('文件与后台')}>
+    <PreviewPane className={'side-pane' + (tab === 'background' ? ' background-side-pane' : '')} expanded={expanded && tab === 'files'} onCollapse={() => setExpanded(false)} hidden={hidden} exiting={presence.exiting} label={t('文件与后台')}>
       <div className="panel-head">
         <div className="tabs" role="tablist" aria-label={t('文件与后台')} onKeyDown={panelTabKeys}>
           <button role="tab" data-tab="files" aria-selected={tab === 'files'} className={'tab' + (tab === 'files' ? ' active' : '')} onClick={() => set('files')}>
@@ -37,6 +39,7 @@ export function ChatSidePane({ conversationId, hidden = false }: { conversationI
           </button>
         </div>
         <span className="spacer" />
+        {tab === 'files' && <PaneSizeButton expanded={expanded} onToggle={() => setExpanded(value => !value)} />}
         <button className="icon-btn" data-tip={t('关闭')} aria-label={t('关闭')} onClick={() => set(null)}>
           <X size={16} />
         </button>

@@ -8,9 +8,7 @@ import {
   Download,
   Clock,
   ListTree,
-  Maximize2,
   MessagesSquare,
-  Minimize2,
   MoreHorizontal,
   NotebookText,
   Search,
@@ -50,6 +48,7 @@ import { usePanePresence } from '../components/usePanePresence'
 import { usePaneViewport } from '../components/usePaneViewport'
 import { panelTabKeys } from '../components/OverflowTabs'
 import { useFileExpansionActive } from '../components/files/FileExpansion'
+import { PaneSizeButton } from '../components/PreviewPane'
 
 export function ProjectView({ projectId, threadId }: { projectId: string; threadId?: string; overview?: boolean }) {
   const project = useApp((s) => s.projects.find((p) => p.id === projectId))
@@ -311,9 +310,7 @@ function ThreadList({ project, onStart, onOpen, onClose, wide, setWide, tab, set
               <Search size={15} />
             </button>
           ))}
-        <button className="icon-btn" data-tip={wide ? t('退出全屏') : t('全屏')} aria-label={wide ? t('退出全屏') : t('全屏')} onClick={() => setWide(!wide)}>
-          {wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-        </button>
+        <PaneSizeButton expanded={wide} onToggle={() => setWide(!wide)} />
         <button className="icon-btn" data-tip={t('关闭')} aria-label={t('关闭')} onClick={() => void flushFileEdits().then(ok => ok && onClose())}>
           <X size={16} />
         </button>
@@ -389,9 +386,7 @@ function ThreadView({ threadId, onBack, onClose, onOpenMain, onOpenThread, wide,
             <CheckCircle2 size={15} />
           </button>
         )}
-        <button className="icon-btn" data-tip={wide ? t('退出全屏') : t('全屏')} onClick={() => setWide(!wide)}>
-          {wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-        </button>
+        <PaneSizeButton expanded={wide} onToggle={() => setWide(!wide)} />
         <button
           className="icon-btn"
           data-tip={t('更多')}

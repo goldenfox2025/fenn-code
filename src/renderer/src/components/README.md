@@ -9,6 +9,7 @@ Use the existing product tokens and shared controls before introducing another l
 | Short exclusive choices and native radio keyboard behavior | `SegmentedControl.tsx` |
 | Menus, dropdown placement, overflow and keyboard selection | `Menu.tsx` |
 | Main-branch pane navigation | `SidePane.tsx`, `../views/ProjectView.tsx`; shared tab keys in `OverflowTabs.tsx` |
+| Project/chat pane expand and restore control | `PaneSizeButton` in `PreviewPane.tsx`; both entry points retain the same `FilesPane` instance while changing width |
 | Preview/ordinary chat pane dimensions and floating behavior | `PreviewPane.tsx`, `ResizeHandle.tsx`, `.page-panel` rules in `../styles/10-composer-extras.css` |
 | Modal naming, focus containment, Escape and focus restoration | `Modal.tsx` |
 | Panel loading/empty/error presentation | `PanelState.tsx` and `../styles/07-panel.css` |
