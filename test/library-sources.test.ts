@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { libraryLocation, materialPath, MATERIALS } from '../src/renderer/src/components/files/librarySources'
+import { relocateTree } from '../src/renderer/src/components/files/libraryTree'
 
 describe('one library, distinct storage roots', () => {
+  it('relocates the cached entry and its descendants without a stale source row', () => {
+    const file = (path: string, dir = false) => ({ path, name: path.split('/').at(-1)!, dir, updatedAt: 1 })
+    const result = relocateTree({ '': [file('src', true), file('notes.txt')], src: [file('src/nested', true)], 'src/nested': [file('src/nested/readme.md')], [MATERIALS]: [] }, 'src', materialPath('src'))
+    expect(result[''].map(e => e.path)).toEqual(['notes.txt'])
+    expect(result[MATERIALS].map(e => e.path)).toEqual([materialPath('src')])
+    expect(result[materialPath('src/nested')][0].path).toBe(materialPath('src/nested/readme.md'))
+    expect(result.src).toBeUndefined()
+  })
   it('routes same-named working files and materials to distinct owners', () => {
     expect(libraryLocation('project', 'notes.md', true)).toEqual({ id: 'project', path: 'notes.md' })
     expect(libraryLocation('project', materialPath('notes.md'), true)).toEqual({ id: 'project-files:project', path: 'notes.md' })

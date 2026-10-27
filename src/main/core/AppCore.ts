@@ -19,7 +19,7 @@ import type { AccountStatus, BackendPlugin, BackendSummary, HostToolServer } fro
 import { prestartOn } from '../../shared/backendAvailability'
 import { perChatOption } from '../../shared/sessionOptions'
 import { ProjectFiles } from './ProjectFiles'
-import { addFile, changedFiles, createEntry, inside, listFolder, readPreview, removablePath, renameEntry, writeText, type LibraryRefusal } from './Library'
+import { addFile, changedFiles, createEntry, inside, listFolder, moveEntry, readPreview, removablePath, renameEntry, writeText, type LibraryRefusal } from './Library'
 import { Artifacts } from './Artifacts'
 import { ComputerControl, GRANT_IDLE_MS, type ComputerDeps, type TierChoice } from '../computer/ComputerControl'
 import { ChatService, excerpt, textOf } from './ChatService'
@@ -1283,6 +1283,8 @@ export class AppCore {
         ? t('「{0}」不能用作文件名。', name)
         : r === 'taken'
           ? t('这里已经有「{0}」了。', name)
+          : r === 'cycle'
+            ? t('不能把文件夹移到它自己或它的子文件夹中。')
           : r === 'changed'
             ? t('文件在您编辑时被改过。')
             : r === 'encoding'
@@ -1318,6 +1320,13 @@ export class AppCore {
   async createLibraryEntry(id: string, rel: string, name: string, dir: boolean) {
     const r = this.fileOp(name.trim(), () => createEntry(this.libraryRoot(id), rel, name, dir), (n) => t('没能新建「{0}」。', n))
     return 'refused' in r ? this.refused(r.refused, name.trim()) : r.path
+  }
+
+  async moveLibraryPath(id: string, rel: string, destinationId: string, parent: string) {
+    if ((projectFilesOwner(id) ?? id) !== (projectFilesOwner(destinationId) ?? destinationId)) throw new Error(t('不能将文件移到另一个对话或项目。'))
+    const name = basename(rel)
+    const r = this.fileOp(name, () => moveEntry(this.libraryRoot(id), rel, this.libraryRoot(destinationId), parent), n => t('没能移动「{0}」。', n))
+    return 'refused' in r ? this.refused(r.refused, name) : r.path
   }
 
   async saveLibraryFile(id: string, rel: string, text: string, since?: number, force?: boolean, recreate?: boolean) {

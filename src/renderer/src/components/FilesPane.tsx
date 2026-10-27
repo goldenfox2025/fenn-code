@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  ClipboardPaste,
   ExternalLink,
   File,
   FileCode2,
@@ -21,6 +22,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Scissors,
   Trash2,
   Upload,
   X
@@ -28,7 +30,7 @@ import {
 import type { LibraryChange, LibraryEntry } from '@shared/model'
 import { api, toast, useApp, toastError } from '../store'
 import { t } from '../i18n'
-import { imeComposing, relTime } from '../util'
+import { relTime } from '../util'
 import { humanSize } from './Outputs'
 import { Markdown } from './Transcript'
 import { useMenu, type MenuItem } from './Menu'
@@ -37,6 +39,11 @@ import { PanelState } from './PanelState'
 import { projectFilesOwner } from '@shared/library'
 import { MATERIALS, isMaterialPath, materialPath, libraryLocation, type LibraryLocation } from './files/librarySources'
 import { FileExpansion, type FileViewport } from './files/FileExpansion'
+import { useLibraryDrag } from './files/useLibraryDrag'
+import { baseName, moved, parentOf, relocateTree, under } from './files/libraryTree'
+import { errorText, plainError } from '@shared/errors'
+import { NameField, type NameCommit } from './files/NameField'
+export { NameField } from './files/NameField'
 
 /**
  * A file being edited: its text now and as last saved (both with \n line
@@ -238,13 +245,8 @@ export const storedView = (): MdView => {
 }
 
 /** A name being typed in place: a new name for a file or folder, or the name of a new one. */
-type Naming = { mode: 'rename'; path: string; where: 'tree' | 'preview' } | { mode: 'new'; parent: string; dir: boolean }
-
-const parentOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
-const baseName = (path: string) => path.split('/').pop() ?? path
-/** `path` with its leading `from` replaced by `to` (a renamed folder moves what is in it). */
-const moved = (path: string, from: string, to: string) => (path === from ? to : path.startsWith(from + '/') ? to + path.slice(from.length) : path)
-const under = (path: string, of: string) => path === of || path.startsWith(of + '/')
+type NameIntent = { mode: 'rename'; path: string; where: 'tree' | 'preview' } | { mode: 'new'; parent: string; dir: boolean }
+type Naming = NameIntent & { revision: number }
 
 /**
  * The files of a working folder, as in Claude Code's file panel: a tree on the
@@ -265,7 +267,12 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
   const [materialsRoot, setMaterialsRoot] = useState('')
   const [materialsError, setMaterialsError] = useState('')
   const [dirs, setDirs] = useState<Record<string, LibraryEntry[]>>({})
+  const loadVersion = useRef(0)
+  const folderLoads = useRef(new Map<string, number>())
+  const changesVersion = useRef(0)
   const [open, setOpen] = useState<Set<string>>(() => new Set(initialDirectory ? [initialDirectory] : []))
+  const openRef = useRef(open)
+  openRef.current = open
   const [changes, setChanges] = useState<LibraryChange[]>([])
   const [onlyChanged, setOnlyChanged] = useState(false)
   const [filter, setFilter] = useState('')
@@ -276,7 +283,17 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
   const rowsRef = useRef<HTMLDivElement>(null)
   const rowsScroll = useRef(0)
   const returnFocus = useRef<HTMLElement | null>(null)
-  const [naming, setNaming] = useState<Naming | null>(null)
+  const [naming, setNamingState] = useState<Naming | null>(null)
+  const namingRef = useRef<Naming | null>(null)
+  const namingVersion = useRef(0)
+  const setNaming = (intent: NameIntent | null) => {
+    const next = intent ? { ...intent, revision: ++namingVersion.current } : null
+    namingRef.current = next; setNamingState(next)
+  }
+  const finishNaming = (expected: Naming | null = naming) => { if (namingRef.current === expected) setNaming(null) }
+  const [moving, setMoving] = useState(false)
+  const [cutPath, setCutPath] = useState<string | null>(null)
+  const movingRef = useRef(false)
   const [view, setView] = useState<MdView>(storedView)
   const [full, setFull] = useState(false)
   const fullOpener = useRef<HTMLElement | null>(null)
@@ -293,10 +310,12 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
 
   const load = useCallback(
     async (rel: string) => {
+      const version = ++loadVersion.current
+      folderLoads.current.set(rel, version)
       try {
         const target = locate(rel)
         const res = await api().listLibrary(target.id, target.path)
-        if (currentSource.current !== id) return
+        if (currentSource.current !== id || folderLoads.current.get(rel) !== version) return
         if (isMaterialPath(rel)) setMaterialsError('')
         else setLoadError('')
         if (!res) return rel === '' ? setRoot(null) : undefined
@@ -305,18 +324,19 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
         const entries = isMaterialPath(rel) ? res.entries.map(e => ({ ...e, path: materialPath(e.path) })) : res.entries
         setDirs((d) => ({ ...d, [rel]: entries }))
       } catch (error) {
-        if (currentSource.current === id) (isMaterialPath(rel) ? setMaterialsError : setLoadError)(error instanceof Error ? error.message : String(error))
+        if (currentSource.current === id && folderLoads.current.get(rel) === version) (isMaterialPath(rel) ? setMaterialsError : setLoadError)(error instanceof Error ? error.message : String(error))
       }
     },
     [id, locate]
   )
   const reloadWith = useCallback(
     (folders: Iterable<string>) => {
+      const version = ++changesVersion.current
       void load('')
       if (project) void load(MATERIALS)
       for (const rel of folders) if (rel !== MATERIALS) void load(rel)
       void Promise.all([api().libraryChanges(id), ...(project ? [api().libraryChanges(locate(MATERIALS).id).then(changes => changes.map(c => ({ ...c, path: materialPath(c.path) })))] : [])])
-        .then((value) => { if (currentSource.current === id) setChanges(value.flat()) }, toastError)
+        .then((value) => { if (currentSource.current === id && changesVersion.current === version) setChanges(value.flat()) }, toastError)
     },
     [id, load, locate, project]
   )
@@ -332,6 +352,9 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
     rowsScroll.current = 0
     returnFocus.current = null
     setNaming(null)
+    setMoving(false)
+    movingRef.current = false
+    setCutPath(null)
     setFull(false)
     setRoot(undefined)
     setMaterialsRoot('')
@@ -350,8 +373,11 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
   const readingFile = narrow && !!selected && !listMode && !full
   useLayoutEffect(() => {
     if (!readingFile && rowsRef.current) rowsRef.current.scrollTop = rowsScroll.current
-    if (listMode && returnFocus.current?.isConnected) returnFocus.current.focus({ preventScroll: true })
-  }, [readingFile, listMode])
+    if (listMode) {
+      const target = returnFocus.current?.isConnected ? returnFocus.current : selected ? rowsRef.current?.querySelector<HTMLElement>(`.tree-row[data-path="${CSS.escape(selected)}"]`) : null
+      target?.focus({ preventScroll: true })
+    }
+  }, [readingFile, listMode, selected])
 
   const changed = useMemo(() => new Map(changes.filter((c) => c.exists !== false).map((c) => [c.path, c])), [changes])
   const changedDirs = useMemo(() => {
@@ -427,6 +453,28 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
     if (parent && !open.has(parent)) toggle(parent)
     setNaming({ mode: 'new', parent, dir })
   }
+  const relocate = (from: string, to: string) => {
+    const origin = locate(from), destination = locate(to)
+    for (const [key, position] of [...viewport.current]) {
+      const [owner, path, mode] = key.split('\0')
+      if (owner === origin.id && under(path, origin.path)) viewport.current.set(`${destination.id}\0${moved(path, origin.path, destination.path)}\0${mode}`, position)
+    }
+    if (selected && under(selected, from)) {
+      const el = box.current?.querySelector<HTMLElement>('.preview-editor,.preview-body:has(.preview-md),.preview-body:has(.preview-code)')
+      if (el) {
+        const target = locate(moved(selected, from, to))
+        viewport.current.set(`${target.id}\0${target.path}\0${box.current?.querySelector('.preview-md') ? 'preview' : 'source'}`, { top: el.scrollTop, left: el.scrollLeft, ...(el instanceof HTMLTextAreaElement ? { start: el.selectionStart, end: el.selectionEnd, direction: el.selectionDirection } : {}) })
+      }
+    }
+    const folders = new Set([...openRef.current].map(path => moved(path, from, to)))
+    if (parentOf(to)) folders.add(parentOf(to))
+    setOpen(folders)
+    setDirs(previous => relocateTree(previous, from, to))
+    setSelected(path => path ? moved(path, from, to) : path)
+    setCutPath(path => path ? moved(path, from, to) : path)
+    editor.moveTo(path => moved(path, from, to))
+    reloadWith(folders)
+  }
   /** Markdown shows rendered or as source; the choice is remembered for the next file. */
   const pickView = (v: MdView) => {
     setView(v)
@@ -437,32 +485,31 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
     }
   }
   /** Returns false to keep the name field open (the name was refused). */
-  const commitName = async (value: string): Promise<boolean> => {
+  const commitName = async (value: string): Promise<NameCommit> => {
     const n = naming
-    if (!n) return true
+    if (!n || namingRef.current !== n) return true
     try {
       if (n.mode === 'rename') {
-        if (value === baseName(n.path)) return (setNaming(null), true)
+        if (value === baseName(n.path)) return (finishNaming(n), true)
         const target = locate(n.path)
         const renamed = await api().renameLibraryPath(target.id, target.path, value)
         const to = isMaterialPath(n.path) ? materialPath(renamed) : renamed
-        setNaming(null)
-        const folders = new Set([...open].map((p) => moved(p, n.path, to)))
-        setOpen(folders)
-        if (selected) setSelected(moved(selected, n.path, to))
-        editor.moveTo((p) => moved(p, n.path, to))
-        reloadWith(folders)
+        if (currentSource.current !== id) return true
+        finishNaming(n)
+        relocate(n.path, to)
       } else {
         const target = locate(n.parent)
         const created = await api().createLibraryEntry(target.id, target.path, value, n.dir)
         const path = isMaterialPath(n.parent) ? materialPath(created) : created
-        setNaming(null)
-        const folders = new Set(open)
+        if (currentSource.current !== id) return true
+        const current = namingRef.current === n
+        finishNaming(n)
+        const folders = new Set(openRef.current)
         if (n.parent) folders.add(n.parent)
         if (n.dir) folders.add(path)
         setOpen(folders)
         reloadWith(folders)
-        if (!n.dir && (await editor.stop())) {
+        if (current && !n.dir && (await editor.stop()) && namingRef.current === null && namingVersion.current === n.revision && currentSource.current === id) {
           setSelected(path)
           setListMode(false)
           // A new file is for typing in, Markdown too.
@@ -471,8 +518,7 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
       }
       return true
     } catch (e) {
-      toastError(e)
-      return false
+      return plainError(errorText(e))
     }
   }
   const remove = async (path: string, dir: boolean) => {
@@ -490,6 +536,7 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
       setSelected(null)
       setFull(false)
     }
+    if (cutPath && under(cutPath, path)) setCutPath(null)
     reload()
   }
   const fullPath = (path: string) => {
@@ -510,6 +557,8 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
         ]
       : []),
     { icon: <Pencil size={15} />, label: t('重命名'), hint: where === 'tree' ? 'F2' : undefined, onClick: () => setNaming({ mode: 'rename', path, where }) },
+    { icon: <Scissors size={15} />, label: t('剪切'), hint: useApp.getState().platform === 'darwin' ? '⌘X' : 'Ctrl+X', onClick: () => setCutPath(path) },
+    ...(dir && cutPath ? [{ icon: <ClipboardPaste size={15} />, label: t('粘贴'), onClick: () => void movePath(cutPath, path) }] : []),
     { icon: <Copy size={15} />, label: t('复制路径'), onClick: () => void navigator.clipboard.writeText(fullPath(path)).then(() => toast(t('已复制路径'))) },
     ...(dir ? [] : [{ icon: <ExternalLink size={15} />, label: t('用默认应用打开'), onClick: () => openWith(path, false) }]),
     { icon: <FolderOpen size={15} />, label: t('在文件夹中显示'), onClick: () => openWith(path, true) },
@@ -517,15 +566,55 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
     { icon: <Trash2 size={15} />, label: t('删除'), danger: true, onClick: () => void remove(path, dir) }
   ]
   const rowKeys = (e: React.KeyboardEvent, entry: LibraryEntry) => {
-    if (e.key === 'F2') {
+    if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault()
+      const rows = [...(rowsRef.current?.querySelectorAll<HTMLButtonElement>('.tree-row:not(.renaming)') ?? [])]
+      const index = rows.indexOf(e.currentTarget as HTMLButtonElement)
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : index + (e.key === 'ArrowDown' ? 1 : -1)
+      rows[Math.max(0, Math.min(rows.length - 1, next))]?.focus()
+    } else if (e.key === 'ArrowRight' && entry.dir && !open.has(entry.path)) {
+      e.preventDefault(); toggle(entry.path)
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      if (entry.dir && open.has(entry.path)) toggle(entry.path)
+      else rowsRef.current?.querySelector<HTMLElement>(`.tree-row[data-path="${CSS.escape(parentOf(entry.path))}"]`)?.focus()
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'x' && entry.path !== MATERIALS) {
+      e.preventDefault(); e.stopPropagation(); setCutPath(entry.path)
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && cutPath) {
+      e.preventDefault(); e.stopPropagation(); void movePath(cutPath, entry.dir ? entry.path : parentOf(entry.path))
+    } else if (e.key === 'F2' && entry.path !== MATERIALS) {
       e.preventDefault()
       setNaming({ mode: 'rename', path: entry.path, where: 'tree' })
-    } else if (e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey)) {
+    } else if (entry.path !== MATERIALS && (e.key === 'Delete' || (e.key === 'Backspace' && e.metaKey))) {
       // ⌘⌫ on a Mac keyboard, where the key named Delete is Backspace.
       e.preventDefault()
       void remove(entry.path, entry.dir)
     }
   }
+  const movePath = async (path: string, parent: string): Promise<void> => {
+    if (movingRef.current) return
+    movingRef.current = true; setMoving(true)
+    try {
+      if (!(await editor.flush())) { toast(t('先在文件上方选好怎么处理这个文件。')); return }
+      if (root === null && !isMaterialPath(parent)) await api().makeDefaultFolder(id)
+      const source = locate(path), destination = locate(parent)
+      const result = await api().moveLibraryPath(source.id, source.path, destination.id, destination.path)
+      if (currentSource.current === id) {
+        const to = isMaterialPath(parent) ? materialPath(result) : result
+        relocate(path, to)
+        setCutPath(current => current === path || current === to ? null : current)
+      }
+    } catch (error) { toastError(error) }
+    finally { if (currentSource.current === id) { movingRef.current = false; setMoving(false) } }
+  }
+  const drag = useLibraryDrag({
+    id, disabled: !!naming || moving,
+    onOpen: path => {
+      setOpen(previous => new Set([...previous, path]))
+      void load(path)
+    },
+    onMove: movePath
+  })
 
   const folderPrompt = (
     <PanelState title={t('还没有文件')} action={
@@ -550,10 +639,10 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
   const newRow = (parent: string, depth: number) => {
     if (naming?.mode !== 'new' || naming.parent !== parent) return
     rows.push(
-      <div key={`new:${parent}`} className="tree-row renaming" data-depth={depth} style={{ '--depth': depth } as React.CSSProperties}>
+      <div key={`new:${parent}:${naming.revision}`} className="tree-row renaming" data-depth={depth} style={{ '--depth': depth } as React.CSSProperties}>
         <span className="tree-caret" />
         {naming.dir ? <Folder size={15} className="muted" /> : <File size={15} className="muted" />}
-        <NameField value="" placeholder={naming.dir ? t('文件夹名') : t('文件名')} onCommit={commitName} onCancel={() => setNaming(null)} />
+        <NameField value="" placeholder={naming.dir ? t('文件夹名') : t('文件名')} onCommit={commitName} onCancel={() => finishNaming(naming)} />
       </div>
     )
   }
@@ -573,11 +662,16 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
             open={isOpen}
             mark={changedDirs.has(e.path)}
             renaming={renaming}
+            namingKey={naming?.revision}
+            dragProps={drag.rowProps(e.path, true)}
+            dragging={drag.dragging === e.path}
+            cut={cutPath === e.path}
+            dropTarget={drag.target === e.path}
             onClick={() => toggle(e.path)}
             onKeyDown={(k) => rowKeys(k, e)}
             onMenu={(el) => openMenu(el, actions(e.path, true, 'tree'))}
             onCommit={commitName}
-            onCancel={() => setNaming(null)}
+            onCancel={() => finishNaming(naming)}
           />
         )
         if (isOpen) walk(e.path, depth + 1)
@@ -590,11 +684,15 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
             mark={changed.has(e.path)}
             active={selected === e.path}
             renaming={renaming}
+            namingKey={naming?.revision}
+            dragProps={drag.rowProps(e.path, false)}
+            dragging={drag.dragging === e.path}
+            cut={cutPath === e.path}
             onClick={() => void select(e.path)}
             onKeyDown={(k) => rowKeys(k, e)}
             onMenu={(el) => openMenu(el, actions(e.path, false, 'tree'))}
             onCommit={commitName}
-            onCancel={() => setNaming(null)}
+            onCancel={() => finishNaming(naming)}
           />
         )
       }
@@ -619,7 +717,7 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
           <button className="icon-btn sm" aria-label={t('关闭筛选')} onClick={() => { setFilter(''); setSearching(false) }}><X size={13} /></button>
         </label>}
       </div>}
-      <div className="files-rows" ref={rowsRef} onScroll={event => { if (!readingFile) rowsScroll.current = event.currentTarget.scrollTop }}>
+      <div className="files-rows" ref={rowsRef} {...drag.folderProps('')} onScroll={event => { if (!readingFile) rowsScroll.current = event.currentTarget.scrollTop }}>
         {onlyChanged ? (
           changeRows.length ? (
             changeRows.map(c => {
@@ -634,13 +732,18 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
                 mark={!gone}
                 active={selected === c.path}
                 renaming={naming?.mode === 'rename' && naming.where === 'tree' && naming.path === c.path}
+                namingKey={naming?.revision}
+                dragProps={!gone ? drag.rowProps(c.path, entry.dir) : undefined}
+                dragging={drag.dragging === c.path}
+                cut={cutPath === c.path}
+                dropTarget={entry.dir && drag.target === c.path}
                 onClick={() => !gone && void select(c.path)}
                 onKeyDown={event => { if (!gone) rowKeys(event, entry) }}
                 onMenu={el => openMenu(el, gone ? [
                   { icon: <Copy size={15} />, label: t('复制路径'), onClick: () => void navigator.clipboard.writeText(fullPath(c.path)).then(() => toast(t('已复制路径'))) }
                 ] : actions(c.path, entry.dir, 'tree'))}
                 onCommit={commitName}
-                onCancel={() => setNaming(null)}
+                onCancel={() => finishNaming(naming)}
               />
             })
           ) : (
@@ -655,8 +758,8 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
           }>{t('新建文件，或添加已有文件。')}</PanelState>
         )}
         {materialsVisible && (!q || !!rows.length) && <div className="files-materials">
-          <div className="tree-item">
-            <button className="tree-row" aria-expanded={materialsOpen} onClick={() => toggle(MATERIALS)}>
+          <div className={'tree-item' + (drag.target === MATERIALS ? ' drop-target' : '')} {...drag.folderProps(MATERIALS)}>
+            <button className="tree-row" data-path={MATERIALS} aria-expanded={materialsOpen} onClick={() => toggle(MATERIALS)} onKeyDown={event => rowKeys(event, { name: t('添加的资料'), path: MATERIALS, dir: true, updatedAt: 0 })}>
               {materialsOpen ? <ChevronDown size={14} className="tree-caret" /> : <ChevronRight size={14} className="tree-caret" />}
               <Folder size={15} className="muted" /><span className="tree-name">{t('添加的资料')}</span>
             </button>
@@ -698,7 +801,7 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
         onFull={(value) => { if (value) fullOpener.current = document.activeElement as HTMLElement; setFull(value) }}
         renaming={naming?.mode === 'rename' && naming.where === 'preview' && naming.path === selected}
         onCommitName={commitName}
-        onCancelName={() => setNaming(null)}
+        onCancelName={() => finishNaming(naming)}
         onMenu={(el) => openMenu(el, actions(selected, false, 'preview'))}
       />
     ) : (
@@ -708,8 +811,13 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
     )
 
   return (
-    <div className={'files-pane' + (narrow ? ' narrow' : '') + (!selected ? ' unselected' : '') + (!dirs['']?.some(entry => entry.dir) ? ' flat-root' : '')} ref={box} onKeyDown={event => { if(!full && !readingFile && !(event.target instanceof HTMLTextAreaElement) && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {event.preventDefault();setSearching(true);requestAnimationFrame(() => filterInput.current?.focus())} }}>
-      {!readingFile && <div className="files-head">
+    <div className={'files-pane' + (narrow ? ' narrow' : '') + (!selected ? ' unselected' : '')} ref={box} onKeyDown={event => {
+      if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) return
+      if (cutPath && event.key === 'Escape') { event.preventDefault(); setCutPath(null) }
+      else if (cutPath && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') { event.preventDefault(); void movePath(cutPath, '') }
+      else if (!full && !readingFile && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {event.preventDefault();setSearching(true);requestAnimationFrame(() => filterInput.current?.focus())}
+    }}>
+      {!readingFile && <div className={'files-head' + (drag.target === '' ? ' drop-target' : '')} {...drag.folderProps('')}>
         {onBack && <button className="icon-btn sm" aria-label={t('返回库')} data-tip={t('返回库')} onClick={() => void editor.stop().then(ok => ok && onBack())}><ArrowLeft size={15} /></button>}
         <span className="files-root" data-tip={root ?? undefined}>
           <Folder size={14} />
@@ -736,6 +844,7 @@ export function FilesPane({ id, rootLabel, initialDirectory, onBack }: { id: str
           <Plus size={15} />
         </button>
         <button className="icon-btn sm" data-tip={t('文件操作')} aria-label={t('文件操作')} onClick={event => openMenu(event.currentTarget, [
+          ...(cutPath ? [{ label: t('粘贴'), icon: <ClipboardPaste size={15} />, onClick: () => void movePath(cutPath, '') }] : []),
           { label: t('刷新'), icon: <RefreshCw size={15} />, onClick: reload },
           ...(root ? [{ label: t('在文件管理器中打开'), icon: <ExternalLink size={15} />, onClick: () => openWith('', false) }] : [])
         ])}>
@@ -768,57 +877,6 @@ function findEntry(dirs: Record<string, LibraryEntry[]>, path: string): LibraryE
   return dirs[parentOf(path)]?.find((e) => e.path === path)
 }
 
-/**
- * A file name typed in place. The name (without its extension) starts
- * selected; Enter or leaving the field keeps it, Esc puts the old name back.
- */
-export function NameField({ value, placeholder, onCommit, onCancel }: { value: string; placeholder?: string; onCommit: (name: string) => Promise<boolean>; onCancel: () => void }) {
-  const [text, setText] = useState(value)
-  const ref = useRef<HTMLInputElement>(null)
-  const busy = useRef(false)
-  useEffect(() => {
-    const el = ref.current!
-    el.focus()
-    const dot = value.lastIndexOf('.')
-    el.setSelectionRange(0, dot > 0 ? dot : value.length)
-  }, [])
-  const done = async (keep: boolean) => {
-    if (busy.current) return
-    const name = text.trim()
-    if (!keep || !name) {
-      busy.current = true
-      return onCancel()
-    }
-    busy.current = true
-    // Once kept, the field is done: the blur of its removal must not keep it twice.
-    if (await onCommit(name)) return
-    busy.current = false
-    ref.current?.focus()
-  }
-  return (
-    <input
-      ref={ref}
-      className="tree-input"
-      value={text}
-      placeholder={placeholder}
-      aria-label={placeholder ?? t('重命名')}
-      spellCheck={false}
-      onChange={(e) => setText(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        e.stopPropagation()
-        if (imeComposing(e)) return
-        if (e.key === 'Enter') void done(true)
-        else if (e.key === 'Escape') {
-          e.preventDefault()
-          void done(false)
-        }
-      }}
-      onBlur={() => void done(true)}
-    />
-  )
-}
-
 function TreeRow({
   entry,
   depth,
@@ -828,6 +886,11 @@ function TreeRow({
   context,
   active,
   renaming,
+  namingKey,
+  dragProps,
+  dragging,
+  cut,
+  dropTarget,
   onClick,
   onKeyDown,
   onMenu,
@@ -842,10 +905,15 @@ function TreeRow({
   context?: string
   active?: boolean
   renaming?: boolean
+  namingKey?: number
+  dragProps?: React.HTMLAttributes<HTMLElement>
+  dragging?: boolean
+  cut?: boolean
+  dropTarget?: boolean
   onClick: () => void
   onKeyDown: (e: React.KeyboardEvent) => void
   onMenu: (anchor: HTMLElement) => void
-  onCommit: (name: string) => Promise<boolean>
+  onCommit: (name: string) => Promise<NameCommit>
   onCancel: () => void
 }) {
   const style = { '--depth': depth } as React.CSSProperties
@@ -858,12 +926,13 @@ function TreeRow({
       <div className="tree-row renaming" style={style} data-depth={depth}>
         {caret}
         {icon}
-        <NameField value={entry.name} onCommit={onCommit} onCancel={onCancel} />
+        <NameField key={namingKey} value={entry.name} onCommit={onCommit} onCancel={onCancel} />
       </div>
     )
   return (
     <div
-      className="tree-item"
+      className={'tree-item' + (dropTarget ? ' drop-target' : '') + (dragging ? ' dragging' : '') + (cut ? ' cut' : '')}
+      {...dragProps}
       onContextMenu={(e) => {
         e.preventDefault()
         onMenu(e.currentTarget.querySelector<HTMLElement>('.tree-more') ?? e.currentTarget)
@@ -947,7 +1016,7 @@ export function FilePreview({
   full: boolean
   onFull: (f: boolean) => void
   renaming: boolean
-  onCommitName: (name: string) => Promise<boolean>
+  onCommitName: (name: string) => Promise<NameCommit>
   onCancelName: () => void
   onMenu: (anchor: HTMLElement) => void
   /** Reads the file another way (one outside the working folders, read only). */
@@ -960,7 +1029,9 @@ export function FilePreview({
   const [file, setFile] = useState<Awaited<ReturnType<ReturnType<typeof api>['readLibraryFile']>> | null>(null)
   useEffect(() => {
     let current = true
-    setFile(null)
+    // A saved or moved draft remains the same document while metadata reloads.
+    // Clearing it here briefly replaces the editor with a loading state.
+    if (!draft) setFile(null)
     void (load ? load() : api().readLibraryFile(id, path)).then((f) => { if (current) setFile(f ?? undefined) }, () => { if (current) setFile(undefined) })
     return () => { current = false }
   }, [id, path, change?.changedAt, entry?.updatedAt])

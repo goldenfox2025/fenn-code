@@ -16,6 +16,7 @@ Use the existing product tokens and shared controls before introducing another l
 | Review draft/controller, evidence and decision presentation | `reviews/README.md` |
 | Reply progress, grouped tools and settled reply actions | `transcript/README.md` |
 | Project/chat files, tree actions and safe editing | `FilesPane.tsx`, `../styles/17-side-pane.css`; uploaded project files use `projectFilesLibraryId` |
+| Inline names, drag/drop and cached tree paths | `files/NameField.tsx`, `files/useLibraryDrag.ts`, `files/libraryTree.ts`; drag and keyboard moves share `moveLibraryPath` in the core |
 | Project information hierarchy and schedules | `projects/ProjectSection.tsx`, `projects/ProjectSchedules.tsx` |
 | Scoped durable-memory management | `MemoryManager.tsx`, `../styles/25-memory.css`; project adapter in `projects/ProjectMemory.tsx` |
 | Default user/assistant fennec identity | `FoxAvatar.tsx`, `../styles/24-fox-avatar.css` |

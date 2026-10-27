@@ -8,7 +8,7 @@ export const API_METHODS = [
   'saveRoutine', 'deleteRoutine', 'locateFile', 'readLocalFile', 'runRoutineNow', 'listMemory', 'listMemorySkills', 'composeMemory', 'saveMemory', 'deleteMemory',
   'search', 'queuedMessage', 'chooseDecision', 'sendToThread', 'cancelPeerMessage', 'compactContext', 'runCommand', 'stopCommand', 'commandOutput', 'artifactInfo', 'artifactSource', 'listConnectors', 'saveConnector', 'deleteConnector', 'reloadBackends', 'backendsConfigStatus', 'appInfo', 'usageCalendar', 'convertToThread', 'checkForUpdates', 'backendAuthMethods', 'backendLogin', 'backendTerminalLogin', 'listProjectFiles', 'listLibrary', 'libraryChanges', 'readLibraryFile', 'openLibraryPath', 'addToLibrary', 'renameLibraryPath', 'createLibraryEntry', 'saveLibraryFile', 'deleteLibraryPath', 'makeDefaultFolder', 'addProjectFiles', 'deleteProjectFile', 'updateProgress', 'deleteProgress', 'foldersInText', 'suggestFolders', 'setOption', 'setOptionDefault', 'backendAccount', 'backendLatestVersion', 'openOutput', 'upgradeBackend',
   'updateSettings', 'setBackendSetting', 'respondPermission', 'backendModels', 'setModelDefault', 'backendCredits', 'prepareConversation', 'warmBackend', 'openLogFolder',
-  'pickFolder', 'exportConversation', 'openConfigFolder'
+  'pickFolder', 'exportConversation', 'openConfigFolder', 'moveLibraryPath'
 ] as const satisfies readonly (keyof CoreApi)[]
 
 /** What the core answers over IPC: everything in FennApi but what the preload provides itself. */

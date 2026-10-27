@@ -811,6 +811,8 @@ export interface FennApi {
   addToLibrary(id: string, rel: string, files: { name: string; data: string }[]): Promise<void>
   /** Renames a file or folder of it in place; returns its new path. */
   renameLibraryPath(id: string, rel: string, name: string): Promise<string>
+  /** Moves into a folder of the same conversation/project, preserving names without overwriting. */
+  moveLibraryPath(id: string, rel: string, destinationId: string, parent: string): Promise<string>
   /** Makes an empty file (or folder) named `name` in folder `rel` of it; returns its path. */
   createLibraryEntry(id: string, rel: string, name: string, dir: boolean): Promise<string>
   /** Saves an edited text file. `since`: its updatedAt when editing began; if it changed after that, nothing is written (conflict) unless `force`. */

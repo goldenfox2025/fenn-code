@@ -1,5 +1,11 @@
 /** English UI strings, keyed by the Chinese source text. */
 export const en: Record<string, string> = {
+  '剪切': 'Cut',
+  '粘贴': 'Paste',
+  '不能把文件夹移到它自己或它的子文件夹中。': 'A folder cannot be moved into itself or one of its subfolders.',
+  '不能将文件移到另一个对话或项目。': 'Files cannot be moved to a different chat or project.',
+  '没能移动「{0}」。': 'Could not move “{0}”.',
+  '这个名称无法使用，请换一个。': 'This name cannot be used. Choose another name.',
   '新建文件，或添加已有文件。': 'Create a file or add an existing one.',
   '关闭筛选': 'Close filter',
   '文件操作': 'File actions',

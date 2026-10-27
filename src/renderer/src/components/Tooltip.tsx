@@ -83,6 +83,7 @@ export function TooltipLayer() {
     const focus = (e: FocusEvent) => {
       const el = tipOf(e.target)
       if (el && el.getAttribute('data-tip') && (e.target as Element).matches(':focus-visible')) open(el)
+      else if (current) hide()
     }
     const key = (e: KeyboardEvent) => e.key === 'Escape' && hide()
     const leaveWindow = (e: PointerEvent) => !e.relatedTarget && hide()

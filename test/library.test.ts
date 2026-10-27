@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { addFile, changedFiles, createEntry, fileName, inside, listFolder, readPreview, removablePath, renameEntry, writeText } from '../src/main/core/Library'
+import { addFile, changedFiles, createEntry, fileName, inside, listFolder, moveEntry, readPreview, removablePath, renameEntry, writeText } from '../src/main/core/Library'
 import type { Message } from '../src/shared/model'
 import { link } from './links'
 
@@ -15,6 +15,38 @@ function folder() {
   writeFileSync(join(root, 'bin.dat'), Buffer.from([1, 0, 2]))
   return root
 }
+
+describe('moving library entries', () => {
+  it('moves files and populated folders, and accepts an unchanged destination', () => {
+    const root = folder()
+    expect(moveEntry(root, 'README.md', root, 'src')).toEqual({ path: 'src/README.md' })
+    expect(readFileSync(join(root, 'src/README.md'), 'utf8')).toBe('# hi\n')
+    expect(existsSync(join(root, 'README.md'))).toBe(false)
+    expect(moveEntry(root, 'src/README.md', root, 'src')).toEqual({ path: 'src/README.md' })
+    mkdirSync(join(root, 'destination'))
+    expect(moveEntry(root, 'src', root, 'destination')).toEqual({ path: 'destination/src' })
+    expect(readFileSync(join(root, 'destination/src/README.md'), 'utf8')).toBe('# hi\n')
+  })
+  it('refuses file/folder collisions without replacing either entry', () => {
+    const root = folder()
+    mkdirSync(join(root, 'src/README.md'))
+    expect(moveEntry(root, 'README.md', root, 'src')).toEqual({ refused: 'taken' })
+    expect(readFileSync(join(root, 'README.md'), 'utf8')).toBe('# hi\n')
+    expect(statSync(join(root, 'src/README.md')).isDirectory()).toBe(true)
+    expect(createEntry(root, '', 'README.md', true)).toEqual({ refused: 'taken' })
+    expect(createEntry(root, '', 'src', false)).toEqual({ refused: 'taken' })
+  })
+  it('moves between library sources while refusing descendants, escaped destinations and the root itself', () => {
+    const root = folder(), materials = folder()
+    mkdirSync(join(root, 'src/nested'))
+    expect(moveEntry(root, 'src', root, 'src/nested')).toEqual({ refused: 'cycle' })
+    expect(moveEntry(root, 'src', root, 'src')).toEqual({ refused: 'cycle' })
+    expect(moveEntry(root, '', materials, '')).toEqual({ refused: 'gone' })
+    expect(moveEntry(root, 'README.md', materials, '../outside')).toEqual({ refused: 'gone' })
+    expect(moveEntry(root, 'README.md', materials, 'src')).toEqual({ path: 'src/README.md' })
+    expect(readFileSync(join(materials, 'src/README.md'), 'utf8')).toBe('# hi\n')
+  })
+})
 
 const tool = (paths: string[], toolKind = 'edit', status = 'completed', createdAt = 1): Message => ({
   id: 'm' + createdAt,

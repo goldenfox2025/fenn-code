@@ -169,7 +169,7 @@ export function readPreview(root: string, rel: string): { text?: string; size: n
 }
 
 /** Why a change to the folder was refused. */
-export type LibraryRefusal = 'name' | 'taken' | 'gone' | 'changed' | 'encoding'
+export type LibraryRefusal = 'name' | 'taken' | 'gone' | 'changed' | 'encoding' | 'cycle'
 
 /** A name a file can have on every system (and short enough for Windows paths): no separators or reserved characters or Windows device names, not . or .., no trailing dot or space. */
 export function fileName(name: string): string | undefined {
@@ -192,6 +192,24 @@ export function renameEntry(root: string, rel: string, name: string): { path: st
   // Only a change of case may land on the same entry (on a disk that ignores case); another file of that name is never replaced.
   if (taken(target) && !sameEntry(target, abs)) return { refused: 'taken' }
   renameSync(abs, target)
+  return { path }
+}
+
+/** Move an entry into a folder, preserving its name and never replacing a destination. */
+export function moveEntry(root: string, rel: string, destinationRoot: string, parent: string): { path: string } | { refused: LibraryRefusal } {
+  const source = entryPath(root, rel)
+  const directory = inside(destinationRoot, parent)
+  if (!source || !taken(source) || !directory || !existsSync(directory) || !statSync(directory).isDirectory()) return { refused: 'gone' }
+  const path = relative(resolve(destinationRoot), join(directory, basename(source))).split(sep).join('/')
+  const target = entryPath(destinationRoot, path)
+  if (!target) return { refused: 'gone' }
+  if (source === target) return { path }
+  if (lstatSync(source).isDirectory()) {
+    const realSource = realpathSync(source), realDestination = realpathSync(directory)
+    if (realDestination === realSource || realDestination.startsWith(realSource + sep)) return { refused: 'cycle' }
+  }
+  if (taken(target)) return { refused: 'taken' }
+  renameSync(source, target)
   return { path }
 }
 

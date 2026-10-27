@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import { makeCore } from './helpers'
 import { projectFilesLibraryId } from '../src/shared/library'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 describe('unified project library', () => {
+  it('moves between work files and materials only within the owning project', async () => {
+    const { core, dispose } = await makeCore()
+    try {
+      const project = await core.createProject({ name: 'Moving files', cwd: mkdtempSync(join(tmpdir(), 'library-move-')), backendId: 'mock' })
+      const other = await core.createProject({ name: 'Other project', cwd: mkdtempSync(join(tmpdir(), 'library-other-')), backendId: 'mock' })
+      const scope = projectFilesLibraryId(project.id)
+      await core.addProjectFiles(project.id, [{ name: 'reference.txt', data: Buffer.from('reference').toString('base64') }])
+      await core.createLibraryEntry(project.id, '', 'note.txt', false)
+      await core.saveLibraryFile(project.id, 'note.txt', 'contents')
+      expect(await core.moveLibraryPath(project.id, 'note.txt', scope, '')).toBe('note.txt')
+      expect(await core.readLibraryFile(project.id, 'note.txt')).toBeUndefined()
+      expect(await core.readLibraryFile(scope, 'note.txt')).toMatchObject({ text: 'contents' })
+      await expect(core.moveLibraryPath(scope, 'note.txt', other.id, '')).rejects.toThrow()
+      expect(await core.readLibraryFile(scope, 'note.txt')).toMatchObject({ text: 'contents' })
+      expect(await core.moveLibraryPath(scope, 'note.txt', project.id, '')).toBe('note.txt')
+      expect(await core.readLibraryFile(project.id, 'note.txt')).toMatchObject({ text: 'contents' })
+    } finally { await dispose() }
+  })
   it('opens and edits existing project attachments without requiring a working folder', async () => {
     const { core, dispose } = await makeCore()
     try {
