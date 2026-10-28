@@ -502,7 +502,7 @@ export function Composer({ conversation, placeholder, autoFocus, onSubmit, leadi
       {fit.compact && (canSwitch || canPick) && <button className="icon-btn model-settings" aria-label={t('模型与后端设置')} aria-haspopup="menu" data-tip={[currentBackend?.name, currentModel?.name].filter(Boolean).join(' · ')} onClick={(e) => (e.stopPropagation(), open('settings', e.currentTarget))}><Settings2 size={16} /></button>}
       {conversation ? (
         <ContextRing
-          backendId={conversation.nextBackendId || conversation.backendId}
+          key={conversation.id}
           usage={conversation.usage}
           timing={conversation.timing}
           scope={conversation.kind === 'thread' ? t('本讨论串用量') : t('本对话用量')}

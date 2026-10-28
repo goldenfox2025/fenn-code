@@ -17,6 +17,11 @@
 .mac:not(.window-fullscreen) .topbar > .sidebar-toggle {
   margin-left: 70px;
 }
+.account-quota { -webkit-app-region: no-drag; }
+.account-quota-value { color: var(--text-3); font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .account-quota-name { display: none; }
+}
 .winctl {
   display: flex;
   margin-left: var(--space-4);

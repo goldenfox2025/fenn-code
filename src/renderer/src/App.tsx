@@ -8,6 +8,7 @@ import { TooltipLayer } from './components/Tooltip'
 import { Onboarding } from './components/Onboarding'
 import { RightSurfaces } from './components/RightSurfaces'
 import { WindowButtons } from './components/WindowButtons'
+import { AccountQuota } from './components/AccountQuota'
 import { usePaneFit } from './components/ResizeHandle'
 import { Sidebar } from './components/Sidebar'
 import { api, dismissToast, toast, useApp } from './store'
@@ -74,6 +75,7 @@ export function App() {
             </button>
           )}
           <span className="spacer" />
+          <AccountQuota />
           {platform !== 'darwin' && <WindowControls />}
         </div>
         <div className="workspace">

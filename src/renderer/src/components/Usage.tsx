@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Minimize2 } from 'lucide-react'
 import type { CreditQuota } from '@shared/contract'
 import type { Message } from '@shared/model'
 import { formatCost, formatTokens, headline, inputRead, MIN_STREAM_MS, type GenerationTiming, type MessageUsage, type UsageTotals } from '@shared/usage'
 import { useMenu, type MenuItem } from './Menu'
-import { api, useApp } from '../store'
+import { useApp } from '../store'
 import { t } from '../i18n'
 import { tk } from '@shared/i18n'
 
@@ -206,35 +206,20 @@ export function creditsMenu(quota: CreditQuota | undefined, name: string, loadin
   return items
 }
 
-/** Account-wide quota occupies the same quiet footer slot for supported providers. */
-function AccountQuotaRing({ backendId, activity, onCompact }: { backendId: string; activity: number; onCompact?: () => void }) {
-  const name = useApp(s => s.backends.find(backend => backend.id === backendId)?.name || backendId)
-  const [quota, setQuota] = useState<CreditQuota>(), [loading, setLoading] = useState(true)
-  const [menu, openMenu, update] = useMenu({ align: 'right', placement: 'auto', compact: true })
-  useEffect(() => {
-    let live = true
-    const read = () => { setLoading(true); void api().backendCredits(backendId).then(value => { if (live) setQuota(value) }, () => { if (live) setQuota(undefined) }).finally(() => { if (live) setLoading(false) }) }
-    setQuota(undefined); read(); const timer = setInterval(read, 60000)
-    return () => { live = false; clearInterval(timer) }
-  }, [backendId, activity])
-  const items = () => [...creditsMenu(quota, name, loading), ...(onCompact ? [{ separator: true }, { label: t('压缩上下文'), icon: <Minimize2 size={15} />, onClick: onCompact }] : [])]
-  useEffect(() => update(items()), [quota, loading, name])
-  const first = quota?.buckets.find(bucket => bucket.used !== undefined && !!bucket.total)
-  const share = first ? Math.max(0, Math.min(1, first.used! / first.total!)) : 0, radius = 6.4, length = 2 * Math.PI * radius
-  if (!quota?.buckets.length) return null
-  return <><button className={`context-ring account-quota-ring ${tone(share)}`} aria-label={t('{0} 账户额度', name)} data-tip={first ? `${name} · ${percent(first.used!, first.total!)}` : t('{0} 账户额度', name)} onClick={event => { event.stopPropagation(); openMenu(event.currentTarget, items()) }}><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r={radius} className="ring-track" />{first && <circle cx="9" cy="9" r={radius} className="ring-arc" strokeDasharray={length} strokeDashoffset={length * (1 - share)} transform="rotate(-90 9 9)" />}</svg></button>{menu}</>
-}
-
 /**
  * How full the context window is, as a small ring beside the model name (like
  * Claude's): the last model call against the window. Only figures the agent
  * reported (over ACP or in its own log); otherwise a plain grey ring. Click for
  * the usage details.
  */
-export function ContextRing({ usage, scope, timing, onCompact, backendId }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming; onCompact?: () => void; backendId?: string }) {
-  const [menu, openMenu] = useMenu({ align: 'right', placement: 'auto', compact: true })
-  const accountQuota = useApp(s => !!s.backends.find(backend => backend.id === backendId)?.credits)
-  if (accountQuota && backendId) return <AccountQuotaRing backendId={backendId} activity={(usage?.turns || 0) + (usage?.unreported || 0)} onCompact={onCompact} />
+export function ContextRing({ usage, scope, timing, onCompact }: { usage?: UsageTotals; scope: string; timing?: GenerationTiming; onCompact?: () => void }) {
+  const [menu, openMenu, update] = useMenu({ align: 'right', placement: 'auto', compact: true })
+  const items = () => [
+    ...usageMenu(usage, scope, timing),
+    ...(onCompact && (!!usage?.contextUsed || !!usage?.contextShare || (usage?.turns ?? 0) + (usage?.unreported ?? 0) > 0)
+      ? [{ separator: true }, { label: t('压缩上下文'), icon: <Minimize2 size={15} />, onClick: onCompact }] : [])
+  ]
+  useEffect(() => update(items()), [usage, scope, timing, onCompact])
   const size = usage?.contextSize
   const used = usage?.contextUsed
   if (used === undefined && usage?.contextShare === undefined && !usage?.cost) return null
@@ -265,12 +250,7 @@ export function ContextRing({ usage, scope, timing, onCompact, backendId }: { us
         onClick={(e) => {
           e.stopPropagation()
           // The agent's own compact command, when it has one, as Claude Code's /compact.
-          // Nothing to compact before the first turn.
-          const something = !!used || !!usage?.contextShare || (usage?.turns ?? 0) + (usage?.unreported ?? 0) > 0
-          openMenu(e.currentTarget, [
-            ...usageMenu(usage, scope, timing),
-            ...(onCompact && something ? [{ separator: true }, { label: t('压缩上下文'), icon: <Minimize2 size={15} />, onClick: onCompact }] : [])
-          ])
+          openMenu(e.currentTarget, items())
         }}
       >
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">

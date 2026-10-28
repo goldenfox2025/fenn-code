@@ -25,6 +25,8 @@ Use the existing product tokens and shared controls before introducing another l
 
 Views own navigation and data flow; shared controls own their interaction contract. Feature CSS adds layout rather than redefining shared control colors, radii or focus. Test utilities use isolated profiles and keep test agents out of normal application settings.
 
+Account-wide quota lives in the app's top-right chrome (`AccountQuota.tsx`); the composer's `Usage.tsx` context ring always reads the owning conversation's usage. A provider's credit support must never replace session context. Context compaction belongs only to the session menu. `scripts/usage-scope-e2e.mjs` checks this separation in an isolated Electron process with stubbed backend IPC.
+
 | Automatic input sources and conclusions | `ConversationResources.tsx` (view), `../../../main/core/ConversationContext.ts` (selection/provenance) |
 | Shared disclosure heading | `OverviewSection.tsx` |
 | Conversation file/background destinations | `SidePane.tsx` |
