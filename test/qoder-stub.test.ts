@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { textOf } from '../src/main/core/ChatService'
 import { makeCore, until } from './helpers'
+import { loadPlugins } from '../src/main/backends/registry'
 
 const STUB = join(__dirname, 'fixtures/qoder-stub.mjs')
 const saved = process.env.QODER_CONFIG_DIR
@@ -133,5 +134,23 @@ describe('Qoder 1.1.72 on its free model (replayed)', () => {
       delete process.env.QODER_STUB_ZERO
       await dispose()
     }
+  }, 60000)
+})
+
+describe('Qoder with a custom launch path (replayed)', () => {
+  it('still reads the context share from the CLI log when backends.json overrides the launcher', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'qoder-custom-path-'))
+    const file = join(dir, 'backends.json')
+    writeFileSync(file, JSON.stringify([{
+      id: 'qoder', name: 'Qoder', command: process.execPath, args: [STUB, '--acp'],
+      env: { QODER_STUB_VERSION: '1.1.73', QODER_STUB_ZERO: '1', QODER_CONFIG_DIR: process.env.QODER_CONFIG_DIR }
+    }]))
+    const { core, store, dispose } = await makeCore(dir, {}, {}, loadPlugins(file))
+    try {
+      const conv = await core.startChat({ backendId: 'qoder', text: '你好' })
+      await settled(store, conv.id)
+      expect(store.conversation(conv.id)?.usage).toMatchObject({ contextShare: 0.124635, contextSource: 'log' })
+      expect(store.conversation(conv.id)?.usage?.contextUsed).toBeUndefined()
+    } finally { await dispose() }
   }, 60000)
 })

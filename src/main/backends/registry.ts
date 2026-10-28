@@ -66,28 +66,33 @@ export function loadPlugins(userConfigFile?: string): BackendPlugin[] {
     const settings = (decl.settings ?? []).map((x) => ({ ...x, label: x.label ?? x.key }))
     plugins.set(
       decl.id,
-      acpPlugin({
-        id: decl.id,
-        name: decl.name,
-        description: decl.description ?? tk('在 backends.json 中声明'),
-        settings,
-        signIn: decl.signIn,
-        login: decl.login,
-        upgrade: decl.upgrade,
-        quirks: decl.id === 'qoder' ? { hideNoneReasoning: true } : undefined,
-        credits: decl.id === 'qoder' ? (config) => readQoderCredits({ ...decl.env, ...config,
-          ...(decl.args?.length === 2 && /\.[cm]?js$/i.test(decl.args[0]) && decl.args[1] === '--acp'
-            ? { QODER_NODE_PATH: decl.command, QODER_CLI_PATH: decl.args[0] }
-            : { QODER_CLI_PATH: decl.command }) }) : undefined,
-        // Same declaration → same signature, so a reload leaves that agent running.
-        signature: JSON.stringify(decl),
-        isInstalled: () => !!findOnPath(decl.command),
-        launch: ({ config }) => ({
-          command: decl.command,
-          args: decl.args ?? [],
-          env: { ...decl.env, ...Object.fromEntries(settings.map((x) => [x.key, config[x.key]])) }
-        })
-      })
+      {
+        ...acpPlugin({
+          id: decl.id,
+          name: decl.name,
+          description: decl.description ?? tk('在 backends.json 中声明'),
+          settings,
+          signIn: decl.signIn,
+          login: decl.login,
+          upgrade: decl.upgrade,
+          quirks: decl.id === 'qoder' ? { hideNoneReasoning: true } : undefined,
+          credits: decl.id === 'qoder' ? (config) => readQoderCredits({ ...decl.env, ...config,
+            ...(decl.args?.length === 2 && /\.[cm]?js$/i.test(decl.args[0]) && decl.args[1] === '--acp'
+              ? { QODER_NODE_PATH: decl.command, QODER_CLI_PATH: decl.args[0] }
+              : { QODER_CLI_PATH: decl.command }) }) : undefined,
+          // Same declaration → same signature, so a reload leaves that agent running.
+          signature: JSON.stringify(decl),
+          isInstalled: () => !!findOnPath(decl.command),
+          launch: ({ config }) => ({
+            command: decl.command,
+            args: decl.args ?? [],
+            env: { ...decl.env, ...Object.fromEntries(settings.map((x) => [x.key, config[x.key]])) }
+          })
+        }),
+        // Replacing a launch command must not discard the built-in session-log reader.
+        // Qoder's context share and compaction state are available only through this hook.
+        sessionContext: plugins.get(decl.id)?.sessionContext
+      }
     )
   }
   return [...plugins.values()]
